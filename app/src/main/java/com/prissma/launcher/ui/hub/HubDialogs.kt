@@ -14,6 +14,7 @@ import com.prissma.launcher.data.GameInstance
 import com.prissma.launcher.engine.java.DEFAULT_GAME_VERSION
 import com.prissma.launcher.engine.java.supportedVersions
 import com.prissma.launcher.engine.java.supportsFabric
+import com.prissma.launcher.engine.java.validCatalogVersion
 import com.prissma.launcher.ui.components.LauncherButton
 import com.prissma.launcher.ui.components.gamepadClick
 import com.prissma.launcher.ui.theme.Prissma
@@ -30,7 +31,7 @@ internal fun InstanceEditor(
     var version by rememberSaveable(instance?.id) { mutableStateOf(instance?.version ?: DEFAULT_GAME_VERSION) }
     var loader by rememberSaveable(instance?.id) { mutableStateOf(instance?.loader ?: "Vanilla") }
     var showVersions by rememberSaveable { mutableStateOf(false) }
-    val validVersion = version.trim().matches(Regex("[A-Za-z0-9._+-]{1,64}"))
+    val validVersion = if (engine.canLaunch) validCatalogVersion(version) else version.trim().matches(Regex("[A-Za-z0-9._+-]{1,64}"))
     val playable = version in supportedVersions
     AlertDialog(
         onDismissRequest = onDismiss,

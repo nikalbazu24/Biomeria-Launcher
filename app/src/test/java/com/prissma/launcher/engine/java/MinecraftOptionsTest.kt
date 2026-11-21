@@ -50,6 +50,13 @@ class MinecraftOptionsTest {
     }
 
     @Test
+    fun officialHistoricalVersionNamesMayContainSpaces() {
+        assertTrue(validCatalogVersion("3D Shareware v1.34"))
+        assertTrue(validCatalogVersion("1.14.2 Pre-Release 4"))
+        assertFalse(validCatalogVersion("../versions"))
+    }
+
+    @Test
     fun vanillaAsmAndFabricAsmResolveToOneModule() {
         assertEquals(mavenModule("org.ow2.asm:asm:9.6"), mavenModule("org.ow2.asm:asm:9.7.1"))
         assertFalse(mavenModule("org.ow2.asm:asm-tree:9.6") == mavenModule("org.ow2.asm:asm:9.7.1"))

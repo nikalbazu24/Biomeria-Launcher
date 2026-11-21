@@ -23,6 +23,8 @@ internal val experimentalVersions = setOf("1.20.4", "1.20.1")
 internal val supportedVersions =
     (11 downTo 1).map { "1.21.$it" } + listOf("1.21", "1.20.6", "1.20.5") + experimentalVersions
 
+internal fun validCatalogVersion(version: String) = version.trim().matches(Regex("[A-Za-z0-9._+ -]{1,64}"))
+
 internal fun supportsFabric(version: String) = version in supportedVersions && version !in experimentalVersions
 
 internal data class MinecraftCatalogEntry(val version: String, val channel: String) {
