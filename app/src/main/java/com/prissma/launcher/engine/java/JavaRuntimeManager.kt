@@ -26,12 +26,13 @@ class JavaRuntimeManager(private val context: Context) {
     companion object {
         const val DEFAULT_JRE21_URL = "AUTO"
 
+        // Enlace directo verificado de OpenJDK 21 ARM64 para Android (39.4 MB)
+        private const val DIRECT_JRE21_ARM64_URL =
+            "https://github.com/QuestCraftPlusPlus/android-openjdk-build-multiarch/releases/download/jre22-6.0.0/JRE-21.zip"
+
         private val GITHUB_RELEASE_REPOS = listOf(
-            "PojavLauncherTeam/android-openjdk-build-multiarch",
-            "AngelAuraMC/android-openjdk-build-multiarch",
-            "ZalithLauncher/ZalithLauncher",
-            "FCL-Team/FoldCraftLauncher",
-            "QuestCraftPlusPlus/android-openjdk-build-multiarch"
+            "QuestCraftPlusPlus/android-openjdk-build-multiarch",
+            "PojavLauncherTeam/android-openjdk-build-multiarch"
         )
     }
 
@@ -61,13 +62,11 @@ class JavaRuntimeManager(private val context: Context) {
     }
 
     /**
-     * Busca un paquete JRE/JDK 21 ARM64 en los últimos 100 releases de cada repositorio.
+     * Respaldo vía API de GitHub si el enlace directo dejara de estar disponible.
      */
-    private fun resolveLatestJre21AssetUrl(): Pair<String, String> {
-        var lastHttpError: Int? = null
-
+    private fun resolveFallbackJre21AssetUrl(): Pair<String, String> {
         for (repo in GITHUB_RELEASE_REPOS) {
-            val apiUrl = "https://api.github.com/repos/$repo/releases?per_page=100"
+            val apiUrl = "https://api.github.com/repos/$repo/releases?per_page=30"
             val conn = (URL(apiUrl).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 15_000
@@ -76,18 +75,12 @@ class JavaRuntimeManager(private val context: Context) {
                 setRequestProperty("User-Agent", "PRISSMA-Launcher/1.0")
             }
             try {
-                val code = conn.responseCode
-                if (code !in 200..299) {
-                    lastHttpError = code
-                    continue
-                }
+                if (conn.responseCode !in 200..299) continue
                 val body = conn.inputStream.bufferedReader().use { it.readText() }
                 val releases = JSONArray(body)
 
                 for (i in 0 until releases.length()) {
                     val release = releases.getJSONObject(i)
-                    val tag = release.optString("tag_name", "").lowercase()
-                    val releaseName = release.optString("name", "").lowercase()
                     val assets = release.optJSONArray("assets") ?: continue
 
                     for (j in 0 until assets.length()) {
@@ -96,49 +89,26 @@ class JavaRuntimeManager(private val context: Context) {
                         val lower = name.lowercase()
                         val downloadUrl = asset.optString("browser_download_url", "")
 
-                        val isArchive = lower.endsWith(".tar.xz") ||
-                            lower.endsWith(".zip") ||
+                        val isArchive = lower.endsWith(".zip") ||
+                            lower.endsWith(".tar.xz") ||
                             lower.endsWith(".tar.gz")
                         if (!isArchive || downloadUrl.isBlank()) continue
 
-                        val isArm64 = lower.contains("arm64") || lower.contains("aarch64")
-                        if (!isArm64) continue
+                        val isJre21Name = lower == "jre-21.zip" ||
+                            (lower.contains("21") && (lower.contains("arm64") || lower.contains("aarch64")))
 
-                        val isOlderJava = lower.contains("jre17") ||
-                            lower.contains("jre-17") ||
-                            lower.contains("jdk17") ||
-                            lower.contains("jdk-17") ||
-                            lower.contains("jre8") ||
-                            lower.contains("jre-8") ||
-                            lower.contains("jdk8") ||
-                            lower.contains("jre11")
-                        if (isOlderJava) continue
-
-                        val combined = "$tag $releaseName $lower"
-                        val isJre21 = lower.contains("21") ||
-                            combined.contains("jre21") ||
-                            combined.contains("jre-21") ||
-                            combined.contains("jdk21") ||
-                            combined.contains("jdk-21") ||
-                            combined.contains("java21") ||
-                            combined.contains("java-21")
-
-                        if (isJre21) {
+                        if (isJre21Name) {
                             return name to downloadUrl
                         }
                     }
                 }
             } catch (_: Exception) {
-                // Continúa con el siguiente repositorio
+                // Intenta con el siguiente repositorio
             } finally {
                 conn.disconnect()
             }
         }
-
-        if (lastHttpError == 403) {
-            error("GitHub limitó temporalmente las consultas (HTTP 403). Espera unos minutos o usa Importar .zip.")
-        }
-        error("No se encontró un paquete JRE 21 ARM64 disponible (último HTTP: ${lastHttpError ?: "ninguno"}).")
+        error("No se encontró un paquete JRE 21 ARM64 disponible en GitHub.")
     }
 
     suspend fun installFromUrl(
@@ -147,35 +117,53 @@ class JavaRuntimeManager(private val context: Context) {
     ): Result<InstalledJavaRuntime> = withContext(Dispatchers.IO) {
         runCatching {
             val (fileName, finalUrl) = if (downloadUrl == DEFAULT_JRE21_URL) {
-                onProgress(0.05f, "Buscando última versión de JRE 21 ARM64 en GitHub...")
-                resolveLatestJre21AssetUrl()
+                onProgress(0.05f, "Conectando para descargar JRE 21 ARM64...")
+                "JRE-21.zip" to DIRECT_JRE21_ARM64_URL
             } else {
                 downloadUrl.substringAfterLast('/') to downloadUrl.trim()
             }
 
-            onProgress(0.10f, "Descargando $fileName...")
-            val conn = (URL(finalUrl).openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                instanceFollowRedirects = true
-                connectTimeout = 20_000
-                readTimeout = 60_000
-                setRequestProperty("User-Agent", "PRISSMA-Launcher/1.0")
-            }
-
             try {
-                if (conn.responseCode !in 200..299) {
-                    error("Error al descargar JRE 21 (HTTP ${conn.responseCode}).")
+                downloadAndExtract(fileName, finalUrl, onProgress)
+            } catch (e: Exception) {
+                if (downloadUrl == DEFAULT_JRE21_URL) {
+                    onProgress(0.08f, "Buscando espejo alternativo de JRE 21 en GitHub...")
+                    val (fbName, fbUrl) = resolveFallbackJre21AssetUrl()
+                    downloadAndExtract(fbName, fbUrl, onProgress)
+                } else {
+                    throw e
                 }
-                val totalBytes = conn.contentLengthLong
-                conn.inputStream.use { rawIn ->
-                    extractArchiveSafely(rawIn, fileName, totalBytes, onProgress)
-                }
-            } finally {
-                conn.disconnect()
             }
 
             getInstalledRuntime()
                 ?: error("El paquete descargado no contiene libjvm.so para ARM64.")
+        }
+    }
+
+    private fun downloadAndExtract(
+        fileName: String,
+        finalUrl: String,
+        onProgress: (Float, String) -> Unit
+    ) {
+        onProgress(0.10f, "Descargando $fileName...")
+        val conn = (URL(finalUrl).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            instanceFollowRedirects = true
+            connectTimeout = 20_000
+            readTimeout = 60_000
+            setRequestProperty("User-Agent", "PRISSMA-Launcher/1.0")
+        }
+
+        try {
+            if (conn.responseCode !in 200..299) {
+                error("Error al descargar JRE 21 (HTTP ${conn.responseCode}).")
+            }
+            val totalBytes = conn.contentLengthLong
+            conn.inputStream.use { rawIn ->
+                extractArchiveSafely(rawIn, fileName, totalBytes, onProgress)
+            }
+        } finally {
+            conn.disconnect()
         }
     }
 
