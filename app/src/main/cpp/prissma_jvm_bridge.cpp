@@ -16,6 +16,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <utility>
 #include <deque>
 #include <mutex>
 #include <sstream>
@@ -208,11 +209,19 @@ namespace {
         optionStrings.push_back("-Djava.io.tmpdir=" + cfg->cacheDir);
         optionStrings.push_back("-Djna.tmpdir=" + cfg->cacheDir);
         const std::string classpath = cfg->classpath + ":";
-        if (classpath.find("/jna-5.15.0.jar:") != std::string::npos) {
+        const std::pair<const char*, const char*> jnaVariants[] = {
+            {"5.12.1", "jnidispatch_5_12_1"}, {"5.13.0", "jnidispatch_5_13_0"},
+            {"5.14.0", "jnidispatch_5_14_0"}, {"5.15.0", "jnidispatch"}, {"5.17.0", "jnidispatch_5_17_0"}
+        };
+        for (const auto& variant : jnaVariants) {
+            if (classpath.find(std::string("/jna-") + variant.first + ".jar:") == std::string::npos)
+                continue;
             optionStrings.push_back("-Djna.boot.library.path=" + cfg->nativeLibraryDir);
+            optionStrings.push_back(std::string("-Djna.boot.library.name=") + variant.second);
             optionStrings.push_back("-Djna.nosys=true");
             optionStrings.push_back("-Djna.noclasspath=true");
-            pushLogLine("[PRISSMA] JNA 5.15.0 configurada con libjnidispatch de Android ARM64.");
+            pushLogLine(std::string("[PRISSMA] JNA ") + variant.first + " para Android ARM64.");
+            break;
         }
         pushLogLine("[PRISSMA] Directorio temporal de Java: " + cfg->cacheDir);
         optionStrings.push_back("-Djna.debug_load.jna=true");
@@ -435,6 +444,11 @@ Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativeHasPresentedFrame(
     JNIEnv* /* env */, jobject /* thiz */
 ) {
     return prissmaGlfwHasPresentedFrame() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativePresentedFrames(JNIEnv*, jobject) {
+    return prissmaGlfwPresentedFrames();
 }
 
 JNIEXPORT jint JNICALL

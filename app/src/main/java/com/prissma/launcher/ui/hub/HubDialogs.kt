@@ -11,9 +11,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.prissma.launcher.data.EngineType
 import com.prissma.launcher.data.GameInstance
-import com.prissma.launcher.data.SavedProfile
 import com.prissma.launcher.engine.java.DEFAULT_GAME_VERSION
 import com.prissma.launcher.engine.java.supportedVersions
+import com.prissma.launcher.engine.java.supportsFabric
 import com.prissma.launcher.ui.components.LauncherButton
 import com.prissma.launcher.ui.components.gamepadClick
 import com.prissma.launcher.ui.theme.Prissma
@@ -29,8 +29,9 @@ internal fun InstanceEditor(
     var engine by rememberSaveable(instance?.id) { mutableStateOf(instance?.engine ?: EngineType.JAVA) }
     var version by rememberSaveable(instance?.id) { mutableStateOf(instance?.version ?: DEFAULT_GAME_VERSION) }
     var loader by rememberSaveable(instance?.id) { mutableStateOf(instance?.loader ?: "Vanilla") }
-    val validVersion = if (engine.canLaunch) version in supportedVersions
-        else version.trim().matches(Regex("[A-Za-z0-9._+-]{1,64}"))
+    var showVersions by rememberSaveable { mutableStateOf(false) }
+    val validVersion = version.trim().matches(Regex("[A-Za-z0-9._+-]{1,64}"))
+    val playable = version in supportedVersions
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (instance == null) "Nueva instancia" else "Gestionar instancia") },
@@ -52,13 +53,9 @@ internal fun InstanceEditor(
                     }
                     if (engine.canLaunch) {
                         Text("Versión de Minecraft", style = MaterialTheme.typography.titleSmall)
-                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            supportedVersions.forEach { game ->
-                                val choose = { version = game }
-                                FilterChip(version == game, choose, { Text(game) },
-                                    modifier = Modifier.gamepadClick(onClick = choose))
-                            }
-                        }
+                        LauncherButton(version + " · Cambiar", { showVersions = true })
+                        if (!playable) Text("Puedes guardar la instancia. Esta versión requiere otro runtime o renderizador.",
+                            color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
                     } else OutlinedTextField(version, { version = it.take(64) }, modifier = Modifier.fillMaxWidth(),
                         label = { Text("Versión del juego") }, singleLine = true)
                 } else {
@@ -67,10 +64,11 @@ internal fun InstanceEditor(
                         Text("Quitar de la biblioteca", color = Prissma.colors.error)
                     }
                 }
-                if (engine.canLaunch) {
+                if (engine.canLaunch && playable) {
                     Text("Cargador", style = MaterialTheme.typography.titleSmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        listOf("Vanilla", "Fabric").forEach { choice ->
+                        val loaders = if (supportsFabric(version)) listOf("Vanilla", "Fabric") else listOf("Vanilla")
+                        loaders.forEach { choice ->
                             val select = { loader = choice }
                             FilterChip(loader.substringBefore(' ') == choice, select, { Text(choice) },
                                 modifier = Modifier.gamepadClick(onClick = select))
@@ -83,37 +81,16 @@ internal fun InstanceEditor(
         },
         confirmButton = {
             LauncherButton(if (instance == null) "Crear" else "Guardar",
-                { onSave(name.trim(), engine, version.trim(), if (engine.canLaunch) loader else engine.defaultLoader) },
+                { onSave(name.trim(), engine, version.trim(), if (engine.canLaunch && playable) loader else engine.defaultLoader) },
                 enabled = name.isNotBlank() && (instance != null || validVersion), primary = true)
         },
         dismissButton = { LauncherButton("Cancelar", onDismiss) }
     )
-}
-
-@Composable
-internal fun ProfileDialog(profile: SavedProfile, onDismiss: () -> Unit, onSave: (SavedProfile) -> Unit) {
-    var name by rememberSaveable { mutableStateOf(profile.playerName) }
-    var type by rememberSaveable { mutableStateOf(profile.accountType) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Perfil de juego") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(name, { name = it.take(32) }, label = { Text("Nombre de jugador") }, singleLine = true)
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("Offline", "Ely.by", "Microsoft").forEach {
-                        val select = { type = it }
-                        FilterChip(type == it, select, { Text(it) }, modifier = Modifier.gamepadClick(onClick = select))
-                    }
-                }
-                Text("El perfil se guarda en este dispositivo. Los servicios externos requieren su propio inicio de sesión.",
-                    color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
-            }
-        },
-        confirmButton = { LauncherButton("Guardar", { onSave(SavedProfile(name.trim(), type)) },
-            primary = true, enabled = name.isNotBlank()) },
-        dismissButton = { LauncherButton("Cancelar", onDismiss) }
-    )
+    if (showVersions) MinecraftVersionPicker({ showVersions = false }) { selected ->
+        version = selected.version
+        if (!supportsFabric(selected.version)) loader = "Vanilla"
+        showVersions = false
+    }
 }
 
 @Composable

@@ -12,7 +12,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
@@ -39,6 +38,7 @@ import com.prissma.launcher.data.LibraryPreferences
 import com.prissma.launcher.data.UpdateInfo
 import com.prissma.launcher.engine.java.GameDownloads
 import com.prissma.launcher.engine.java.MojangDownloader
+import com.prissma.launcher.engine.java.supportedVersions
 import com.prissma.launcher.ui.components.ControlShape
 import com.prissma.launcher.ui.components.LauncherButton
 import com.prissma.launcher.ui.components.PrissmaMark
@@ -50,6 +50,7 @@ import com.prissma.launcher.ui.workshop.ContentWorkshopScreen
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 
 private enum class HubPage(val label: String, val icon: ImageVector) {
     LIBRARY("Biblioteca", Icons.Default.Home),
@@ -86,6 +87,7 @@ fun HubScreen(
     var page by rememberSaveable { mutableStateOf(HubPage.LIBRARY) }
 
     var showAccount by rememberSaveable { mutableStateOf(false) }
+    var savingProfile by remember { mutableStateOf(false) }
     var showNew by rememberSaveable { mutableStateOf(false) }
     var editingId by rememberSaveable { mutableStateOf<String?>(null) }
     var deleteId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -159,7 +161,7 @@ fun HubScreen(
     }
 
     instances.firstOrNull { it.id == launchingId }?.let {
-        JavaLaunchScreen(it, profile.playerName, profile.accountType, onBack = { launchingId = null })
+        JavaLaunchScreen(it, profile.playerName, profile.accountType, profile.language, onBack = { launchingId = null })
         return
     }
 
@@ -178,7 +180,8 @@ fun HubScreen(
         HubFrame(
             page = page,
             onPage = { page = it },
-            playerName = profile.playerName,
+            playerName = profile.label,
+            playerAvatar = storage.profileAvatar(profile),
             updateAvailable = update != null,
             onProfile = { showAccount = true },
             modifier = Modifier.fillMaxSize().padding(padding).onPreviewKeyEvent { event ->
@@ -245,16 +248,20 @@ fun HubScreen(
         installedNotes?.let { ReleaseNotesDialog(version, it, ::acknowledgeReleaseNotes) }
     }
 
-    if (showAccount) ProfileDialog(profile, onDismiss = { showAccount = false }) { updated ->
-        runCatching { storage.saveProfile(updated.playerName, updated.accountType) }
-            .onSuccess { profile = updated; showAccount = false }
-            .onFailure { notify("No se pudo guardar el perfil.") }
+    if (showAccount) ProfileDialog(profile, storage.profileAvatar(profile), { showAccount = false }, savingProfile) { updated, photo ->
+        savingProfile = true
+        scope.launch {
+            runCatching { withContext(Dispatchers.IO) { storage.saveProfile(updated, photo) } }
+                .onSuccess { profile = it; showAccount = false }
+                .onFailure { notify(it.message ?: "No se pudo guardar el perfil.") }
+            savingProfile = false
+        }
     }
 
     if (showNew) InstanceEditor(onDismiss = { showNew = false }) { title, engine, gameVersion, loader ->
         val item = GameInstance(title = title, engine = engine, version = gameVersion, loader = loader)
         if (saveCatalog(listOf(item) + instances)) {
-            if (item.engine.canLaunch) downloads.game(item)
+            if (item.engine.canLaunch && item.version in supportedVersions) downloads.game(item)
             selectedId = item.id
             filter = null
             query = ""
@@ -272,7 +279,7 @@ fun HubScreen(
         ) { title, _, _, loader ->
             val edited = item.copy(title = title, loader = loader)
             if (saveCatalog(instances.map { if (it.id == item.id) edited else it })) {
-                if (edited.engine.canLaunch && edited.loader != item.loader) downloads.game(edited)
+                if (edited.engine.canLaunch && edited.version in supportedVersions && edited.loader != item.loader) downloads.game(edited)
                 editingId = null
                 query = ""
             }
@@ -298,6 +305,7 @@ private fun HubFrame(
     page: HubPage,
     onPage: (HubPage) -> Unit,
     playerName: String,
+    playerAvatar: File?,
     updateAvailable: Boolean,
     onProfile: () -> Unit,
     modifier: Modifier,
@@ -322,8 +330,12 @@ private fun HubFrame(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(page.label, Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall,
                         maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold)
-                    LauncherButton(playerName.take(24), onProfile, Modifier.widthIn(max = 158.dp),
-                        icon = Icons.Default.Person)
+                    OutlinedButton(onProfile, Modifier.widthIn(max = 170.dp).gamepadClick(onClick = onProfile),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp)) {
+                        ProfileAvatar(playerName, playerAvatar, Modifier.size(25.dp))
+                        Spacer(Modifier.width(7.dp))
+                        Text(playerName, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                 }
                 Box(Modifier.fillMaxWidth().weight(1f)) { content() }
             }

@@ -14,13 +14,21 @@ plugins {
 val buildVersionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
 val buildVersionName = (project.findProperty("versionName") as String?) ?: "1.0.0-beta.1"
 
-val jnaAndroid by configurations.creating
+val jnaAndroidVersions = listOf("5.12.1", "5.13.0", "5.14.0", "5.15.0", "5.17.0")
+val jnaAndroid = jnaAndroidVersions.associateWith { version ->
+    configurations.create("jnaAndroid" + version.replace(".", ""))
+}
 val jnaJniLibs = layout.buildDirectory.dir("generated/jna/jniLibs")
 val unpackJnaAndroid by tasks.registering(Sync::class) {
-    from({ zipTree(jnaAndroid.singleFile) }) {
-        include("jni/arm64-v8a/libjnidispatch.so")
-        eachFile { path = path.removePrefix("jni/") }
-        includeEmptyDirs = false
+    jnaAndroid.forEach { (version, archive) ->
+        from({ zipTree(archive.singleFile) }) {
+            include("jni/arm64-v8a/libjnidispatch.so")
+            eachFile {
+                path = if (version == "5.15.0") "arm64-v8a/libjnidispatch.so"
+                else "arm64-v8a/libjnidispatch_" + version.replace('.', '_') + ".so"
+            }
+            includeEmptyDirs = false
+        }
     }
     into(jnaJniLibs)
 }
@@ -215,7 +223,7 @@ android {
 }
 
 dependencies {
-    jnaAndroid("net.java.dev.jna:jna:5.15.0@aar")
+    jnaAndroid.forEach { (version, archive) -> add(archive.name, "net.java.dev.jna:jna:$version@aar") }
     lwjglAnnotations("com.google.code.findbugs:jsr305:3.0.2")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.9.3")

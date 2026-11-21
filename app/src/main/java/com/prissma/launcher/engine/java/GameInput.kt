@@ -13,15 +13,27 @@ internal enum class GameInputEvent(val nativeId: Int) {
     POINTER(0), RELATIVE_POINTER(1), MOUSE_BUTTON(2), KEY(3), SCROLL(4), RESET(5)
 }
 
-private enum class GamepadAction(val event: GameInputEvent, val code: Int) {
-    ATTACK(GameInputEvent.MOUSE_BUTTON, 0),
-    USE(GameInputEvent.MOUSE_BUTTON, 1),
-    JUMP(GameInputEvent.KEY, 32),
-    SNEAK(GameInputEvent.KEY, 340),
-    SPRINT(GameInputEvent.KEY, 341),
-    ESCAPE(GameInputEvent.KEY, 256),
-    INVENTORY(GameInputEvent.KEY, 69),
-    SWAP_HANDS(GameInputEvent.KEY, 70),
+internal enum class GamepadAction(val event: GameInputEvent, val code: Int, val label: String = "") {
+    ATTACK(GameInputEvent.MOUSE_BUTTON, 0, "Atacar"),
+    USE(GameInputEvent.MOUSE_BUTTON, 1, "Usar objeto"),
+    JUMP(GameInputEvent.KEY, 32, "Saltar"),
+    SNEAK(GameInputEvent.KEY, 340, "Agacharse"),
+    SPRINT(GameInputEvent.KEY, 341, "Correr"),
+    ESCAPE(GameInputEvent.KEY, 256, "Abrir pausa"),
+    INVENTORY(GameInputEvent.KEY, 69, "Abrir inventario"),
+    SWAP_HANDS(GameInputEvent.KEY, 70, "Intercambiar manos"),
+    DROP(GameInputEvent.KEY, 81, "Soltar objeto"),
+    PREVIOUS_SLOT(GameInputEvent.SCROLL, 1, "Casilla anterior"),
+    NEXT_SLOT(GameInputEvent.SCROLL, -1, "Casilla siguiente"),
+    SLOT_1(GameInputEvent.KEY, 49, "Casilla 1"),
+    SLOT_2(GameInputEvent.KEY, 50, "Casilla 2"),
+    SLOT_3(GameInputEvent.KEY, 51, "Casilla 3"),
+    SLOT_4(GameInputEvent.KEY, 52, "Casilla 4"),
+    SLOT_5(GameInputEvent.KEY, 53, "Casilla 5"),
+    SLOT_6(GameInputEvent.KEY, 54, "Casilla 6"),
+    SLOT_7(GameInputEvent.KEY, 55, "Casilla 7"),
+    SLOT_8(GameInputEvent.KEY, 56, "Casilla 8"),
+    SLOT_9(GameInputEvent.KEY, 57, "Casilla 9"),
     WALK_LEFT(GameInputEvent.KEY, 65),
     WALK_RIGHT(GameInputEvent.KEY, 68),
     WALK_FORWARD(GameInputEvent.KEY, 87),
@@ -29,12 +41,14 @@ private enum class GamepadAction(val event: GameInputEvent, val code: Int) {
     ARROW_LEFT(GameInputEvent.KEY, 263),
     ARROW_RIGHT(GameInputEvent.KEY, 262),
     ARROW_UP(GameInputEvent.KEY, 265),
-    ARROW_DOWN(GameInputEvent.KEY, 264),
-    PREVIOUS_SLOT(GameInputEvent.SCROLL, 1),
-    NEXT_SLOT(GameInputEvent.SCROLL, -1)
+    ARROW_DOWN(GameInputEvent.KEY, 264);
+
+    val bindable: Boolean get() = label.isNotEmpty()
 }
 
 internal class GameInput(
+    private val bindings: Map<Int, GamepadAction> = emptyMap(),
+    private val scrollScale: Double = 1.0,
     private val emit: (GameInputEvent, Int, Int, Double, Double) -> Unit = { event, code, action, x, y ->
         NativeJavaBridge.nativeInput(event.nativeId, code, action, x, y)
     }
@@ -115,7 +129,7 @@ internal class GameInput(
                 if (active >= 0) {
                     val x = event.getX(active)
                     val y = event.getY(active)
-                    if (captured) relative((x - touchX).toDouble(), (y - touchY).toDouble())
+                    if (captured) relative((x - touchX) * width.toDouble() / viewWidth, (y - touchY) * height.toDouble() / viewHeight)
                     else movePointer(x * width.toDouble() / viewWidth, y * height.toDouble() / viewHeight)
                     touchX = x
                     touchY = y
@@ -207,8 +221,10 @@ internal class GameInput(
             setAnalogAction(GamepadAction.WALK_FORWARD, moveY < -.35f || hatY < -.5f)
             setAnalogAction(GamepadAction.WALK_BACK, moveY > .35f || hatY > .5f)
         }
-        setAnalogAction(GamepadAction.ATTACK, attack)
-        setAnalogAction(GamepadAction.USE, use)
+        val attackAction = gamepadAction(KeyEvent.KEYCODE_BUTTON_R2) ?: GamepadAction.ATTACK
+        val useAction = gamepadAction(KeyEvent.KEYCODE_BUTTON_L2) ?: GamepadAction.USE
+        setAnalogAction(attackAction, attack || (attackAction == useAction && use))
+        if (useAction != attackAction) setAnalogAction(useAction, use)
     }
 
     fun tick() {
@@ -247,33 +263,35 @@ internal class GameInput(
         if (down) {
             if (gamepadButtons.putIfAbsent(code, mapping) != null) return true
             gamepadUsed = true
-            if (mapping.event == GameInputEvent.SCROLL) send(GameInputEvent.SCROLL, y = mapping.code.toDouble())
-            else updateGamepadAction(mapping)
+            updateGamepadAction(mapping)
         } else {
             val held = gamepadButtons.remove(code)
-            if (held != null && held.event != GameInputEvent.SCROLL) updateGamepadAction(held)
+            if (held != null) updateGamepadAction(held)
         }
         return true
     }
 
-    private fun gamepadAction(code: Int): GamepadAction? = when (code) {
-        KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_DPAD_CENTER ->
-            if (captured) GamepadAction.JUMP else GamepadAction.ATTACK
-        KeyEvent.KEYCODE_BUTTON_B -> if (captured) GamepadAction.SNEAK else GamepadAction.ESCAPE
-        KeyEvent.KEYCODE_BUTTON_START -> GamepadAction.ESCAPE
-        KeyEvent.KEYCODE_BUTTON_X -> if (captured) GamepadAction.INVENTORY else GamepadAction.ATTACK
-        KeyEvent.KEYCODE_BUTTON_Y -> GamepadAction.SWAP_HANDS
-        KeyEvent.KEYCODE_BUTTON_L1 -> GamepadAction.PREVIOUS_SLOT.takeIf { captured }
-        KeyEvent.KEYCODE_BUTTON_R1 -> GamepadAction.NEXT_SLOT.takeIf { captured }
-        KeyEvent.KEYCODE_BUTTON_L2 -> GamepadAction.USE
-        KeyEvent.KEYCODE_BUTTON_R2 -> GamepadAction.ATTACK
-        KeyEvent.KEYCODE_BUTTON_THUMBL -> GamepadAction.SPRINT
-        KeyEvent.KEYCODE_BUTTON_THUMBR -> GamepadAction.SNEAK
-        KeyEvent.KEYCODE_DPAD_UP -> if (captured) GamepadAction.WALK_FORWARD else GamepadAction.ARROW_UP
-        KeyEvent.KEYCODE_DPAD_DOWN -> if (captured) GamepadAction.WALK_BACK else GamepadAction.ARROW_DOWN
-        KeyEvent.KEYCODE_DPAD_LEFT -> if (captured) GamepadAction.WALK_LEFT else GamepadAction.ARROW_LEFT
-        KeyEvent.KEYCODE_DPAD_RIGHT -> if (captured) GamepadAction.WALK_RIGHT else GamepadAction.ARROW_RIGHT
-        else -> null
+    private fun gamepadAction(code: Int): GamepadAction? {
+        if (captured && code in defaultGamepadActions) return bindings[code] ?: defaultGamepadActions.getValue(code)
+        return when (code) {
+            KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_DPAD_CENTER ->
+                if (captured) GamepadAction.JUMP else GamepadAction.ATTACK
+            KeyEvent.KEYCODE_BUTTON_B -> if (captured) GamepadAction.SNEAK else GamepadAction.ESCAPE
+            KeyEvent.KEYCODE_BUTTON_START -> GamepadAction.ESCAPE
+            KeyEvent.KEYCODE_BUTTON_X -> if (captured) GamepadAction.INVENTORY else GamepadAction.ATTACK
+            KeyEvent.KEYCODE_BUTTON_Y -> GamepadAction.SWAP_HANDS
+            KeyEvent.KEYCODE_BUTTON_L1 -> GamepadAction.PREVIOUS_SLOT.takeIf { captured }
+            KeyEvent.KEYCODE_BUTTON_R1 -> GamepadAction.NEXT_SLOT.takeIf { captured }
+            KeyEvent.KEYCODE_BUTTON_L2 -> GamepadAction.USE
+            KeyEvent.KEYCODE_BUTTON_R2 -> GamepadAction.ATTACK
+            KeyEvent.KEYCODE_BUTTON_THUMBL -> GamepadAction.SPRINT
+            KeyEvent.KEYCODE_BUTTON_THUMBR -> GamepadAction.SNEAK
+            KeyEvent.KEYCODE_DPAD_UP -> if (captured) GamepadAction.WALK_FORWARD else GamepadAction.ARROW_UP
+            KeyEvent.KEYCODE_DPAD_DOWN -> if (captured) GamepadAction.WALK_BACK else GamepadAction.ARROW_DOWN
+            KeyEvent.KEYCODE_DPAD_LEFT -> if (captured) GamepadAction.WALK_LEFT else GamepadAction.ARROW_LEFT
+            KeyEvent.KEYCODE_DPAD_RIGHT -> if (captured) GamepadAction.WALK_RIGHT else GamepadAction.ARROW_RIGHT
+            else -> null
+        }
     }
 
     private fun setAnalogAction(action: GamepadAction, pressed: Boolean) {
@@ -285,7 +303,19 @@ internal class GameInput(
         // Some controllers report one press both as an axis and as an Android key.
         val pressed = action in analogActions || action in gamepadButtons.values
         val changed = if (pressed) activeGamepadActions.add(action) else activeGamepadActions.remove(action)
-        if (changed) send(action.event, action.code, if (pressed) 1 else 0)
+        if (!changed) return
+        if (action.event == GameInputEvent.SCROLL) {
+            if (pressed) send(GameInputEvent.SCROLL, y = action.code * scrollScale)
+        } else {
+            send(action.event, action.code, if (pressed) 1 else 0)
+        }
+    }
+
+    fun selectHotbarSlot(slot: Int) {
+        if (!captured || slot !in 1..9) return
+        val hotbarKey = 48 + slot
+        key(hotbarKey, true)
+        key(hotbarKey, false)
     }
 
     fun key(key: Int, down: Boolean) {

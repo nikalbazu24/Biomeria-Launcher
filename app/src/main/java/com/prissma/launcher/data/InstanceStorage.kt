@@ -1,6 +1,10 @@
 package com.prissma.launcher.data
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.AtomicFile
+import java.util.UUID
 import android.net.Uri
 import org.json.JSONArray
 import org.json.JSONObject
@@ -9,8 +13,15 @@ import java.util.Locale
 
 data class SavedProfile(
     val playerName: String,
-    val accountType: String
-)
+    val accountType: String,
+    val displayName: String = "",
+    val bio: String = "",
+    val playStyle: String = "",
+    val language: String = "",
+    val avatar: String? = null
+) {
+    val label: String get() = displayName.ifBlank { playerName }
+}
 
 class InstanceStorage(private val context: Context) {
 
@@ -30,17 +41,73 @@ class InstanceStorage(private val context: Context) {
             val obj = JSONObject(profileFile.readText(Charsets.UTF_8))
             SavedProfile(
                 playerName = obj.optString("playerName", "Jugador_Local"),
-                accountType = obj.optString("accountType", "Offline")
+                accountType = obj.optString("accountType", "Offline"),
+                displayName = obj.optString("displayName"),
+                bio = obj.optString("bio"),
+                playStyle = obj.optString("playStyle"),
+                language = obj.optString("language"),
+                avatar = obj.optString("avatar").takeIf(avatarName::matches)
             )
         }.getOrDefault(SavedProfile(playerName = "Jugador_Local", accountType = "Offline"))
     }
 
-    fun saveProfile(playerName: String, accountType: String) {
+    private val avatarName = Regex("avatar-[a-f0-9-]{36}\\.jpg")
+
+    fun profileAvatar(profile: SavedProfile): File? =
+        profile.avatar?.takeIf(avatarName::matches)?.let { File(context.filesDir, it) }?.takeIf { it.isFile }
+
+    fun saveProfile(profile: SavedProfile, photo: Uri? = null): SavedProfile {
+        val previous = loadProfile()
+        val imported = photo?.let(::copyProfilePhoto)
+        val saved = if (imported == null) profile else profile.copy(avatar = imported.name)
         val obj = JSONObject().apply {
-            put("playerName", playerName)
-            put("accountType", accountType)
+            put("playerName", saved.playerName)
+            put("accountType", saved.accountType)
+            put("displayName", saved.displayName)
+            put("bio", saved.bio)
+            put("playStyle", saved.playStyle)
+            put("language", saved.language)
+            put("avatar", saved.avatar.orEmpty())
         }
-        profileFile.writeText(obj.toString(2), Charsets.UTF_8)
+        val atomic = AtomicFile(profileFile)
+        try {
+            val output = atomic.startWrite()
+            try {
+                output.write(obj.toString(2).toByteArray(Charsets.UTF_8))
+                atomic.finishWrite(output)
+            } catch (failure: Exception) {
+                atomic.failWrite(output)
+                throw failure
+            }
+        } catch (failure: Exception) {
+            imported?.delete()
+            throw failure
+        }
+        if (previous.avatar != saved.avatar) profileAvatar(previous)?.delete()
+        return saved
+    }
+
+    private fun copyProfilePhoto(uri: Uri): File {
+        val resolver = context.contentResolver
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+        val side = maxOf(options.outWidth, options.outHeight)
+        require(side > 0) { "No se pudo leer la foto elegida." }
+        var sample = 1
+        while (side / sample > 512) sample *= 2
+        val bitmap = resolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
+        } ?: error("No se pudo abrir la foto elegida.")
+        val file = File(context.filesDir, "avatar-" + UUID.randomUUID() + ".jpg")
+        try {
+            file.outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.JPEG, 88, it)) }
+            return file
+        } catch (failure: Exception) {
+            file.delete()
+            throw failure
+        } finally {
+            bitmap.recycle()
+        }
     }
 
     fun loadInstances(): List<GameInstance> {

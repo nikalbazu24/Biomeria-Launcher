@@ -23,6 +23,8 @@ object NativeJavaBridge {
 
     external fun nativeHasPresentedFrame(): Boolean
 
+    external fun nativePresentedFrames(): Long
+
     external fun nativeLaunchJvm(
         libJvmPath: String,
         javaHomePath: String,

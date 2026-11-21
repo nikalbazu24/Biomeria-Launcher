@@ -1,6 +1,8 @@
 package com.prissma.launcher.engine.java
 
+import android.content.Intent
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.KeyEvent as AndroidKeyEvent
 import android.view.MotionEvent
 import android.view.SurfaceHolder
@@ -20,13 +22,16 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
@@ -42,11 +47,13 @@ import com.prissma.launcher.ui.components.LauncherButton
 import com.prissma.launcher.ui.components.PanelShape
 import com.prissma.launcher.ui.theme.Prissma
 import com.prissma.launcher.ui.theme.PrissmaTheme
+import com.prissma.launcher.ui.launch.GameHudControls
 import kotlinx.coroutines.delay
 import kotlin.system.exitProcess
+import kotlin.math.roundToInt
 
 class JavaGameActivity : ComponentActivity() {
-    private val gameInput = GameInput()
+    private lateinit var gameInput: GameInput
     private var controlsActive = false
     private var togglePanel: (() -> Unit)? = null
 
@@ -80,6 +87,11 @@ class JavaGameActivity : ComponentActivity() {
         val libJvmPath = intent.getStringExtra("LIBJVM_PATH") ?: ""
         val javaHomePath = intent.getStringExtra("JAVA_HOME_PATH") ?: ""
         val useVulkanZink = intent.getBooleanExtra("USE_VULKAN_ZINK", true)
+        val hud = GameHudSettings.fromBundle(intent.getBundleExtra("GAME_HUD"))
+        gameInput = GameInput(
+            decodeGamepadActions(intent.getStringExtra("GAMEPAD_BINDINGS").orEmpty()),
+            intent.getDoubleExtra("HOTBAR_SCROLL_SCALE", 1.0)
+        )
 
         setContent {
             PrissmaTheme {
@@ -94,6 +106,8 @@ class JavaGameActivity : ComponentActivity() {
                     javaHomePath = javaHomePath,
                     useVulkanZink = useVulkanZink,
                     input = gameInput,
+                    initialHud = hud,
+                    onHudChanged = { setResult(RESULT_OK, Intent().putExtra("GAME_HUD", it.toBundle())) },
                     onControls = { controlsActive = it },
                     onTogglePanel = { togglePanel = it },
                     onExitGame = { finish() }
@@ -123,6 +137,7 @@ class JavaGameActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun JavaNativeViewportScreen(
     instanceTitle: String,
@@ -135,6 +150,8 @@ private fun JavaNativeViewportScreen(
     javaHomePath: String,
     useVulkanZink: Boolean,
     input: GameInput,
+    initialHud: GameHudSettings,
+    onHudChanged: (GameHudSettings) -> Unit,
     onControls: (Boolean) -> Unit,
     onTogglePanel: ((() -> Unit)?) -> Unit,
     onExitGame: () -> Unit
@@ -144,7 +161,9 @@ private fun JavaNativeViewportScreen(
     var showOverlay by remember { mutableStateOf(true) }
     var hasPresentedFrame by remember { mutableStateOf(false) }
     var captured by remember { mutableStateOf(false) }
-    var showTouchControls by remember { mutableStateOf(true) }
+    var hud by remember(initialHud) { mutableStateOf(initialHud) }
+    var showHudDialog by remember { mutableStateOf(false) }
+    var fps by remember { mutableStateOf<Int?>(null) }
     var jvmStarted by remember { mutableStateOf(false) }
     var viewportSize by remember { mutableStateOf("0x0") }
     val logLines = remember { mutableStateListOf<String>() }
@@ -161,7 +180,6 @@ private fun JavaNativeViewportScreen(
         onDispose { onTogglePanel(null) }
     }
     val canSendInput = jvmStarted && !showOverlay
-    val inputEnabled by rememberUpdatedState(canSendInput)
     LaunchedEffect(canSendInput) {
         onControls(canSendInput)
         input.reset()
@@ -171,6 +189,24 @@ private fun JavaNativeViewportScreen(
                 input.setCaptured(captured)
                 input.tick()
                 delay(16L)
+            }
+        }
+    }
+
+    LaunchedEffect(hud.showFps, hasPresentedFrame) {
+        fps = null
+        if (hud.showFps && hasPresentedFrame) {
+            var last = NativeJavaBridge.nativePresentedFrames()
+            var previous = SystemClock.elapsedRealtimeNanos()
+            while (true) {
+                delay(1000L)
+                val current = NativeJavaBridge.nativePresentedFrames()
+                val now = SystemClock.elapsedRealtimeNanos()
+                if (current >= last && now > previous) {
+                    fps = ((current - last) * 1_000_000_000.0 / (now - previous)).roundToInt()
+                }
+                last = current
+                previous = now
             }
         }
     }
@@ -208,8 +244,6 @@ private fun JavaNativeViewportScreen(
                     isFocusable = true
                     isFocusableInTouchMode = true
                     requestFocus()
-
-                    setOnTouchListener { _, event -> inputEnabled && input.touch(event) }
 
                     holder.addCallback(object : SurfaceHolder.Callback {
                         override fun surfaceCreated(holder: SurfaceHolder) {
@@ -262,6 +296,9 @@ private fun JavaNativeViewportScreen(
         )
 
         if (canSendInput) {
+            Box(Modifier.matchParentSize().pointerInteropFilter { event ->
+                input.touch(event)
+            })
             if (!captured && input.gamepadUsed) {
                 Canvas(Modifier.matchParentSize()) {
                     val position = input.menuCursor
@@ -271,12 +308,31 @@ private fun JavaNativeViewportScreen(
                     drawCircle(Color.White, radius = 1.5.dp.toPx(), center = center)
                 }
             }
-            if (captured && showTouchControls && !input.gamepadUsed) {
+            if (captured && hud.showTouch) {
                 TouchControls(input, Modifier.align(Alignment.BottomCenter).fillMaxWidth())
+                Row(
+                    Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.displayCutout)
+                        .padding(bottom = 96.dp),
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    for (slot in 1..9) TouchButton("$slot", "Casilla $slot", Modifier.size(26.dp, 32.dp)) { down ->
+                        if (down) input.selectHotbarSlot(slot)
+                    }
+                }
+            }
+            if (hud.showFps) {
+                Text(
+                    (fps?.toString() ?: "—") + " FPS",
+                    Modifier.align(Alignment.TopStart).windowInsetsPadding(WindowInsets.displayCutout)
+                        .padding(9.dp).background(Color.Black.copy(alpha = .55f), PanelShape)
+                        .padding(horizontal = 9.dp, vertical = 5.dp),
+                    color = Color.White, fontSize = 12.sp, fontFamily = FontFamily.Monospace
+                )
             }
             LauncherButton(
                 "II", { showOverlay = true },
                 modifier = Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.displayCutout).padding(6.dp)
+                    .graphicsLayer { alpha = hud.pauseOpacity }
                     .semantics { contentDescription = "Menú de PRISSMA" }
             )
         }
@@ -322,8 +378,7 @@ private fun JavaNativeViewportScreen(
                             { showOverlay = false }, primary = true)
                     }
                     if (hasPresentedFrame) {
-                        LauncherButton(if (showTouchControls) "Ocultar táctil" else "Mostrar táctil",
-                            { showTouchControls = !showTouchControls })
+                        LauncherButton("HUD", { showHudDialog = true })
                     }
                     LauncherButton(
                         if (showConsole) "Ocultar registro" else "Ver registro",
@@ -368,6 +423,14 @@ private fun JavaNativeViewportScreen(
             }
         }
     }
+    if (showHudDialog) {
+        AlertDialog(
+            onDismissRequest = { showHudDialog = false },
+            title = { Text("HUD de partida") },
+            text = { GameHudControls(hud) { hud = it; onHudChanged(it) } },
+            confirmButton = { LauncherButton("Listo", { showHudDialog = false }, primary = true) }
+        )
+    }
 }
 
 
@@ -400,10 +463,12 @@ private fun TouchControls(input: GameInput, modifier: Modifier) {
 }
 
 @Composable
-private fun TouchButton(label: String, description: String, onHold: (Boolean) -> Unit) {
+private fun TouchButton(
+    label: String, description: String, modifier: Modifier = Modifier.size(51.dp, 39.dp), onHold: (Boolean) -> Unit
+) {
     val action by rememberUpdatedState(onHold)
     Box(
-        Modifier.size(51.dp, 39.dp).background(Color.Black.copy(alpha = .48f), PanelShape)
+        modifier.background(Color.Black.copy(alpha = .48f), PanelShape)
             .border(1.dp, Color.White.copy(alpha = .35f), PanelShape)
             .semantics { contentDescription = description }
             .pointerInput(Unit) {

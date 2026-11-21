@@ -107,6 +107,42 @@ class GameInputTest {
         assertEquals(listOf(mouse(0, 1), Event(GameInputEvent.RESET), key(32, 1), key(32, 0)), events)
     }
 
+    @Test
+    fun aRemappedShoulderAndTouchCanSelectSpecificHotbarSlots() {
+        val mapped = GameInput(mapOf(KeyEvent.KEYCODE_BUTTON_L1 to GamepadAction.SLOT_4)) { type, code, action, x, y ->
+            events.add(Event(type, code, action, x, y))
+        }
+        mapped.selectHotbarSlot(9)
+        assertTrue(events.isEmpty())
+        mapped.setCaptured(true)
+        events.clear()
+        assertTrue(mapped.gamepadButton(KeyEvent.KEYCODE_BUTTON_L1, true))
+        assertTrue(mapped.gamepadButton(KeyEvent.KEYCODE_BUTTON_L1, false))
+        mapped.selectHotbarSlot(9)
+        mapped.selectHotbarSlot(0)
+        assertEquals(listOf(key(52, 1), key(52, 0), key(57, 1), key(57, 0)), events)
+    }
+
+    @Test
+    fun controllerWheelUsesTheConfiguredCalibration() {
+        val calibrated = GameInput(scrollScale = 4.0) { type, code, action, x, y ->
+            events.add(Event(type, code, action, x, y))
+        }
+        calibrated.setCaptured(true)
+        events.clear()
+        calibrated.gamepadButton(KeyEvent.KEYCODE_BUTTON_R1, true)
+        calibrated.gamepadButton(KeyEvent.KEYCODE_BUTTON_R1, false)
+        assertEquals(listOf(Event(GameInputEvent.SCROLL, y = -4.0)), events)
+    }
+
+    @Test
+    fun remappingRoundTripsAndIgnoresUnsupportedActions() {
+        val bindings = mapOf(KeyEvent.KEYCODE_BUTTON_L1 to GamepadAction.SLOT_4)
+        val encoded = encodeGamepadActions(bindings) + "," +
+            KeyEvent.KEYCODE_BUTTON_R1 + "=WALK_LEFT,9999=USE,BROKEN"
+        assertEquals(bindings, decodeGamepadActions(encoded))
+    }
+
     private fun tap(code: Int) {
         assertTrue(input.gamepadButton(code, down = true))
         assertTrue(input.gamepadButton(code, down = false))

@@ -3,6 +3,8 @@ package com.prissma.launcher.ui.launch
 import android.content.Context
 import android.content.Intent
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -23,6 +25,9 @@ import com.prissma.launcher.data.GameInstance
 import com.prissma.launcher.engine.java.DOWNLOAD_MESSAGE
 import com.prissma.launcher.engine.java.DOWNLOAD_PERCENT
 import com.prissma.launcher.engine.java.GameDownloads
+import com.prissma.launcher.engine.java.GameHudSettings
+import com.prissma.launcher.engine.java.decodeGamepadActions
+import com.prissma.launcher.engine.java.encodeGamepadActions
 import com.prissma.launcher.engine.java.JavaGameActivity
 import com.prissma.launcher.engine.java.JavaRuntimeManager
 import com.prissma.launcher.engine.java.MojangDownloader
@@ -31,6 +36,8 @@ import com.prissma.launcher.engine.java.RUNTIME_WORK
 import com.prissma.launcher.engine.java.applyMinecraftOptions
 import com.prissma.launcher.engine.java.gameLanguages
 import com.prissma.launcher.engine.java.supportedVersions
+import com.prissma.launcher.engine.java.supportsFabric
+import com.prissma.launcher.engine.java.experimentalVersions
 import com.prissma.launcher.ui.components.LauncherButton
 import com.prissma.launcher.ui.components.PageHeader
 import com.prissma.launcher.ui.components.PanelShape
@@ -44,7 +51,9 @@ import java.io.File
 import java.util.UUID
 
 @Composable
-fun JavaLaunchScreen(instance: GameInstance, playerName: String, accountType: String, onBack: () -> Unit) {
+fun JavaLaunchScreen(
+    instance: GameInstance, playerName: String, accountType: String, preferredLanguage: String = "", onBack: () -> Unit
+) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -58,11 +67,30 @@ fun JavaLaunchScreen(instance: GameInstance, playerName: String, accountType: St
     val gameTask = gameWork.firstOrNull { !it.state.isFinished } ?: gameWork.lastOrNull()
     var runtime by remember(runtimeManager) { mutableStateOf(runtimeManager.getInstalledRuntime()) }
     var game by remember(instance) { mutableStateOf<PreparedJavaGame?>(null) }
-    var language by remember(instance.id) { mutableStateOf(settings.getString("language-" + instance.id, "").orEmpty()) }
+    var language by remember(instance.id) { mutableStateOf(settings.getString("language-" + instance.id, preferredLanguage).orEmpty()) }
     var launchError by remember { mutableStateOf<String?>(null) }
     var opening by remember { mutableStateOf(false) }
+    var showControls by remember { mutableStateOf(false) }
+    var bindings by remember(instance.id) {
+        mutableStateOf(decodeGamepadActions(settings.getString("controls-" + instance.id, "").orEmpty()))
+    }
+    var hud by remember(instance.id) {
+        mutableStateOf(GameHudSettings(settings.getBoolean("touch-" + instance.id, true),
+            settings.getBoolean("fps-" + instance.id, false),
+            settings.getFloat("pause-opacity-" + instance.id, .65f).coerceIn(.15f, 1f)))
+    }
     val supported = instance.version in supportedVersions &&
-        (instance.loader == "Vanilla" || instance.configuredModLoader == "fabric")
+        (instance.loader == "Vanilla" || (instance.configuredModLoader == "fabric" && supportsFabric(instance.version)))
+
+    fun saveHud(updated: GameHudSettings) {
+        hud = updated
+        settings.edit().putBoolean("touch-" + instance.id, updated.showTouch)
+            .putBoolean("fps-" + instance.id, updated.showFps)
+            .putFloat("pause-opacity-" + instance.id, updated.pauseOpacity).apply()
+    }
+    val gameActivity = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        result.data?.getBundleExtra("GAME_HUD")?.let { saveHud(GameHudSettings.fromBundle(it)) }
+    }
 
     LaunchedEffect(instance) {
         game = withContext(Dispatchers.IO) { downloader.prepared(instance.id, instance.version, instance.loader) }
@@ -89,14 +117,14 @@ fun JavaLaunchScreen(instance: GameInstance, playerName: String, accountType: St
         scope.launch {
             try {
                 val gameDir = File(context.filesDir, "instances/" + instance.id)
-                withContext(Dispatchers.IO) { applyMinecraftOptions(gameDir, language) }
+                val scrollScale = withContext(Dispatchers.IO) { applyMinecraftOptions(gameDir, language) }
                 val classpath = runtimeManager.buildClasspath(ready)
                 val playerUuid = UUID.nameUUIDFromBytes("OfflinePlayer:$playerName".toByteArray(Charsets.UTF_8))
                 val gameArgs = runtimeManager.buildMinecraftArgs(
                     instance.id, instance.version, playerName, playerUuid.toString(), ready.assetsDir,
                     ready.assetIndexId, accountType
                 )
-                context.startActivity(Intent(context, JavaGameActivity::class.java).apply {
+                gameActivity.launch(Intent(context, JavaGameActivity::class.java).apply {
                     putExtra("INSTANCE_TITLE", instance.title)
                     putExtra("RESOLVED_VERSION", instance.version)
                     putExtra("MAIN_CLASS", ready.mainClass)
@@ -106,6 +134,9 @@ fun JavaLaunchScreen(instance: GameInstance, playerName: String, accountType: St
                     putExtra("LIBJVM_PATH", installed.libJvmFile.absolutePath)
                     putExtra("JAVA_HOME_PATH", installed.javaHomeDir.absolutePath)
                     putExtra("USE_VULKAN_ZINK", false)
+                    putExtra("GAMEPAD_BINDINGS", encodeGamepadActions(bindings))
+                    putExtra("HOTBAR_SCROLL_SCALE", scrollScale)
+                    putExtra("GAME_HUD", hud.toBundle())
                 })
             } catch (error: CancellationException) {
                 throw error
@@ -132,6 +163,8 @@ fun JavaLaunchScreen(instance: GameInstance, playerName: String, accountType: St
             LaunchPanel("Archivos para jugar", modifier) {
                 DownloadRow("Java 21 · ARM64", runtime != null, runtimeTask) { downloads.runtime() }
                 HorizontalDivider(color = Prissma.colors.borderSubtle)
+                if (instance.version in experimentalVersions) Text("Vanilla con Java 21 · En pruebas",
+                    color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
                 if (supported) DownloadRow("Minecraft " + instance.version, game != null, gameTask) { downloads.game(instance) }
                 else Text("La versión o el cargador de esta instancia requiere otro runtime.", color = Prissma.colors.error)
                 launchError?.let { Text(it, color = Prissma.colors.error) }
@@ -140,7 +173,9 @@ fun JavaLaunchScreen(instance: GameInstance, playerName: String, accountType: St
             }
         }
         val optionsPanel: @Composable (Modifier) -> Unit = { modifier ->
-            LaunchPanel("Idioma de Minecraft", modifier) {
+            LaunchPanel("Opciones de partida", modifier) {
+                LauncherButton("Controles y HUD", { showControls = true })
+                Text("Idioma de Minecraft", style = MaterialTheme.typography.titleSmall)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     gameLanguages.forEach { (code, title) ->
                         val select = {
@@ -170,6 +205,13 @@ fun JavaLaunchScreen(instance: GameInstance, playerName: String, accountType: St
             }
         }
     }
+    if (showControls) GameControlsDialog(
+        bindings, { mapping ->
+            bindings = mapping
+            settings.edit().putString("controls-" + instance.id, encodeGamepadActions(mapping)).apply()
+        }, hud, ::saveHud, { showControls = false }
+    )
+
 }
 
 @Composable

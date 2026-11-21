@@ -19,7 +19,20 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 
-internal val supportedVersions = (4..8).reversed().map { "1.21.$it" }
+internal val experimentalVersions = setOf("1.20.4", "1.20.1")
+internal val supportedVersions =
+    (11 downTo 1).map { "1.21.$it" } + listOf("1.21", "1.20.6", "1.20.5") + experimentalVersions
+
+internal fun supportsFabric(version: String) = version in supportedVersions && version !in experimentalVersions
+
+internal data class MinecraftCatalogEntry(val version: String, val channel: String) {
+    val playable: Boolean get() = channel == "release" && version in supportedVersions
+}
+
+internal fun minecraftCatalog(manifest: JSONObject): List<MinecraftCatalogEntry> =
+    manifest.getJSONArray("versions").objects()
+        .map { MinecraftCatalogEntry(it.getString("id"), it.getString("type")) }
+        .distinctBy { it.version }
 internal const val DEFAULT_GAME_VERSION = "1.21.4"
 private val safeId = Regex("[A-Za-z0-9_-]{1,100}")
 private val safeCoordinate = Regex("[A-Za-z0-9._+-]+")
@@ -36,8 +49,40 @@ internal class MojangDownloader(context: Context) {
     private val filesDir = context.filesDir
     private val shared = File(filesDir, "minecraft")
     private val assetsDir = File(shared, "assets")
+    private val cachedManifest = File(shared, "version-manifest.json")
     private val mojangManifest = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
     private val fabricMeta = "https://meta.fabricmc.net/v2/versions/loader"
+
+    suspend fun catalog(refresh: Boolean = false): List<MinecraftCatalogEntry> = withContext(Dispatchers.IO) {
+        val manifest = runCatching { versionManifest(refresh) }.getOrElse { failure ->
+            if (failure is kotlinx.coroutines.CancellationException) throw failure
+            return@withContext supportedVersions.map { MinecraftCatalogEntry(it, "release") }
+        }
+        minecraftCatalog(manifest)
+    }
+
+    private fun versionManifest(refresh: Boolean = false): JSONObject {
+        val cached = runCatching { JSONObject(cachedManifest.readText()) }.getOrNull()
+        if (!refresh && cached != null && System.currentTimeMillis() - cachedManifest.lastModified() < 21_600_000L) {
+            return cached
+        }
+        return try {
+            val text = httpText(mojangManifest)
+            val fresh = JSONObject(text)
+            fresh.getJSONArray("versions")
+            shared.mkdirs()
+            val temporary = File.createTempFile("versions-", ".json", shared)
+            try {
+                temporary.writeText(text)
+                Files.move(temporary.toPath(), cachedManifest.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            } finally {
+                temporary.delete()
+            }
+            fresh
+        } catch (failure: Exception) {
+            cached ?: throw failure
+        }
+    }
 
     fun prepared(instanceId: String, version: String, loader: String): PreparedJavaGame? = runCatching {
         val ready = JSONObject(descriptor(instanceId, version, loader).readText())
@@ -59,8 +104,8 @@ internal class MojangDownloader(context: Context) {
         prepared(instanceId, version, loader)?.let { return@withContext it }
         val marker = descriptor(instanceId, version, loader)
         progress(.04f, "Consultando la versión")
-        val entry = JSONObject(httpText(mojangManifest)).getJSONArray("versions").objects()
-            .first { it.getString("id") == version && it.getString("type") == "release" }
+        val releases = versionManifest().getJSONArray("versions").objects()
+        val entry = releases.first { it.getString("id") == version && it.getString("type") == "release" }
         val base = File(shared, "versions/$version")
         val metadata = File(base, "$version.json")
         verifiedDownload(entry.getString("url"), metadata, entry.getString("sha1"))
@@ -69,15 +114,16 @@ internal class MojangDownloader(context: Context) {
         val instanceRoot = File(filesDir, "instances/$instanceId")
         val clientInfo = versionMeta.getJSONObject("downloads").getJSONObject("client")
         val client = File(base, "$version.jar")
-        val artifacts = versionMeta.getJSONArray("libraries").objects().mapNotNull { library ->
-            if (!isLibraryAllowedOnLinux(library) || library.optString("name").contains(":natives-")) return@mapNotNull null
-            val artifact = library.optJSONObject("downloads")?.optJSONObject("artifact") ?: return@mapNotNull null
-            val path = artifact.getString("path")
-            Artifact(
-                artifact.getString("url"), File(shared, "libraries/$path"), artifact.getString("sha1"),
-                File(instanceRoot, "libraries/$path"), library.getString("name")
-            )
-        }.toMutableList()
+        val artifacts = libraries(versionMeta, instanceRoot).toMutableList()
+        if (version in experimentalVersions) {
+            val reference = releases.first { it.getString("id") == DEFAULT_GAME_VERSION }
+            val referenceFile = File(shared, "versions/$DEFAULT_GAME_VERSION/$DEFAULT_GAME_VERSION.json")
+            verifiedDownload(reference.getString("url"), referenceFile, reference.getString("sha1"))
+            val lwjgl = libraries(JSONObject(referenceFile.readText()), instanceRoot)
+                .filter { it.coordinate.startsWith("org.lwjgl:") }
+            artifacts.removeAll { it.coordinate.startsWith("org.lwjgl:") }
+            artifacts.addAll(lwjgl)
+        }
         val mainClass = if (loader.startsWith("Fabric")) {
             val pinned = loader.substringAfter(' ', "").takeIf { it.isNotBlank() }
             val fabricVersion = pinned ?: JSONArray(httpText("$fabricMeta/$version")).objects()
@@ -136,12 +182,24 @@ internal class MojangDownloader(context: Context) {
         PreparedJavaGame(mainClass, client, libraries, assetsDir, index)
     }
 
+    private fun libraries(metadata: JSONObject, instanceRoot: File): List<Artifact> =
+        metadata.getJSONArray("libraries").objects().mapNotNull { library ->
+            if (!isLibraryAllowedOnLinux(library) || library.optString("name").contains(":natives-")) return@mapNotNull null
+            val artifact = library.optJSONObject("downloads")?.optJSONObject("artifact") ?: return@mapNotNull null
+            val path = artifact.getString("path")
+            Artifact(
+                artifact.getString("url"), File(shared, "libraries/$path"), artifact.getString("sha1"),
+                File(instanceRoot, "libraries/$path"), library.getString("name")
+            )
+        }
+
     private fun descriptor(instanceId: String, version: String, loader: String): File {
         require(safeId.matches(instanceId))
         require(version in supportedVersions) { "Elige una versión compatible con el runtime de Android." }
         require(loader == "Vanilla" || loader.matches(Regex("Fabric(?: [0-9][A-Za-z0-9._+-]{0,49})?"))) {
             "PRISSMA admite Vanilla y Fabric para estas versiones."
         }
+        require(loader == "Vanilla" || supportsFabric(version)) { "Esta versión está en pruebas con Vanilla." }
         // Key the cache by both launcher settings, even for older instances with a pinned loader.
         return File(shared, "prepared/$instanceId/$version-" + loader.replace(' ', '-') + ".json")
     }

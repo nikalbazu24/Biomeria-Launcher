@@ -27,6 +27,7 @@ static InputEvent inputQueue[256];
 static unsigned int inputCount;
 static PFN_eglSwapBuffers swapBuffersEgl;
 static atomic_int firstFramePresented;
+static atomic_uint presentedFrames;
 static atomic_int cursorCaptured;
 static _GLFWwindow* focusedWindow;
 
@@ -83,6 +84,8 @@ int prissmaGlfwCursorCaptured(void)
 static EGLBoolean APIENTRY reportSwapBuffers(EGLDisplay display, EGLSurface surface)
 {
     const EGLBoolean result = swapBuffersEgl(display, surface);
+    if (result)
+        atomic_fetch_add_explicit(&presentedFrames, 1, memory_order_relaxed);
     if (result && !atomic_exchange_explicit(&firstFramePresented, GLFW_TRUE, memory_order_relaxed))
     {
         int width = 0, height = 0;
@@ -96,6 +99,11 @@ static EGLBoolean APIENTRY reportSwapBuffers(EGLDisplay display, EGLSurface surf
 int prissmaGlfwHasPresentedFrame(void)
 {
     return atomic_load_explicit(&firstFramePresented, memory_order_relaxed);
+}
+
+unsigned int prissmaGlfwPresentedFrames(void)
+{
+    return atomic_load_explicit(&presentedFrames, memory_order_relaxed);
 }
 
 static void readSurfaceExtent(ANativeWindow* surface, int* width, int* height)
@@ -232,6 +240,7 @@ static GLFWbool createWindow(_GLFWwindow* window, const _GLFWwndconfig* requeste
 
     activeWindow = window;
     atomic_store_explicit(&firstFramePresented, GLFW_FALSE, memory_order_relaxed);
+    atomic_store_explicit(&presentedFrames, 0, memory_order_relaxed);
     if (!_glfwCreateWindowNull(window, &windowConfig, &contextConfig, fbconfig))
         return GLFW_FALSE;
     refreshDrawableSize(window);

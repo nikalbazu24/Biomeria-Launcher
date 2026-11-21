@@ -141,11 +141,15 @@ int main(void)
 
     glfwMakeContextCurrent(window);
     assert(!prissmaGlfwHasPresentedFrame());
+    assert(prissmaGlfwPresentedFrames() == 0);
     mockFailNextSwap();
     glfwSwapBuffers(window);
     assert(!prissmaGlfwHasPresentedFrame());
     glfwSwapBuffers(window);
     assert(prissmaGlfwHasPresentedFrame());
+    assert(prissmaGlfwPresentedFrames() == 1);
+    glfwSwapBuffers(window);
+    assert(prissmaGlfwPresentedFrames() == 2);
 
     prissmaGlfwSetSurface(NULL);
     glfwPollEvents();

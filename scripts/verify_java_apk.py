@@ -22,13 +22,14 @@ PAIRS = {
 REQUIRED_NATIVES = {
     "libprissma_jvm_bridge.so", "libjnidispatch.so", "libglfw.so",
     "libopenal.so", "libfreetype.so", "libmobileglues.so",
+    "libjnidispatch_5_12_1.so", "libjnidispatch_5_13_0.so", "libjnidispatch_5_14_0.so", "libjnidispatch_5_17_0.so",
     *(library for library, _ in PAIRS.values()),
 }
 GLFW_SYMBOLS = {
     "glfwInit", "glfwCreateWindow", "glfwMakeContextCurrent", "glfwSwapBuffers",
     "glfwPollEvents", "glfwGetProcAddress", "glfwTerminate",
     "prissmaGlfwSetSurface", "prissmaGlfwSetSize", "prissmaGlfwInput",
-    "prissmaGlfwHasPresentedFrame", "prissmaGlfwCursorCaptured",
+    "prissmaGlfwHasPresentedFrame", "prissmaGlfwCursorCaptured", "prissmaGlfwPresentedFrames",
 }
 RENDERER_SYMBOLS = {"eglBindAPI", "eglCreateContext", "eglCreateWindowSurface", "eglSwapBuffers", "glXGetProcAddress"}
 DESKTOP_DEPENDENCY = re.compile(

@@ -1,6 +1,7 @@
 package com.prissma.launcher.engine.java
 
 import org.junit.Assert.assertEquals
+import org.json.JSONObject
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -20,6 +21,32 @@ class MinecraftOptionsTest {
     @Test
     fun systemSelectionKeepsInGameLanguage() {
         assertTrue("lang:fr_fr" in minecraftOptions(listOf("lang:fr_fr"), ""))
+    }
+
+    @Test
+    fun oneCalibratedScrollStepReachesOneSlotAtLowSensitivity() {
+        val options = listOf("mouseWheelSensitivity:0.25")
+        assertEquals(1.0, hotbarScrollScale(options) * .25, .00000001)
+    }
+
+    @Test
+    fun discreteScrollNeedsUnitSensitivityBecauseMinecraftDiscardsMagnitude() {
+        val options = minecraftOptions(listOf("mouseWheelSensitivity:0.25", "discrete_mouse_scroll:true"), "")
+        assertTrue("mouseWheelSensitivity:1.0" in options)
+        assertEquals(1.0, hotbarScrollScale(options), .00000001)
+    }
+
+    @Test
+    fun catalogKeepsAllChannelsAndLabelsUnsupportedRuntimes() {
+        val manifest = JSONObject("""{"versions":[{"id":"26.3","type":"release"},
+            {"id":"26.4-snapshot-10","type":"snapshot"},{"id":"1.20.1","type":"release"},
+            {"id":"1.20.6","type":"release"},{"id":"b1.7.3","type":"old_beta"},{"id":"a1.2.6","type":"old_alpha"}]}""")
+        val entries = minecraftCatalog(manifest)
+        assertEquals(listOf("26.3", "26.4-snapshot-10", "1.20.1", "1.20.6", "b1.7.3", "a1.2.6"),
+            entries.map { it.version })
+        assertEquals(listOf(false, false, true, true, false, false), entries.map { it.playable })
+        assertFalse(supportsFabric("1.20.1"))
+        assertTrue(supportsFabric("1.20.6"))
     }
 
     @Test
