@@ -12,8 +12,8 @@ android {
         applicationId = "com.prissma.launcher"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0-alpha"
+        versionCode = 3
+        versionName = "0.3.0-alpha"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -46,4 +46,5 @@ dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.10.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
+    implementation("io.coil-kt:coil-compose:2.7.0")
 }
