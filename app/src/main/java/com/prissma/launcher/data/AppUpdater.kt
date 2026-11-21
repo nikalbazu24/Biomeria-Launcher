@@ -2,6 +2,10 @@ package com.prissma.launcher.data
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.core.content.pm.PackageInfoCompat
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -45,9 +49,12 @@ class AppUpdater(private val context: Context) {
                 if (conn.responseCode !in 200..299) return@runCatching null
                 val json = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
                 val remoteTag = json.optString("tag_name", "").removePrefix("v").trim()
-                val currentVersion = getCurrentVersionName().removePrefix("v").trim()
-
-                if (remoteTag.isBlank() || remoteTag == currentVersion) {
+                val remoteBuild = Regex("""1\.0\.0-beta\.(\d+)""").matchEntire(remoteTag)
+                    ?.groupValues?.get(1)?.toLongOrNull()
+                val installedBuild = PackageInfoCompat.getLongVersionCode(
+                    context.packageManager.getPackageInfo(context.packageName, 0)
+                )
+                if (remoteBuild == null || remoteBuild <= installedBuild) {
                     return@runCatching null
                 }
 
@@ -114,6 +121,13 @@ class AppUpdater(private val context: Context) {
                 conn.disconnect()
             }
 
+            try {
+                verifyUpdate(apkFile)
+            } catch (error: Exception) {
+                apkFile.delete()
+                throw error
+            }
+
             withContext(Dispatchers.Main) {
                 val uri = FileProvider.getUriForFile(
                     context,
@@ -128,4 +142,35 @@ class AppUpdater(private val context: Context) {
             }
         }
     }
+
+    @Suppress("DEPRECATION")
+    private fun verifyUpdate(apkFile: File) {
+        val packageManager = context.packageManager
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            PackageManager.GET_SIGNING_CERTIFICATES
+        } else {
+            PackageManager.GET_SIGNATURES
+        }
+        val installed = packageManager.getPackageInfo(context.packageName, flags)
+        val candidate = packageManager.getPackageArchiveInfo(apkFile.absolutePath, flags)
+            ?: error("El archivo descargado no es un APK válido.")
+        check(candidate.packageName == installed.packageName) {
+            "El APK descargado pertenece a otra aplicación."
+        }
+        check(PackageInfoCompat.getLongVersionCode(candidate) > PackageInfoCompat.getLongVersionCode(installed)) {
+            "El APK descargado no es más reciente que la versión instalada."
+        }
+        val installedSigners = signingCertificates(installed)
+        check(installedSigners.isNotEmpty() && installedSigners == signingCertificates(candidate)) {
+            "El certificado del APK es distinto al de esta instalación. Se requiere una versión con la misma firma."
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun signingCertificates(info: PackageInfo) =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            info.signingInfo?.apkContentsSigners.orEmpty().toSet()
+        } else {
+            info.signatures.orEmpty().toSet()
+        }
 }

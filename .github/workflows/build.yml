@@ -29,8 +29,16 @@ jobs:
         id: signing
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
+            if [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+              echo "::error::Faltan KEYSTORE_PASSWORD, KEY_ALIAS o KEY_PASSWORD para firmar el APK."
+              exit 1
+            fi
+            umask 077
             printf '%s' "$KEYSTORE_BASE64" | base64 --decode > app/prissma.jks
             echo "persistent=true" >> "$GITHUB_OUTPUT"
           else
@@ -38,6 +46,10 @@ jobs:
           fi
 
       - name: Compilar APK Release Firmado ARM64
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           chmod +x ./gradlew || true
           VER="1.0.0-beta.${{ github.run_number }}"
@@ -48,6 +60,23 @@ jobs:
           TAG="v1.0.0-beta.${{ github.run_number }}"
           echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
           cp app/build/outputs/apk/release/app-release.apk "PRISSMA-Launcher-${TAG}.apk"
+
+      - name: Verificar firma del APK
+        env:
+          PERSISTENT_SIGNING: ${{ steps.signing.outputs.persistent }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          apksigner="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+          report="$("$apksigner" verify --print-certs "PRISSMA-Launcher-${RELEASE_TAG}.apk")"
+          if [ "$PERSISTENT_SIGNING" = "true" ]; then
+            expected="$(keytool -exportcert -keystore app/prissma.jks -alias "$KEY_ALIAS" -storepass:env KEYSTORE_PASSWORD | sha256sum | cut -d ' ' -f 1)"
+            actual="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' <<< "$report")"
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::El certificado del APK no coincide con la llave de firma."
+              exit 1
+            fi
+          fi
 
       - name: Subir Artifact
         uses: actions/upload-artifact@v4

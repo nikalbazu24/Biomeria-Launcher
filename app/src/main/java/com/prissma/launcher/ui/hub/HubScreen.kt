@@ -658,8 +658,8 @@ fun HubScreen(
                                     updateProgress = pct
                                 }.onFailure { err ->
                                     bannerMessage = err.message ?: "Error al actualizar"
-                                    isDownloadingUpdate = false
                                 }
+                                isDownloadingUpdate = false
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00F0FF))

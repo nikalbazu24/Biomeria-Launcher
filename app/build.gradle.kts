@@ -1,3 +1,6 @@
+import java.net.URI
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -17,7 +20,38 @@ val unpackJnaAndroid by tasks.registering(Sync::class) {
     }
     into(jnaJniLibs)
 }
-tasks.named("preBuild") { dependsOn(unpackJnaAndroid) }
+val lwjglRevision = "166af615dbdca1a507b8c2d379822cca02795132"
+val lwjglSha256 = "3ec756806be63e5446964464777146d7c87660d3d4e238d5b74c76d68d6070d7"
+val lwjglArchive = layout.buildDirectory.file("downloads/lwjgl-3.3.3-natives.aar")
+val lwjglJniLibs = layout.buildDirectory.dir("generated/lwjgl/jniLibs")
+val downloadLwjglAndroid by tasks.registering {
+    inputs.property("revision", lwjglRevision)
+    inputs.property("sha256", lwjglSha256)
+    outputs.file(lwjglArchive)
+    doLast {
+        val uri = URI("https://raw.githubusercontent.com/AngelAuraMC/Amethyst-Android/" +
+            "$lwjglRevision/app_pojavlauncher/libs/lwjgl-3.3.3-natives-release.aar")
+        val connection = uri.toURL().openConnection().apply {
+            connectTimeout = 15_000
+            readTimeout = 30_000
+        }
+        val bytes = connection.getInputStream().use { it.readBytes() }
+        val sha256 = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        check(sha256 == lwjglSha256) { "SHA-256 inesperado para los nativos de LWJGL 3.3.3." }
+        lwjglArchive.get().asFile.apply { parentFile.mkdirs() }.writeBytes(bytes)
+    }
+}
+val unpackLwjglAndroid by tasks.registering(Sync::class) {
+    dependsOn(downloadLwjglAndroid)
+    val prefix = "assets/components/lwjgl-3.3.3-natives/arm64-v8a/"
+    from({ zipTree(lwjglArchive.get().asFile) }) {
+        include(listOf("liblwjgl.so", "liblwjgl_opengl.so", "liblwjgl_stb.so").map { prefix + it })
+        eachFile { path = "arm64-v8a/" + name }
+        includeEmptyDirs = false
+    }
+    into(lwjglJniLibs)
+}
+tasks.named("preBuild") { dependsOn(unpackJnaAndroid, unpackLwjglAndroid) }
 
 android {
     namespace = "com.prissma.launcher"
@@ -40,9 +74,9 @@ android {
             val keystoreFile = file("prissma.jks")
             if (keystoreFile.exists()) {
                 storeFile = keystoreFile
-                storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "prissma2026"
-                keyAlias = System.getenv("KEY_ALIAS") ?: "prissma"
-                keyPassword = System.getenv("KEY_PASSWORD") ?: "prissma2026"
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
             }
         }
     }
@@ -66,7 +100,8 @@ android {
     }
 
     sourceSets.getByName("main").jniLibs.srcDir(jnaJniLibs)
-    // La JVM de Minecraft carga libjnidispatch desde applicationInfo.nativeLibraryDir.
+    sourceSets.getByName("main").jniLibs.srcDir(lwjglJniLibs)
+    // La JVM de Minecraft carga las bibliotecas desde applicationInfo.nativeLibraryDir.
     packaging.jniLibs.useLegacyPackaging = true
 
     compileOptions {

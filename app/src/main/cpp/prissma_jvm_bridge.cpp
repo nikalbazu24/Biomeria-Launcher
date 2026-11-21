@@ -162,12 +162,12 @@ namespace {
             setenv("POJAV_RENDERER", "vulkan_zink", 1);
             setenv("MESA_LOADER_DRIVER_OVERRIDE", "zink", 1);
             setenv("GALLIUM_DRIVER", "zink", 1);
-            pushLogLine("[PRISSMA] Backend gráfico activo: Vulkan (Zink / Mesa)");
+            pushLogLine("[PRISSMA] Backend gráfico solicitado: Vulkan (Zink / Mesa)");
         } else {
             setenv("POJAV_RENDERER", "opengles3", 1);
             unsetenv("MESA_LOADER_DRIVER_OVERRIDE");
             unsetenv("GALLIUM_DRIVER");
-            pushLogLine("[PRISSMA] Backend gráfico activo: OpenGL ES 3.2 (Nativo)");
+            pushLogLine("[PRISSMA] Backend gráfico solicitado: OpenGL ES 3.2");
         }
 
         chdir(cfg->gameDir.c_str());
@@ -210,7 +210,8 @@ namespace {
         optionStrings.push_back("-Duser.dir=" + cfg->gameDir);
         optionStrings.push_back("-Djava.io.tmpdir=" + cfg->cacheDir);
         optionStrings.push_back("-Djna.tmpdir=" + cfg->cacheDir);
-        if ((cfg->classpath + ":").find("/jna-5.15.0.jar:") != std::string::npos) {
+        const std::string classpath = cfg->classpath + ":";
+        if (classpath.find("/jna-5.15.0.jar:") != std::string::npos) {
             optionStrings.push_back("-Djna.boot.library.path=" + cfg->nativeLibraryDir);
             optionStrings.push_back("-Djna.nosys=true");
             optionStrings.push_back("-Djna.noclasspath=true");
@@ -219,6 +220,11 @@ namespace {
         pushLogLine("[PRISSMA] Directorio temporal de Java: " + cfg->cacheDir);
         optionStrings.push_back("-Djna.debug_load.jna=true");
         optionStrings.push_back("-Dorg.lwjgl.util.DebugLoader=true");
+        if (classpath.find("/lwjgl-3.3.3.jar:") != std::string::npos) {
+            optionStrings.push_back("-Dorg.lwjgl.librarypath=" + cfg->nativeLibraryDir);
+            optionStrings.push_back("-Dorg.lwjgl.system.allocator=system");
+            pushLogLine("[PRISSMA] LWJGL 3.3.3 buscará nativos Android en " + cfg->nativeLibraryDir);
+        }
         optionStrings.push_back("-Dorg.lwjgl.opengl.libname=libGLESv2.so");
         optionStrings.push_back("-Dglfwstub.initEgl=false");
         optionStrings.push_back("-Xmx1536M");

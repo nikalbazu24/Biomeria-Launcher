@@ -106,6 +106,10 @@ class MojangDownloader(private val context: Context) {
             for (i in 0 until librariesArray.length()) {
                 val lib = librariesArray.getJSONObject(i)
                 if (!isLibraryAllowedOnLinuxArm(lib)) continue
+                val coordinates = lib.optString("name")
+                if (coordinates.startsWith("org.lwjgl:") &&
+                    coordinates.contains(":$ANDROID_LWJGL_VERSION:natives-")
+                ) continue
 
                 val downloads = lib.optJSONObject("downloads") ?: continue
                 val artifact = downloads.optJSONObject("artifact") ?: continue

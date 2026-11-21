@@ -16,6 +16,8 @@ import java.net.URL
 import java.util.zip.GZIPInputStream
 import java.util.zip.ZipInputStream
 
+internal const val ANDROID_LWJGL_VERSION = "3.3.3"
+
 data class InstalledJavaRuntime(
     val javaHomeDir: File,
     val libJvmFile: File
@@ -303,8 +305,10 @@ class JavaRuntimeManager(private val context: Context) {
         val jars = mutableListOf<String>()
 
         if (librariesDir.exists()) {
+            val lwjglDir = File(librariesDir, "org/lwjgl")
             librariesDir.walkTopDown()
                 .filter { it.isFile && it.extension == "jar" }
+                .filterNot { it.startsWith(lwjglDir) && it.name.contains("-$ANDROID_LWJGL_VERSION-natives-") }
                 .sortedBy { it.absolutePath }
                 .forEach { jars.add(it.absolutePath) }
         }
