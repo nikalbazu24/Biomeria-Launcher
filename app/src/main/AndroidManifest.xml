@@ -12,12 +12,40 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:screenOrientation="sensorLandscape">
+
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- Lanzamiento directo desde frontends (Díptico, iiSU, atajos) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="prissma" android:host="launch" />
+                <data android:scheme="mchub" android:host="launch" />
+            </intent-filter>
+
+            <!-- Apertura directa de cartuchos .mcinst desde Cocoon u otros frontends -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="file" />
+                <data android:scheme="content" />
+                <data android:mimeType="*/*" />
+                <data android:host="*" />
+                <data android:pathPattern=".*\\.mcinst" />
+            </intent-filter>
         </activity>
+
+        <!-- Puente de catálogo en tiempo real para frontends Android -->
+        <provider
+            android:name=".ipc.PrissmaCatalogProvider"
+            android:authorities="com.prissma.launcher.provider"
+            android:exported="true" />
 
     </application>
 
