@@ -12,8 +12,8 @@ android {
         applicationId = "com.prissma.launcher"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.6.0-alpha"
+        versionCode = 10
+        versionName = "1.0.0-beta.1"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
