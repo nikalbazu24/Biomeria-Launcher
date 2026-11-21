@@ -28,6 +28,9 @@ class JavaRuntimeManager(private val context: Context) {
 
         private val GITHUB_RELEASE_REPOS = listOf(
             "PojavLauncherTeam/android-openjdk-build-multiarch",
+            "AngelAuraMC/android-openjdk-build-multiarch",
+            "ZalithLauncher/ZalithLauncher",
+            "FCL-Team/FoldCraftLauncher",
             "QuestCraftPlusPlus/android-openjdk-build-multiarch"
         )
     }
@@ -58,12 +61,13 @@ class JavaRuntimeManager(private val context: Context) {
     }
 
     /**
-     * Busca estrictamente un paquete JRE/JDK 21 ARM64 en GitHub Releases,
-     * descartando versiones anteriores (Java 8 / Java 17).
+     * Busca un paquete JRE/JDK 21 ARM64 en los últimos 100 releases de cada repositorio.
      */
     private fun resolveLatestJre21AssetUrl(): Pair<String, String> {
+        var lastHttpError: Int? = null
+
         for (repo in GITHUB_RELEASE_REPOS) {
-            val apiUrl = "https://api.github.com/repos/$repo/releases"
+            val apiUrl = "https://api.github.com/repos/$repo/releases?per_page=100"
             val conn = (URL(apiUrl).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 15_000
@@ -72,7 +76,11 @@ class JavaRuntimeManager(private val context: Context) {
                 setRequestProperty("User-Agent", "PRISSMA-Launcher/1.0")
             }
             try {
-                if (conn.responseCode !in 200..299) continue
+                val code = conn.responseCode
+                if (code !in 200..299) {
+                    lastHttpError = code
+                    continue
+                }
                 val body = conn.inputStream.bufferedReader().use { it.readText() }
                 val releases = JSONArray(body)
 
@@ -88,14 +96,13 @@ class JavaRuntimeManager(private val context: Context) {
                         val lower = name.lowercase()
                         val downloadUrl = asset.optString("browser_download_url", "")
 
-                        val combined = "$tag $releaseName $lower"
-                        val isExplicitJre21 = combined.contains("jre21") ||
-                            combined.contains("jre-21") ||
-                            combined.contains("jdk21") ||
-                            combined.contains("jdk-21") ||
-                            combined.contains("java21") ||
-                            combined.contains("java-21") ||
-                            combined.contains("21.0")
+                        val isArchive = lower.endsWith(".tar.xz") ||
+                            lower.endsWith(".zip") ||
+                            lower.endsWith(".tar.gz")
+                        if (!isArchive || downloadUrl.isBlank()) continue
+
+                        val isArm64 = lower.contains("arm64") || lower.contains("aarch64")
+                        if (!isArm64) continue
 
                         val isOlderJava = lower.contains("jre17") ||
                             lower.contains("jre-17") ||
@@ -103,25 +110,35 @@ class JavaRuntimeManager(private val context: Context) {
                             lower.contains("jdk-17") ||
                             lower.contains("jre8") ||
                             lower.contains("jre-8") ||
-                            lower.contains("jdk8")
+                            lower.contains("jdk8") ||
+                            lower.contains("jre11")
+                        if (isOlderJava) continue
 
-                        val isArm64 = lower.contains("arm64") || lower.contains("aarch64")
-                        val isArchive = lower.endsWith(".tar.xz") ||
-                            lower.endsWith(".zip") ||
-                            lower.endsWith(".tar.gz")
+                        val combined = "$tag $releaseName $lower"
+                        val isJre21 = lower.contains("21") ||
+                            combined.contains("jre21") ||
+                            combined.contains("jre-21") ||
+                            combined.contains("jdk21") ||
+                            combined.contains("jdk-21") ||
+                            combined.contains("java21") ||
+                            combined.contains("java-21")
 
-                        if (isExplicitJre21 && !isOlderJava && isArm64 && isArchive && downloadUrl.isNotBlank()) {
+                        if (isJre21) {
                             return name to downloadUrl
                         }
                     }
                 }
             } catch (_: Exception) {
-                // Intenta con el siguiente repositorio
+                // Continúa con el siguiente repositorio
             } finally {
                 conn.disconnect()
             }
         }
-        error("No se encontró un paquete JRE 21 ARM64 disponible en GitHub.")
+
+        if (lastHttpError == 403) {
+            error("GitHub limitó temporalmente las consultas (HTTP 403). Espera unos minutos o usa Importar .zip.")
+        }
+        error("No se encontró un paquete JRE 21 ARM64 disponible (último HTTP: ${lastHttpError ?: "ninguno"}).")
     }
 
     suspend fun installFromUrl(
