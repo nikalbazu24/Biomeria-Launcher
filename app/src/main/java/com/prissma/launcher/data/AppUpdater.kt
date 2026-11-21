@@ -9,6 +9,7 @@ import androidx.core.content.pm.PackageInfoCompat
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
@@ -21,11 +22,19 @@ data class UpdateInfo(
     val apkDownloadUrl: String
 )
 
+internal fun betaBuildNumber(tag: String): Long? = Regex("""1\.0\.0-beta\.(\d+)""")
+    .matchEntire(tag.trim().removePrefix("v"))?.groupValues?.get(1)?.toLongOrNull()
+
+internal fun newestPreview(releases: Sequence<UpdateInfo>, installedBuild: Long): UpdateInfo? =
+    releases.mapNotNull { release -> betaBuildNumber(release.versionTag)?.let { it to release } }
+        .filter { (build, _) -> build > installedBuild }
+        .maxByOrNull { (build, _) -> build }?.second
+
 class AppUpdater(private val context: Context) {
 
     companion object {
         private const val REPO = "nikalbazu24/Prissma-Launcher"
-        private const val LATEST_RELEASE_API = "https://api.github.com/repos/$REPO/releases/latest"
+        private const val RELEASES_API = "https://api.github.com/repos/$REPO/releases"
     }
 
     fun getCurrentVersionName(): String {
@@ -37,49 +46,57 @@ class AppUpdater(private val context: Context) {
 
     suspend fun checkForUpdate(): Result<UpdateInfo?> = withContext(Dispatchers.IO) {
         runCatching {
-            val conn = (URL(LATEST_RELEASE_API).openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 10_000
-                readTimeout = 15_000
-                setRequestProperty("Accept", "application/vnd.github+json")
-                setRequestProperty("User-Agent", "PRISSMA-Launcher")
-            }
-
-            try {
-                if (conn.responseCode !in 200..299) error("GitHub respondió HTTP " + conn.responseCode + ".")
-                val json = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
-                val remoteTag = json.optString("tag_name", "").removePrefix("v").trim()
-                val remoteBuild = Regex("""1\.0\.0-beta\.(\d+)""").matchEntire(remoteTag)
-                    ?.groupValues?.get(1)?.toLongOrNull()
-                val installedBuild = PackageInfoCompat.getLongVersionCode(
-                    context.packageManager.getPackageInfo(context.packageName, 0)
-                )
-                if (remoteBuild == null || remoteBuild <= installedBuild) {
-                    return@runCatching null
-                }
-
-                val assets = json.optJSONArray("assets") ?: return@runCatching null
-                var apkUrl = ""
-                for (i in 0 until assets.length()) {
-                    val asset = assets.getJSONObject(i)
-                    val name = asset.optString("name", "").lowercase()
-                    if (name.endsWith(".apk")) {
-                        apkUrl = asset.optString("browser_download_url", "")
-                        break
-                    }
-                }
-
-                if (apkUrl.isBlank()) return@runCatching null
-
-                UpdateInfo(
-                    versionTag = remoteTag,
-                    changelog = json.optString("body", "Nueva actualización disponible."),
-                    apkDownloadUrl = apkUrl
-                )
-            } finally {
-                conn.disconnect()
-            }
+            val release = JSONObject(fetchReleases("/latest"))
+            if (release.optBoolean("prerelease")) return@runCatching null
+            val update = parseRelease(release) ?: return@runCatching null
+            val remoteBuild = betaBuildNumber(update.versionTag) ?: return@runCatching null
+            update.takeIf { remoteBuild > installedBuild() }
         }
+    }
+
+    suspend fun checkForPreview(): Result<UpdateInfo?> = withContext(Dispatchers.IO) {
+        runCatching {
+            val releases = JSONArray(fetchReleases("?per_page=100"))
+            val previews = (0 until releases.length()).asSequence()
+                .map(releases::getJSONObject)
+                .filter { it.optBoolean("prerelease") }
+                .mapNotNull(::parseRelease)
+            newestPreview(previews, installedBuild())
+        }
+    }
+
+    private fun installedBuild() = PackageInfoCompat.getLongVersionCode(
+        context.packageManager.getPackageInfo(context.packageName, 0)
+    )
+
+    private fun fetchReleases(path: String): String {
+        val connection = (URL(RELEASES_API + path).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 10_000
+            readTimeout = 15_000
+            setRequestProperty("Accept", "application/vnd.github+json")
+            setRequestProperty("User-Agent", "PRISSMA-Launcher")
+        }
+        return try {
+            val status = connection.responseCode
+            check(status in 200..299) { "GitHub respondió HTTP $status." }
+            connection.inputStream.bufferedReader().use { it.readText() }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun parseRelease(json: JSONObject): UpdateInfo? {
+        if (json.optBoolean("draft")) return null
+        val tag = json.optString("tag_name").trim().removePrefix("v")
+        if (betaBuildNumber(tag) == null) return null
+        val assets = json.optJSONArray("assets") ?: return null
+        val apkUrl = (0 until assets.length()).asSequence()
+            .map(assets::getJSONObject)
+            .filter { it.optString("name").endsWith(".apk", ignoreCase = true) }
+            .map { it.optString("browser_download_url") }
+            .firstOrNull { it.startsWith("https://github.com/$REPO/releases/download/") }
+            ?: return null
+        return UpdateInfo(tag, json.optString("body", "Nueva actualización disponible."), apkUrl)
     }
 
     suspend fun downloadAndInstall(

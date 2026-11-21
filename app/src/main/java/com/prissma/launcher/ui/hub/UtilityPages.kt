@@ -18,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -115,16 +116,29 @@ internal fun SettingsPage(
     onNotice: (String) -> Unit
 ) {
     val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
     val reports = remember(context) { LaunchReports(context) }
     val scope = rememberCoroutineScope()
     var updateStatus by remember { mutableStateOf<String?>(null) }
     var checking by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf<Float?>(null) }
+    var preview by remember { mutableStateOf<UpdateInfo?>(null) }
+    var previewError by remember { mutableStateOf<String?>(null) }
+    var checkingPreview by remember { mutableStateOf(true) }
+    var previewRefresh by remember { mutableIntStateOf(0) }
     var latest by remember { mutableStateOf<LaunchReport?>(null) }
     var reportError by remember { mutableStateOf<String?>(null) }
     var link by remember { mutableStateOf<String?>(null) }
     var refresh by remember { mutableIntStateOf(0) }
     var publishing by remember { mutableStateOf(false) }
+
+    LaunchedEffect(updater, previewRefresh) {
+        checkingPreview = true
+        previewError = null
+        updater.checkForPreview().onSuccess { preview = it }
+            .onFailure { previewError = it.message ?: "No se pudieron consultar las betas." }
+        checkingPreview = false
+    }
 
     LaunchedEffect(reports, refresh) {
         reports.latest().onSuccess {
@@ -144,14 +158,16 @@ internal fun SettingsPage(
             }
             LauncherButton(if (checking) "Buscando…" else "Buscar actualización", {
                 checking = true
+                previewRefresh += 1
                 scope.launch {
                     updater.checkForUpdate().onSuccess { found ->
                         onUpdate(found)
-                        updateStatus = if (found == null) "Tu instalación está al día." else "Disponible · " + found.versionTag
+                        updateStatus = if (found == null) "No hay una actualización oficial más reciente."
+                            else "Disponible · " + found.versionTag
                     }.onFailure { updateStatus = it.message ?: "No se pudo consultar GitHub." }
                     checking = false
                 }
-            }, icon = Icons.Default.Refresh, enabled = !checking && progress == null)
+            }, icon = Icons.Default.Refresh, enabled = !checking && !checkingPreview && progress == null)
             update?.let { found ->
                 LauncherButton("Descargar " + found.versionTag, {
                     progress = 0f
@@ -163,6 +179,24 @@ internal fun SettingsPage(
                 }, primary = true, enabled = !checking && progress == null)
                 Text(found.changelog.take(240), color = Prissma.colors.textMuted,
                     style = MaterialTheme.typography.bodySmall, maxLines = 5, overflow = TextOverflow.Ellipsis)
+            }
+            HorizontalDivider(color = Prissma.colors.borderSubtle)
+            Text("Betas de prueba", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            val availablePreview = preview
+            when {
+                checkingPreview -> Text("Buscando betas…", style = MaterialTheme.typography.bodySmall)
+                previewError != null -> Text(previewError.orEmpty(), color = Prissma.colors.error,
+                    style = MaterialTheme.typography.bodySmall)
+                availablePreview == null -> Text("No hay una beta de prueba más reciente.",
+                    color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
+                else -> {
+                    Text("Las betas de prueba pueden requerir una instalación limpia si cambia la firma.",
+                        color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
+                    LauncherButton("Abrir " + availablePreview.versionTag, {
+                        runCatching { uriHandler.openUri(availablePreview.apkDownloadUrl) }
+                            .onFailure { onNotice("No se pudo abrir la descarga de GitHub.") }
+                    })
+                }
             }
         }
     }
