@@ -1,5 +1,6 @@
 package com.prissma.launcher.ui.hub
 
+import android.content.Intent
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -13,9 +14,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,7 +32,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -43,6 +48,7 @@ import com.prissma.launcher.ui.launch.JavaLaunchScreen
 import com.prissma.launcher.ui.theme.Prissma
 import com.prissma.launcher.ui.workshop.ContentWorkshopScreen
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.Locale
 import java.util.UUID
 
@@ -97,6 +103,7 @@ fun HubScreen(
     var showNewInstanceDialog by remember { mutableStateOf(false) }
     var showAccountDialog by remember { mutableStateOf(false) }
     var showFrontendBridgeDialog by remember { mutableStateOf(false) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
     var workshopTargetInstance by remember { mutableStateOf<GameInstance?>(null) }
     var launchingJavaInstance by remember { mutableStateOf<GameInstance?>(null) }
 
@@ -104,8 +111,11 @@ fun HubScreen(
 
     // Actualizador automático vía GitHub Releases
     val updater = remember { AppUpdater(context) }
+    val currentVersion = remember { updater.getCurrentVersionName() }
     val updateScope = rememberCoroutineScope()
     var availableUpdate by remember { mutableStateOf<UpdateInfo?>(null) }
+    var isCheckingUpdate by remember { mutableStateOf(false) }
+    var updateStatusText by remember { mutableStateOf("Listo para comprobar") }
     var isDownloadingUpdate by remember { mutableStateOf(false) }
     var updateProgress by remember { mutableFloatStateOf(0f) }
 
@@ -246,7 +256,6 @@ fun HubScreen(
                 }
             }
     ) {
-        // Resplandor ambiental prismático sutil
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -265,7 +274,7 @@ fun HubScreen(
                 .padding(vertical = 14.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Barra Superior: Perfil + Filtros + Buscador PRISSMA + Botón Nueva
+            // Barra Superior: Perfil + Filtros + Buscador + Ajustes + Nueva
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -337,10 +346,10 @@ fun HubScreen(
                     }
                 }
 
-                // Barra de búsqueda retro-moderna: PRISSMA > Buscar...
+                // Buscador compacto
                 Row(
                     modifier = Modifier
-                        .width(210.dp)
+                        .width(175.dp)
                         .clip(RoundedCornerShape(10.dp))
                         .background(Prissma.colors.surfaceCard)
                         .border(1.dp, Prissma.colors.borderSubtle, RoundedCornerShape(10.dp))
@@ -351,7 +360,7 @@ fun HubScreen(
                     Text(
                         text = "PRISSMA >",
                         color = Color(0xFF00F0FF),
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace
                     )
@@ -360,7 +369,7 @@ fun HubScreen(
                             Text(
                                 text = "Buscar...",
                                 color = Prissma.colors.textMuted,
-                                fontSize = 12.sp,
+                                fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace
                             )
                         }
@@ -370,7 +379,7 @@ fun HubScreen(
                             singleLine = true,
                             textStyle = TextStyle(
                                 color = Prissma.colors.textPrimary,
-                                fontSize = 12.sp,
+                                fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace
                             ),
                             cursorBrush = SolidColor(Color(0xFF00F0FF)),
@@ -379,19 +388,37 @@ fun HubScreen(
                     }
                 }
 
-                Box(
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(prismBrush)
-                        .clickable { showNewInstanceDialog = true }
-                        .padding(horizontal = 15.dp, vertical = 8.dp)
-                ) {
-                    Text(
-                        text = "+ Nueva",
-                        color = Prissma.colors.surfaceVoid,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(Prissma.colors.surfaceCard)
+                            .border(1.dp, Prissma.colors.borderSubtle, CircleShape)
+                            .clickable { showSettingsDialog = true }
+                            .padding(horizontal = 13.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            text = "⚙ Ajustes",
+                            color = Prissma.colors.textPrimary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(prismBrush)
+                            .clickable { showNewInstanceDialog = true }
+                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            text = "+ Nueva",
+                            color = Prissma.colors.surfaceVoid,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
                 }
             }
 
@@ -457,7 +484,7 @@ fun HubScreen(
                 }
             }
 
-            // Barra inferior de controles + sello Beta oficial
+            // Barra inferior de controles + versión real
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -499,13 +526,38 @@ fun HubScreen(
                 }
 
                 Text(
-                    text = "PRISSMA v1.0.0-beta.1 · ARM64",
+                    text = "PRISSMA v$currentVersion · ARM64",
                     color = Prissma.colors.textMuted,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.SemiBold
                 )
             }
+        }
+
+        if (showSettingsDialog) {
+            SettingsDialog(
+                currentVersion = currentVersion,
+                isCheckingUpdate = isCheckingUpdate,
+                updateStatusText = updateStatusText,
+                onCheckUpdate = {
+                    isCheckingUpdate = true
+                    updateStatusText = "Buscando en GitHub Releases..."
+                    updateScope.launch {
+                        val found = updater.checkForUpdate()
+                        isCheckingUpdate = false
+                        if (found != null) {
+                            updateStatusText = "Versión ${found.versionTag} disponible"
+                            showSettingsDialog = false
+                            availableUpdate = found
+                        } else {
+                            updateStatusText = "Ya tienes la última versión ($currentVersion)"
+                        }
+                    }
+                },
+                onCopiedBanner = { msg -> bannerMessage = msg },
+                onDismiss = { showSettingsDialog = false }
+            )
         }
 
         if (showNewInstanceDialog) {
@@ -622,6 +674,142 @@ fun HubScreen(
             )
         }
     }
+}
+
+@Composable
+private fun SettingsDialog(
+    currentVersion: String,
+    isCheckingUpdate: Boolean,
+    updateStatusText: String,
+    onCheckUpdate: () -> Unit,
+    onCopiedBanner: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+
+    val latestLogText = remember {
+        val instancesDir = File(context.filesDir, "instances")
+        val latestLogFile = instancesDir.walkTopDown()
+            .filter { it.isFile && it.name == "prissma_last.log" }
+            .maxByOrNull { it.lastModified() }
+
+        if (latestLogFile != null && latestLogFile.exists()) {
+            val lines = runCatching { latestLogFile.readLines() }.getOrDefault(emptyList())
+            if (lines.isEmpty()) "El archivo de log está vacío."
+            else lines.takeLast(60).joinToString("\n")
+        } else {
+            "Aún no hay ningún registro guardado (arranca una instancia primero)."
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Prissma.colors.surfaceCard,
+        title = {
+            Text(
+                text = "Ajustes y Diagnóstico · v$currentVersion",
+                color = Prissma.colors.textPrimary,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // Sección 1: Actualizaciones
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Prissma.colors.surfaceElevated, RoundedCornerShape(10.dp))
+                        .padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "Actualizaciones de PRISSMA",
+                        color = Prissma.colors.textPrimary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = updateStatusText,
+                        color = Prissma.colors.textMuted,
+                        fontSize = 11.sp
+                    )
+                    Button(
+                        enabled = !isCheckingUpdate,
+                        onClick = onCheckUpdate,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00F0FF))
+                    ) {
+                        Text(
+                            text = if (isCheckingUpdate) "Buscando..." else "Buscar nueva versión",
+                            color = Prissma.colors.surfaceVoid,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                // Sección 2: Reporte de errores (prissma_last.log)
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = "Último reporte de errores (prissma_last.log):",
+                        color = Prissma.colors.textPrimary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp)
+                            .background(Color(0xFF07090D), RoundedCornerShape(8.dp))
+                            .border(1.dp, Prissma.colors.borderSubtle, RoundedCornerShape(8.dp))
+                            .padding(8.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Text(
+                            text = latestLogText,
+                            color = Prissma.colors.textMuted,
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                clipboard.setText(AnnotatedString(latestLogText))
+                                onCopiedBanner("Reporte copiado al portapapeles")
+                            }
+                        ) {
+                            Text("Copiar reporte", color = Prissma.colors.textPrimary, fontSize = 11.sp)
+                        }
+                        Button(
+                            onClick = {
+                                val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_SUBJECT, "Reporte PRISSMA v$currentVersion")
+                                    putExtra(Intent.EXTRA_TEXT, latestLogText)
+                                }
+                                context.startActivity(Intent.createChooser(sendIntent, "Enviar reporte de errores"))
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Prissma.colors.engineJava)
+                        ) {
+                            Text(
+                                text = "Compartir reporte",
+                                color = Prissma.colors.surfaceVoid,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cerrar", color = Prissma.colors.textMuted)
+            }
+        }
+    )
 }
 
 @Composable
