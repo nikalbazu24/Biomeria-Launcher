@@ -158,7 +158,7 @@ namespace {
         }
 
         JavaVMInitArgs vmArgs;
-        vmArgs.version = JNI_VERSION_1_8;
+        vmArgs.version = JNI_VERSION_1_6;
         vmArgs.nOptions = static_cast<jint>(options.size());
         vmArgs.options = options.data();
         vmArgs.ignoreUnrecognized = JNI_TRUE;
@@ -287,7 +287,6 @@ Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativeInitGraphicsSurface
 
     eglMakeCurrent(gDisplay, gSurface, gSurface, gContext);
 
-    // Dibuja un fotograma inicial negro OLED en el lienzo nativo
     glViewport(0, 0, width, height);
     glClearColor(0.02f, 0.03f, 0.05f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -343,7 +342,7 @@ Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativeLaunchJvm(
     jboolean useVulkanZink
 ) {
     if (gJvmRunning) {
-        return 1; // Ya hay una sesión corriendo
+        return 1;
     }
 
     ensureStdioRedirected();
