@@ -91,7 +91,8 @@ fun JavaLaunchScreen(instance: GameInstance, playerName: String, accountType: St
             try {
                 val classpath = runtimeManager.buildClasspath(ready.instanceId, ready.clientJarFile)
                 val gameArgs = runtimeManager.buildMinecraftArgs(
-                    ready.instanceId, ready.resolvedVersion, ready.playerName, ready.playerUuid
+                    ready.instanceId, ready.resolvedVersion, ready.playerName, ready.playerUuid,
+                    ready.assetsDir, ready.assetIndexId
                 )
                 context.startActivity(Intent(context, JavaGameActivity::class.java).apply {
                     putExtra("INSTANCE_TITLE", ready.instanceTitle)

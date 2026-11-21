@@ -348,16 +348,11 @@ class JavaRuntimeManager(private val context: Context) {
         resolvedVersion: String,
         playerName: String,
         playerUuid: String,
+        assetsDir: File,
+        assetIndexId: String,
         accountType: String = "Offline"
     ): Array<String> {
         val instanceRoot = File(context.filesDir, "instances/$instanceId")
-        val assetsDir = File(instanceRoot, "assets").apply { mkdirs() }
-        val assetIndexId = File(assetsDir, "indexes")
-            .listFiles()
-            ?.firstOrNull { it.extension == "json" }
-            ?.nameWithoutExtension
-            ?: resolvedVersion
-
         val userType = when (accountType.lowercase()) {
             "microsoft" -> "msa"
             "ely.by" -> "mojang"

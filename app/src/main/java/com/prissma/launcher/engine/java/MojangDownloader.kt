@@ -2,10 +2,13 @@ package com.prissma.launcher.engine.java
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
@@ -19,6 +22,8 @@ data class PreparedJavaSession(
     val accountType: String,
     val mainClass: String,
     val clientJarFile: File,
+    val assetsDir: File,
+    val assetIndexId: String,
     val librariesDownloaded: Int,
     val installedModsCount: Int
 )
@@ -39,7 +44,7 @@ class MojangDownloader(private val context: Context) {
             val instanceRoot = File(context.filesDir, "instances/$instanceId").apply { mkdirs() }
             val versionsDir = File(instanceRoot, "versions").apply { mkdirs() }
             val librariesDir = File(instanceRoot, "libraries").apply { mkdirs() }
-            val assetIndexesDir = File(instanceRoot, "assets/indexes").apply { mkdirs() }
+            val assetsDir = File(context.filesDir, "minecraft/assets")
             val modsDir = File(instanceRoot, "mods").apply { mkdirs() }
 
             onProgress(0.05f, "Conectando con servidores oficiales de Mojang...")
@@ -89,17 +94,7 @@ class MojangDownloader(private val context: Context) {
                 downloadBinary(clientUrl, clientJarFile)
             }
 
-            // 2. Descargar índice de sonidos y texturas (assets)
-            val assetIndexObj = versionMeta.getJSONObject("assetIndex")
-            val assetId = assetIndexObj.getString("id")
-            val assetUrl = assetIndexObj.getString("url")
-            val assetIndexFile = File(assetIndexesDir, "$assetId.json")
-            if (!assetIndexFile.exists()) {
-                onProgress(0.35f, "Descargando mapa de recursos ($assetId)...")
-                assetIndexFile.writeText(httpGetText(assetUrl), Charsets.UTF_8)
-            }
-
-            // 3. Descargar librerías Java necesarias
+            // Descargar librerías Java necesarias
             val librariesArray = versionMeta.getJSONArray("libraries")
             val artifactsToDownload = mutableListOf<Pair<String, File>>()
 
@@ -125,13 +120,19 @@ class MojangDownloader(private val context: Context) {
 
             val totalLibs = artifactsToDownload.size
             artifactsToDownload.forEachIndexed { index, (url, dest) ->
-                val fraction = 0.40f + (0.55f * ((index + 1).toFloat() / totalLibs.coerceAtLeast(1)))
+                val fraction = 0.25f + (0.25f * ((index + 1).toFloat() / totalLibs.coerceAtLeast(1)))
                 onProgress(fraction, "Descargando librería ${index + 1}/$totalLibs: ${dest.name}")
                 dest.parentFile?.mkdirs()
                 downloadBinary(url, dest)
             }
 
-            // 4. Generar UUID estándar de Mojang para modo Offline / No Premium
+            onProgress(0.50f, "Preparando el índice de recursos de Minecraft...")
+            val assetIndexId = MojangAssets(assetsDir, ::downloadBinary).prepare(versionMeta.getJSONObject("assetIndex")) { done, total ->
+                val fraction = 0.50f + 0.49f * done / total.coerceAtLeast(1)
+                onProgress(fraction, "Recursos verificados: $done/$total")
+            }
+
+            // Generar UUID estándar de Mojang para modo Offline / No Premium
             val offlineUuid = UUID.nameUUIDFromBytes(
                 "OfflinePlayer:$playerName".toByteArray(Charsets.UTF_8)
             ).toString()
@@ -149,6 +150,8 @@ class MojangDownloader(private val context: Context) {
                 accountType = accountType,
                 mainClass = mainClass,
                 clientJarFile = clientJarFile,
+                assetsDir = assetsDir,
+                assetIndexId = assetIndexId,
                 librariesDownloaded = totalLibs,
                 installedModsCount = modsCount
             )
@@ -191,7 +194,7 @@ class MojangDownloader(private val context: Context) {
         }
     }
 
-    private fun downloadBinary(urlString: String, destination: File) {
+    private suspend fun downloadBinary(urlString: String, destination: File) {
         val conn = (URL(urlString).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 15_000
@@ -200,11 +203,18 @@ class MojangDownloader(private val context: Context) {
         }
         try {
             if (conn.responseCode !in 200..299) {
-                error("Error descargando ${destination.name} (HTTP ${conn.responseCode})")
+                throw IOException("Error descargando ${destination.name} (HTTP ${conn.responseCode})")
             }
             conn.inputStream.use { input ->
                 FileOutputStream(destination).use { output ->
-                    input.copyTo(output)
+                    val context = currentCoroutineContext()
+                    val buffer = ByteArray(32 * 1024)
+                    while (true) {
+                        context.ensureActive()
+                        val count = input.read(buffer)
+                        if (count == -1) break
+                        output.write(buffer, 0, count)
+                    }
                 }
             }
         } finally {

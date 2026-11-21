@@ -227,4 +227,5 @@ dependencies {
     implementation("org.apache.commons:commons-compress:1.26.2")
     implementation("org.tukaani:xz:1.9")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }
