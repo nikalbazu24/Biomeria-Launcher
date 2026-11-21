@@ -3,522 +3,232 @@ package com.prissma.launcher.ui.workshop
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.prissma.launcher.data.GameInstance
 import com.prissma.launcher.data.InstalledFileItem
 import com.prissma.launcher.data.ModrinthItem
 import com.prissma.launcher.data.ModrinthRepository
 import com.prissma.launcher.data.WorkshopCategory
-import com.prissma.launcher.ui.hub.EngineType
-import com.prissma.launcher.ui.hub.GameInstance
+import com.prissma.launcher.ui.components.ControlShape
+import com.prissma.launcher.ui.components.LauncherButton
+import com.prissma.launcher.ui.components.PageHeader
+import com.prissma.launcher.ui.components.PanelShape
+import com.prissma.launcher.ui.components.gamepadClick
 import com.prissma.launcher.ui.theme.Prissma
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private enum class WorkshopTab(val label: String, val category: WorkshopCategory?) {
     MODS("Mods", WorkshopCategory.MODS),
     SHADERS("Shaders", WorkshopCategory.SHADERS),
-    PACKS("Resource Packs", WorkshopCategory.RESOURCE_PACKS),
-    INSTALLED("Instalados", null)
+    PACKS("Texturas", WorkshopCategory.RESOURCE_PACKS),
+    INSTALLED("Guardados", null)
 }
 
 @Composable
-fun ContentWorkshopScreen(
-    instance: GameInstance,
-    onBack: () -> Unit
-) {
+fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
-
     val context = LocalContext.current
-    val repository = remember { ModrinthRepository(context) }
+    val repository = remember(context) { ModrinthRepository(context) }
     val scope = rememberCoroutineScope()
-    val focusManager = LocalFocusManager.current
+    val focus = LocalFocusManager.current
+    val loader = instance.configuredModLoader
 
-    val accentColor = Prissma.colors.engineColor(instance.engine.name)
-
-    // Si la instancia es Rust o Bedrock, arrancamos en Resource Packs (compatibles)
-    var selectedTab by remember {
-        mutableStateOf(
-            if (instance.engine == EngineType.JAVA) WorkshopTab.MODS else WorkshopTab.PACKS
-        )
+    var tab by rememberSaveable(instance.id) {
+        mutableStateOf(if (loader == null) WorkshopTab.PACKS else WorkshopTab.MODS)
     }
-    var searchQuery by remember { mutableStateOf("") }
-    var searchResults by remember { mutableStateOf<List<ModrinthItem>>(emptyList()) }
-    var installedFiles by remember {
-        mutableStateOf(repository.getInstalledFiles(instance.id))
-    }
+    var query by rememberSaveable { mutableStateOf("") }
+    var submitted by rememberSaveable { mutableStateOf("") }
+    var reload by remember { mutableIntStateOf(0) }
+    var results by remember { mutableStateOf<List<ModrinthItem>>(emptyList()) }
+    var installed by remember { mutableStateOf<List<InstalledFileItem>>(emptyList()) }
+    var loading by remember { mutableStateOf(false) }
+    var savingId by remember { mutableStateOf<String?>(null) }
+    var status by remember { mutableStateOf<String?>(null) }
+    var confirmRemoval by remember { mutableStateOf<InstalledFileItem?>(null) }
 
-    var isLoading by remember { mutableStateOf(false) }
-    var downloadingProjectId by remember { mutableStateOf<String?>(null) }
-    var statusBanner by remember { mutableStateOf<String?>(null) }
-
-    fun refreshInstalled() {
-        installedFiles = repository.getInstalledFiles(instance.id)
+    fun search() {
+        focus.clearFocus()
+        submitted = query.trim()
+        reload += 1
     }
 
-    fun runSearch() {
-        val cat = selectedTab.category ?: return
-        scope.launch {
-            isLoading = true
-            statusBanner = null
-            repository.searchProjects(searchQuery, cat)
-                .onSuccess { list -> searchResults = list }
-                .onFailure { err ->
-                    statusBanner = "No se pudo conectar a Modrinth: ${err.message}"
-                }
-            isLoading = false
-        }
-    }
-
-    LaunchedEffect(selectedTab) {
-        if (selectedTab == WorkshopTab.INSTALLED) {
-            refreshInstalled()
+    LaunchedEffect(tab, submitted, reload, instance.id) {
+        status = null
+        val category = tab.category
+        if (category == null) {
+            installed = withContext(Dispatchers.IO) { repository.getInstalledFiles(instance.id) }
+            loading = false
         } else {
-            runSearch()
+            results = emptyList()
+            loading = true
+            repository.searchProjects(submitted, category, instance.version, loader)
+                .onSuccess { results = it }
+                .onFailure { status = it.message ?: "No se pudo consultar Modrinth." }
+            loading = false
         }
     }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Prissma.colors.surfaceVoid)
+        Modifier.fillMaxSize().background(Prissma.colors.surfaceVoid).safeDrawingPadding().padding(14.dp)
             .onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
                 when (event.key) {
-                    Key.ButtonB, Key.Escape -> {
-                        onBack()
-                        true
-                    }
-                    Key.ButtonL1 -> {
+                    Key.ButtonB, Key.Escape -> { onBack(); true }
+                    Key.ButtonL1, Key.ButtonR1 -> {
                         val tabs = WorkshopTab.entries
-                        val prev = (tabs.indexOf(selectedTab) - 1 + tabs.size) % tabs.size
-                        selectedTab = tabs[prev]
-                        true
-                    }
-                    Key.ButtonR1 -> {
-                        val tabs = WorkshopTab.entries
-                        val next = (tabs.indexOf(selectedTab) + 1) % tabs.size
-                        selectedTab = tabs[next]
+                        val step = if (event.key == Key.ButtonL1) -1 else 1
+                        tab = tabs[(tab.ordinal + tabs.size + step) % tabs.size]
                         true
                     }
                     else -> false
                 }
-            }
-            .padding(horizontal = 24.dp, vertical = 14.dp)
+            },
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // 1. Cabecera con botón Volver, título de instancia y pestañas
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(Prissma.colors.surfaceCard)
-                        .border(1.dp, Prissma.colors.borderSubtle, CircleShape)
-                        .clickable(onClick = onBack)
-                        .padding(horizontal = 14.dp, vertical = 7.dp)
-                ) {
-                    Text(
-                        text = "← Volver [B]",
-                        color = Prissma.colors.textPrimary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                Column {
-                    Text(
-                        text = "Taller Modrinth · ${instance.title}",
-                        color = Prissma.colors.textPrimary,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = "Motor ${instance.engine.displayName} · Versión ${instance.version}",
-                        color = accentColor,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-            }
-
-            // Pestañas de categoría [L1 / R1]
-            Row(
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(Prissma.colors.surfaceCard)
-                    .border(1.dp, Prissma.colors.borderSubtle, CircleShape)
-                    .padding(4.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                WorkshopTab.entries.forEach { tab ->
-                    val active = tab == selectedTab
-                    val labelText = if (tab == WorkshopTab.INSTALLED) {
-                        "${tab.label} (${installedFiles.size})"
-                    } else {
-                        tab.label
-                    }
-                    Box(
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .background(
-                                if (active) Prissma.colors.surfaceElevated else Color.Transparent
-                            )
-                            .clickable { selectedTab = tab }
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Text(
-                            text = labelText,
-                            color = if (active) accentColor else Prissma.colors.textMuted,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
+        PageHeader("Taller", instance.title + " · Minecraft " + instance.version + " · Modrinth", onBack)
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            WorkshopTab.entries.forEach {
+                val choose = { tab = it }
+                FilterChip(tab == it, choose, { Text(it.label) }, modifier = Modifier.gamepadClick(onClick = choose))
             }
         }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Aviso informativo si busca mods Java desde una instancia Rust o Bedrock
-        if (instance.engine != EngineType.JAVA &&
-            (selectedTab == WorkshopTab.MODS || selectedTab == WorkshopTab.SHADERS)
-        ) {
-            Text(
-                text = "Nota: Modrinth aloja mods y shaders de Java. Igual puedes descargarlos para probar.",
-                color = Prissma.colors.engineJava,
-                fontSize = 12.sp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Prissma.colors.surfaceCard, RoundedCornerShape(8.dp))
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-
-        // 2. Barra de búsqueda (visible en Mods, Shaders y Resource Packs)
-        if (selectedTab != WorkshopTab.INSTALLED) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = {
-                        Text(
-                            text = "Buscar ${selectedTab.label.lowercase()} en Modrinth (ej. Sodium, BSL, Iris)...",
-                            color = Prissma.colors.textMuted,
-                            fontSize = 13.sp
-                        )
-                    },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = {
-                        focusManager.clearFocus()
-                        runSearch()
-                    }),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = accentColor,
-                        unfocusedBorderColor = Prissma.colors.borderSubtle,
-                        focusedTextColor = Prissma.colors.textPrimary,
-                        unfocusedTextColor = Prissma.colors.textPrimary,
-                        focusedContainerColor = Prissma.colors.surfaceCard,
-                        unfocusedContainerColor = Prissma.colors.surfaceCard
-                    ),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.weight(1f)
-                )
-
-                Button(
-                    onClick = {
-                        focusManager.clearFocus()
-                        runSearch()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = accentColor),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.height(52.dp)
-                ) {
-                    Text(
-                        text = "Buscar",
-                        color = Prissma.colors.surfaceVoid,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+        if (tab.category != null) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(query, { query = it }, Modifier.weight(1f),
+                    placeholder = { Text("Buscar en " + tab.label.lowercase()) }, singleLine = true,
+                    shape = ControlShape, keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { search() }))
+                LauncherButton("Buscar", ::search, icon = Icons.Default.Search, enabled = !loading)
             }
-
-            Spacer(modifier = Modifier.height(10.dp))
-        }
-
-        // Aviso de estado de descarga o error
-        statusBanner?.let { msg ->
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Prissma.colors.surfaceElevated, RoundedCornerShape(8.dp))
-                    .border(1.dp, Prissma.colors.brandAccent, RoundedCornerShape(8.dp))
-                    .padding(horizontal = 12.dp, vertical = 7.dp)
-            ) {
+            if (tab == WorkshopTab.MODS) {
                 Text(
-                    text = msg,
-                    color = Prissma.colors.textPrimary,
-                    fontSize = 12.sp
+                    if (loader == null) "Los mods requieren un cargador configurado."
+                    else "Archivos para " + loader + ". El arranque integrado aún usa Minecraft vanilla.",
+                    style = MaterialTheme.typography.bodySmall, color = Prissma.colors.textMuted
                 )
             }
-            Spacer(modifier = Modifier.height(8.dp))
         }
+        status?.let { Text(it, color = Prissma.colors.netP2P, style = MaterialTheme.typography.bodySmall) }
 
-        // 3. Lista principal de resultados o archivos instalados
-        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            when {
-                selectedTab == WorkshopTab.INSTALLED -> {
-                    InstalledList(
-                        files = installedFiles,
-                        onDelete = { fileItem ->
-                            if (repository.deleteInstalledFile(fileItem)) {
-                                refreshInstalled()
-                                statusBanner = "Eliminado: ${fileItem.fileName}"
+        when {
+            loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(Modifier.size(28.dp))
+            }
+            tab == WorkshopTab.INSTALLED && installed.isEmpty() -> {
+                EmptyResults("Todavía no hay archivos guardados en esta instancia.")
+            }
+            tab == WorkshopTab.INSTALLED -> LazyVerticalGrid(
+                columns = GridCells.Adaptive(245.dp), modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.spacedBy(9.dp), verticalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                items(installed, key = { it.file.absolutePath }) {
+                    Column(cardModifier(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text(it.fileName, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                        Text(it.categoryLabel + " · " + it.sizeKb + " KB", color = Prissma.colors.textMuted,
+                            style = MaterialTheme.typography.bodySmall)
+                        LauncherButton("Quitar archivo", { confirmRemoval = it })
+                    }
+                }
+            }
+            results.isEmpty() -> EmptyResults("Sin resultados compatibles con Minecraft " + instance.version + ".")
+            else -> LazyVerticalGrid(
+                columns = GridCells.Adaptive(245.dp), modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.spacedBy(9.dp), verticalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                items(results, key = { it.projectId }) { item ->
+                    ProjectCard(
+                        item, downloading = savingId == item.projectId,
+                        enabled = savingId == null && (item.category != WorkshopCategory.MODS || loader != null)
+                    ) {
+                        savingId = item.projectId
+                        scope.launch {
+                            repository.downloadAndInstall(item, instance.id, instance.version, loader)
+                                .onSuccess { status = "Guardado: " + it.name }
+                                .onFailure { status = it.message ?: "No se pudo guardar el archivo." }
+                            savingId = null
+                            if (tab == WorkshopTab.INSTALLED) {
+                                installed = withContext(Dispatchers.IO) { repository.getInstalledFiles(instance.id) }
                             }
                         }
-                    )
-                }
-                isLoading -> {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = accentColor)
-                    }
-                }
-                searchResults.isEmpty() -> {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "No se encontraron resultados. Prueba con otro nombre.",
-                            color = Prissma.colors.textMuted
-                        )
-                    }
-                }
-                else -> {
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                        contentPadding = PaddingValues(bottom = 12.dp)
-                    ) {
-                        items(searchResults, key = { it.projectId }) { item ->
-                            ModrinthResultCard(
-                                item = item,
-                                accentColor = accentColor,
-                                isDownloading = downloadingProjectId == item.projectId,
-                                onInstall = {
-                                    scope.launch {
-                                        downloadingProjectId = item.projectId
-                                        statusBanner = "Descargando ${item.title}..."
-                                        repository.downloadAndInstall(
-                                            item = item,
-                                            instanceId = instance.id,
-                                            preferredMcVersion = instance.version
-                                        ).onSuccess { savedFile ->
-                                            refreshInstalled()
-                                            statusBanner = "Instalado: ${savedFile.name} en /${item.category.folderName}"
-                                        }.onFailure { err ->
-                                            statusBanner = "Error instalando ${item.title}: ${err.message}"
-                                        }
-                                        downloadingProjectId = null
-                                    }
-                                }
-                            )
-                        }
                     }
                 }
             }
         }
+    }
+
+    confirmRemoval?.let { target ->
+        AlertDialog(
+            onDismissRequest = { confirmRemoval = null },
+            title = { Text("¿Quitar archivo?") },
+            text = { Text(target.fileName) },
+            dismissButton = { LauncherButton("Cancelar", { confirmRemoval = null }, primary = true) },
+            confirmButton = { LauncherButton("Quitar", {
+                confirmRemoval = null
+                scope.launch {
+                    val removed = withContext(Dispatchers.IO) { repository.deleteInstalledFile(target) }
+                    installed = withContext(Dispatchers.IO) { repository.getInstalledFiles(instance.id) }
+                    status = if (removed) "Archivo quitado." else "No se pudo quitar el archivo."
+                }
+            }) }
+        )
     }
 }
 
 @Composable
-private fun ModrinthResultCard(
-    item: ModrinthItem,
-    accentColor: Color,
-    isDownloading: Boolean,
-    onInstall: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(Prissma.colors.surfaceCard)
-            .border(1.dp, Prissma.colors.borderSubtle, RoundedCornerShape(12.dp))
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        // Icono del proyecto desde Modrinth
-        Box(
-            modifier = Modifier
-                .size(52.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(Prissma.colors.surfaceElevated),
-            contentAlignment = Alignment.Center
-        ) {
-            if (item.iconUrl != null) {
-                AsyncImage(
-                    model = item.iconUrl,
-                    contentDescription = item.title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                Text(
-                    text = item.title.take(2).uppercase(),
-                    color = accentColor,
-                    fontWeight = FontWeight.Bold
-                )
+private fun ProjectCard(item: ModrinthItem, downloading: Boolean, enabled: Boolean, onSave: () -> Unit) {
+    Column(cardModifier(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(38.dp).background(Prissma.colors.surfaceElevated, ControlShape), contentAlignment = Alignment.Center) {
+                if (item.iconUrl != null) {
+                    AsyncImage(item.iconUrl, null, Modifier.fillMaxSize().clip(ControlShape))
+                } else Icon(Icons.Default.Build, null, Modifier.size(18.dp), tint = Prissma.colors.netP2P)
+            }
+            Column(Modifier.weight(1f)) {
+                Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold)
+                Text(item.author, maxLines = 1, color = Prissma.colors.textMuted,
+                    style = MaterialTheme.typography.bodySmall)
             }
         }
-
-        // Título, autor y descripción
-        Column(modifier = Modifier.weight(1f)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = item.title,
-                    color = Prissma.colors.textPrimary,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "por ${item.author}",
-                    color = Prissma.colors.textMuted,
-                    fontSize = 11.sp
-                )
-            }
-            Spacer(modifier = Modifier.height(3.dp))
-            Text(
-                text = item.description,
-                color = Prissma.colors.textMuted,
-                fontSize = 12.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-
-        // Botón Instalar
-        Button(
-            onClick = onInstall,
-            enabled = !isDownloading,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Prissma.colors.brandAccent,
-                contentColor = Prissma.colors.surfaceVoid
-            ),
-            shape = RoundedCornerShape(10.dp)
-        ) {
-            if (isDownloading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp,
-                    color = Prissma.colors.surfaceVoid
-                )
-            } else {
-                Text(
-                    text = "Instalar",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp
-                )
-            }
-        }
+        Text(item.description, minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.bodySmall, color = Prissma.colors.textMuted)
+        LauncherButton(if (downloading) "Guardando…" else "Guardar", onSave, enabled = enabled)
     }
 }
 
 @Composable
-private fun InstalledList(
-    files: List<InstalledFileItem>,
-    onDelete: (InstalledFileItem) -> Unit
-) {
-    if (files.isEmpty()) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                text = "Aún no has descargado mods ni shaders para esta instancia.",
-                color = Prissma.colors.textMuted,
-                fontSize = 14.sp
-            )
-        }
-        return
-    }
+private fun cardModifier() = Modifier.fillMaxWidth().background(Prissma.colors.surfaceCard, PanelShape)
+    .border(1.dp, Prissma.colors.borderSubtle, PanelShape).padding(12.dp)
 
-    LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        contentPadding = PaddingValues(bottom = 12.dp)
-    ) {
-        items(files, key = { it.file.absolutePath }) { item ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Prissma.colors.surfaceCard)
-                    .border(1.dp, Prissma.colors.borderSubtle, RoundedCornerShape(10.dp))
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = item.fileName,
-                        color = Prissma.colors.textPrimary,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = "${item.categoryLabel} · ${item.sizeKb} KB",
-                        color = Prissma.colors.brandAccent,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-
-                OutlinedButton(
-                    onClick = { onDelete(item) },
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text(
-                        text = "Quitar",
-                        color = Color(0xFFF87171),
-                        fontSize = 12.sp
-                    )
-                }
-            }
-        }
+@Composable
+private fun EmptyResults(message: String) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text(message, color = Prissma.colors.textMuted)
     }
 }

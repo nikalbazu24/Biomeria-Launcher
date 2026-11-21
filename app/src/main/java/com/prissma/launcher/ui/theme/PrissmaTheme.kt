@@ -3,54 +3,26 @@ package com.prissma.launcher.ui.theme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.ReadOnlyComposable
-import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
-val SurfaceVoid = Color(0xFF090B0E)
-val SurfaceCard = Color(0xFF141820)
-val SurfaceElevated = Color(0xFF1E2430)
-val SurfaceGlass = Color(0xD9090B0E)
-
-val TextPrimary = Color(0xFFF3F6FC)
-val TextMuted = Color(0xFF8E9BB0)
-
-val BrandAccent = Color(0xFF00D68F)
-val NetP2PPurple = Color(0xFFA78BFA)
-val BorderSubtle = Color(0xFF262E3D)
-
-val EngineJavaAmber = Color(0xFFF59E0B)
-val EngineRustTerracotta = Color(0xFFE85D3F)
-val EngineBedrockSky = Color(0xFF38BDF8)
-
-private val PrissmaColorScheme = darkColorScheme(
-    primary = BrandAccent,
-    onPrimary = SurfaceVoid,
-    secondary = NetP2PPurple,
-    background = SurfaceVoid,
-    surface = SurfaceCard,
-    onBackground = TextPrimary,
-    onSurface = TextPrimary
-)
-
 @Immutable
-data class PrissmaColors(
-    val surfaceVoid: Color = SurfaceVoid,
-    val surfaceCard: Color = SurfaceCard,
-    val surfaceElevated: Color = SurfaceElevated,
-    val surfaceGlass: Color = SurfaceGlass,
-    val textPrimary: Color = TextPrimary,
-    val textMuted: Color = TextMuted,
-    val brandAccent: Color = BrandAccent,
-    val netP2P: Color = NetP2PPurple,
-    val borderSubtle: Color = BorderSubtle,
-    val engineJava: Color = EngineJavaAmber,
-    val engineRust: Color = EngineRustTerracotta,
-    val engineBedrock: Color = EngineBedrockSky
-) {
-    fun engineColor(engineName: String): Color = when (engineName.uppercase()) {
+class PrissmaColors {
+    val surfaceVoid = Color(0xFF101618)
+    val surfaceCard = Color(0xFF192124)
+    val surfaceElevated = Color(0xFF242E31)
+    val surfaceGlass = Color(0xE6101618)
+    val textPrimary = Color(0xFFF3F7F2)
+    val textMuted = Color(0xFFA4B3B3)
+    val brandAccent = Color(0xFFDDF6AA)
+    val netP2P = Color(0xFF8CD8CF)
+    val borderSubtle = Color(0xFF354143)
+    val engineJava = Color(0xFFEFC681)
+    val engineRust = Color(0xFFF2A28E)
+    val engineBedrock = Color(0xFF93C7F3)
+    val error = Color(0xFFFFA8A1)
+
+    fun engineColor(engineName: String): Color = when (engineName) {
         "JAVA" -> engineJava
         "RUST" -> engineRust
         "BEDROCK" -> engineBedrock
@@ -58,21 +30,30 @@ data class PrissmaColors(
     }
 }
 
-val LocalPrissmaColors = staticCompositionLocalOf { PrissmaColors() }
+object Prissma {
+    val colors = PrissmaColors()
+}
+
+private val scheme = Prissma.colors.run {
+    darkColorScheme(
+        primary = brandAccent,
+        onPrimary = surfaceVoid,
+        primaryContainer = surfaceElevated,
+        onPrimaryContainer = textPrimary,
+        secondary = netP2P,
+        background = surfaceVoid,
+        surface = surfaceCard,
+        surfaceContainer = surfaceCard,
+        surfaceContainerHigh = surfaceElevated,
+        onBackground = textPrimary,
+        onSurface = textPrimary,
+        onSurfaceVariant = textMuted,
+        outline = borderSubtle,
+        error = error
+    )
+}
 
 @Composable
 fun PrissmaTheme(content: @Composable () -> Unit) {
-    CompositionLocalProvider(LocalPrissmaColors provides PrissmaColors()) {
-        MaterialTheme(
-            colorScheme = PrissmaColorScheme,
-            content = content
-        )
-    }
-}
-
-object Prissma {
-    val colors: PrissmaColors
-        @Composable
-        @ReadOnlyComposable
-        get() = LocalPrissmaColors.current
+    MaterialTheme(colorScheme = scheme, content = content)
 }

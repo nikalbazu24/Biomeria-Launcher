@@ -35,7 +35,7 @@ class AppUpdater(private val context: Context) {
         }.getOrDefault("1.0.0")
     }
 
-    suspend fun checkForUpdate(): UpdateInfo? = withContext(Dispatchers.IO) {
+    suspend fun checkForUpdate(): Result<UpdateInfo?> = withContext(Dispatchers.IO) {
         runCatching {
             val conn = (URL(LATEST_RELEASE_API).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
@@ -46,7 +46,7 @@ class AppUpdater(private val context: Context) {
             }
 
             try {
-                if (conn.responseCode !in 200..299) return@runCatching null
+                if (conn.responseCode !in 200..299) error("GitHub respondió HTTP " + conn.responseCode + ".")
                 val json = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
                 val remoteTag = json.optString("tag_name", "").removePrefix("v").trim()
                 val remoteBuild = Regex("""1\.0\.0-beta\.(\d+)""").matchEntire(remoteTag)
@@ -79,7 +79,7 @@ class AppUpdater(private val context: Context) {
             } finally {
                 conn.disconnect()
             }
-        }.getOrNull()
+        }
     }
 
     suspend fun downloadAndInstall(

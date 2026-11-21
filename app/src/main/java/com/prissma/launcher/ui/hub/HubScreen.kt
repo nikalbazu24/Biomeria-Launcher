@@ -1,94 +1,57 @@
 package com.prissma.launcher.ui.hub
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
-import android.widget.Toast
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.prissma.launcher.data.AppUpdater
+import com.prissma.launcher.data.EngineType
+import com.prissma.launcher.data.GameInstance
 import com.prissma.launcher.data.InstanceStorage
+import com.prissma.launcher.data.LibraryPreferences
 import com.prissma.launcher.data.UpdateInfo
+import com.prissma.launcher.ui.components.ControlShape
+import com.prissma.launcher.ui.components.LauncherButton
+import com.prissma.launcher.ui.components.PrissmaMark
+import com.prissma.launcher.ui.components.gamepadClick
 import com.prissma.launcher.ui.launch.JavaLaunchScreen
 import com.prissma.launcher.ui.theme.Prissma
 import com.prissma.launcher.ui.workshop.ContentWorkshopScreen
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import java.io.File
-import java.io.RandomAccessFile
-import java.net.HttpURLConnection
-import java.net.URL
-import java.net.URLEncoder
-import java.util.Locale
-import java.util.UUID
 
-private val PrismGradientColors = listOf(
-    Color(0xFF00F0FF), // Cian
-    Color(0xFF8A2BE2), // Púrpura
-    Color(0xFFFF007F), // Magenta
-    Color(0xFFFF8C00)  // Naranja
-)
-
-enum class EngineType(val displayName: String, val defaultLoader: String) {
-    JAVA("JAVA", "Fabric 0.16.9"),
-    RUST("RUST", "Starling Native"),
-    BEDROCK("BEDROCK", "MCPE 26.x")
+private enum class HubPage(val label: String, val icon: ImageVector) {
+    LIBRARY("Biblioteca", Icons.Default.Home),
+    WORKSHOP("Taller", Icons.Default.Build),
+    CONNECTIONS("Conexiones", Icons.Default.Share),
+    SETTINGS("Ajustes", Icons.Default.Settings)
 }
-
-enum class EngineFilter(val label: String, val type: EngineType?) {
-    ALL("Todos", null),
-    JAVA("Java", EngineType.JAVA),
-    RUST("Rust", EngineType.RUST),
-    BEDROCK("Bedrock", EngineType.BEDROCK)
-}
-
-data class GameInstance(
-    val id: String = UUID.randomUUID().toString(),
-    val title: String,
-    val engine: EngineType,
-    val version: String,
-    val loader: String,
-    val playtimeHours: Float = 0f,
-    val friendsOnline: Int = 0
-)
 
 @Composable
 fun HubScreen(
@@ -97,1108 +60,287 @@ fun HubScreen(
     onConsumeExternalLaunch: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    val storage = remember { InstanceStorage(context) }
+    val storage = remember(context) { InstanceStorage(context) }
+    val preferences = remember(context) { LibraryPreferences(context) }
+    val updater = remember(context) { AppUpdater(context) }
+    val version = remember(updater) { updater.getCurrentVersionName() }
+    val scope = rememberCoroutineScope()
+    val notices = remember { SnackbarHostState() }
 
-    val initialProfile = remember { storage.loadProfile() }
-    var playerName by remember { mutableStateOf(initialProfile.playerName) }
-    var accountType by remember { mutableStateOf(initialProfile.accountType) }
+    var instances by remember(storage) { mutableStateOf(storage.loadInstances()) }
+    var profile by remember(storage) { mutableStateOf(storage.loadProfile()) }
+    var favorites by remember(preferences) { mutableStateOf(preferences.favorites()) }
+    var recent by remember(preferences) { mutableStateOf(preferences.recent()) }
+    var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
+    var filter by rememberSaveable { mutableStateOf<EngineType?>(null) }
+    var favoritesOnly by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var order by rememberSaveable { mutableStateOf(LibraryOrder.RECENT) }
+    var page by rememberSaveable { mutableStateOf(HubPage.LIBRARY) }
 
-    var selectedFilter by remember { mutableStateOf(EngineFilter.ALL) }
-    var searchQuery by remember { mutableStateOf("") }
-    var focusedIndex by remember { mutableIntStateOf(0) }
-    var bannerMessage by remember { mutableStateOf<String?>(null) }
+    var showAccount by rememberSaveable { mutableStateOf(false) }
+    var showNew by rememberSaveable { mutableStateOf(false) }
+    var editingId by rememberSaveable { mutableStateOf<String?>(null) }
+    var deleteId by rememberSaveable { mutableStateOf<String?>(null) }
+    var launchingId by rememberSaveable { mutableStateOf<String?>(null) }
+    var update by remember { mutableStateOf<UpdateInfo?>(null) }
 
-    var showNewInstanceDialog by remember { mutableStateOf(false) }
-    var showAccountDialog by remember { mutableStateOf(false) }
-    var showFrontendBridgeDialog by remember { mutableStateOf(false) }
-    var showSettingsDialog by remember { mutableStateOf(false) }
-    var workshopTargetInstance by remember { mutableStateOf<GameInstance?>(null) }
-    var launchingJavaInstance by remember { mutableStateOf<GameInstance?>(null) }
-
-    var instances by remember { mutableStateOf(storage.loadInstances()) }
-
-    val updater = remember { AppUpdater(context) }
-    val currentVersion = remember { updater.getCurrentVersionName() }
-    val updateScope = rememberCoroutineScope()
-    var availableUpdate by remember { mutableStateOf<UpdateInfo?>(null) }
-    var isCheckingUpdate by remember { mutableStateOf(false) }
-    var updateStatusText by remember { mutableStateOf("Listo para comprobar") }
-    var isDownloadingUpdate by remember { mutableStateOf(false) }
-    var updateProgress by remember { mutableFloatStateOf(0f) }
-
-    LaunchedEffect(Unit) {
-        availableUpdate = updater.checkForUpdate()
+    val visible = remember(instances, filter, query, favorites, favoritesOnly, recent, order) {
+        visibleLibrary(instances, filter, query, favorites, favoritesOnly, recent, order)
     }
+    val selected = librarySelection(visible, selectedId)
+    val workshopInstance = selected?.takeIf { it.engine.canLaunch }
+        ?: librarySelection(instances.filter { it.engine.canLaunch }, selectedId)
 
-    val prismBrush = remember { Brush.linearGradient(PrismGradientColors) }
-
-    fun triggerLaunch(target: GameInstance) {
-        if (target.engine == EngineType.JAVA) {
-            launchingJavaInstance = target
-        } else {
-            bannerMessage = "Motor ${target.engine.displayName} seleccionado. Usa una instancia JAVA para iniciar Minecraft oficial."
+    fun notify(message: String) {
+        scope.launch {
+            notices.currentSnackbarData?.dismiss()
+            notices.showSnackbar(message, withDismissAction = true)
         }
     }
 
+    fun saveCatalog(updated: List<GameInstance>): Boolean {
+        return runCatching { storage.saveInstances(updated) }
+            .onSuccess { instances = updated }
+            .onFailure { notify("No se pudo guardar la biblioteca.") }
+            .isSuccess
+    }
+
+    fun prepare(instance: GameInstance) {
+        if (!instance.engine.canLaunch) {
+            notify("El motor " + instance.engine.displayName + " está en preparación.")
+            return
+        }
+        recent = (listOf(instance.id) + recent.filterNot { it == instance.id }).take(24)
+        preferences.setRecent(recent)
+        launchingId = instance.id
+    }
+
+    LaunchedEffect(updater) { update = updater.checkForUpdate().getOrNull() }
     LaunchedEffect(externalLaunchInstanceId) {
-        val targetId = externalLaunchInstanceId ?: return@LaunchedEffect
-        selectedFilter = EngineFilter.ALL
-        searchQuery = ""
-        val foundIndex = instances.indexOfFirst { it.id == targetId }
-        if (foundIndex >= 0) {
-            focusedIndex = foundIndex
-            triggerLaunch(instances[foundIndex])
-        } else {
-            bannerMessage = "Instancia solicitada no encontrada ($targetId)"
-        }
+        val id = externalLaunchInstanceId ?: return@LaunchedEffect
+        page = HubPage.LIBRARY
+        filter = null
+        query = ""
+        favoritesOnly = false
+        val instance = instances.firstOrNull { it.id == id }
+        if (instance != null) {
+            selectedId = instance.id
+            prepare(instance)
+        } else notify("El cartucho apunta a una instancia que no está en la biblioteca.")
         onConsumeExternalLaunch()
     }
 
-    launchingJavaInstance?.let { target ->
-        JavaLaunchScreen(
-            instance = target,
-            playerName = playerName,
-            accountType = accountType,
-            onBack = { launchingJavaInstance = null }
-        )
+    instances.firstOrNull { it.id == launchingId }?.let {
+        JavaLaunchScreen(it, profile.playerName, profile.accountType, onBack = { launchingId = null })
         return
     }
 
-    workshopTargetInstance?.let { target ->
-        ContentWorkshopScreen(
-            instance = target,
-            onBack = { workshopTargetInstance = null }
-        )
+    val showWorkshop = page == HubPage.WORKSHOP && workshopInstance != null
+    BackHandler(enabled = page != HubPage.LIBRARY && !showWorkshop) { page = HubPage.LIBRARY }
+    if (showWorkshop && workshopInstance != null) {
+        ContentWorkshopScreen(instance = workshopInstance, onBack = { page = HubPage.LIBRARY })
         return
     }
 
-    val visibleInstances = remember(instances, selectedFilter, searchQuery) {
-        val target = selectedFilter.type
-        val q = searchQuery.trim()
-        instances.filter { inst ->
-            val matchesEngine = target == null || inst.engine == target
-            val matchesQuery = q.isEmpty() ||
-                inst.title.contains(q, ignoreCase = true) ||
-                inst.version.contains(q, ignoreCase = true) ||
-                inst.loader.contains(q, ignoreCase = true)
-            matchesEngine && matchesQuery
-        }
-    }
-
-    LaunchedEffect(selectedFilter, searchQuery) {
-        if (focusedIndex > visibleInstances.lastIndex) {
-            focusedIndex = 0
-        }
-    }
-
-    val listState = rememberLazyListState()
-    val focusRequesters = remember(visibleInstances.size) {
-        List(visibleInstances.size) { FocusRequester() }
-    }
-
-    val focusedInstance = visibleInstances.getOrNull(focusedIndex)
-    val activeAccent = focusedInstance?.let {
-        Prissma.colors.engineColor(it.engine.name)
-    } ?: Prissma.colors.brandAccent
-
-    LaunchedEffect(focusedIndex, visibleInstances.size) {
-        if (visibleInstances.isNotEmpty() && focusedIndex in visibleInstances.indices) {
-            listState.animateScrollToItem(index = focusedIndex, scrollOffset = -100)
-            runCatching { focusRequesters[focusedIndex].requestFocus() }
-        }
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Prissma.colors.surfaceVoid)
-            .onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                when (event.key) {
-                    Key.DirectionLeft -> {
-                        if (focusedIndex > 0) {
-                            focusedIndex -= 1
-                            true
-                        } else false
-                    }
-                    Key.DirectionRight -> {
-                        if (focusedIndex < visibleInstances.lastIndex) {
-                            focusedIndex += 1
-                            true
-                        } else false
-                    }
-                    Key.ButtonL1 -> {
-                        val list = EngineFilter.entries
-                        val prev = (list.indexOf(selectedFilter) - 1 + list.size) % list.size
-                        selectedFilter = list[prev]
-                        focusedIndex = 0
+    Scaffold(
+        containerColor = Prissma.colors.surfaceVoid,
+        contentWindowInsets = WindowInsets.safeDrawing,
+        snackbarHost = { SnackbarHost(notices) }
+    ) { padding ->
+        HubFrame(
+            page = page,
+            onPage = { page = it },
+            playerName = profile.playerName,
+            updateAvailable = update != null,
+            onProfile = { showAccount = true },
+            modifier = Modifier.fillMaxSize().padding(padding).onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
+                when {
+                    event.key == Key.ButtonB && page != HubPage.LIBRARY -> {
+                        page = HubPage.LIBRARY
                         true
                     }
-                    Key.ButtonR1 -> {
-                        val list = EngineFilter.entries
-                        val next = (list.indexOf(selectedFilter) + 1) % list.size
-                        selectedFilter = list[next]
-                        focusedIndex = 0
+                    event.key == Key.ButtonStart -> {
+                        page = HubPage.CONNECTIONS
                         true
                     }
-                    Key.ButtonA, Key.DirectionCenter, Key.Enter -> {
-                        focusedInstance?.let { triggerLaunch(it) }
+                    page == HubPage.LIBRARY &&
+                        (event.key == Key.ButtonL1 || event.key == Key.ButtonR1) -> {
+                        val filters = listOf(null) + EngineType.entries
+                        val offset = if (event.key == Key.ButtonL1) -1 else 1
+                        filter = filters[(filters.indexOf(filter) + filters.size + offset) % filters.size]
                         true
                     }
-                    Key.ButtonX -> {
-                        focusedInstance?.let { workshopTargetInstance = it }
-                        true
-                    }
-                    Key.ButtonY -> {
-                        focusedInstance?.let {
-                            bannerMessage = "Sala P2P lista para ${it.title} (${it.engine.displayName})"
-                        }
-                        true
-                    }
-                    Key.ButtonStart -> {
-                        showFrontendBridgeDialog = true
+                    page == HubPage.LIBRARY && event.key == Key.ButtonX &&
+                        selected?.engine?.canLaunch == true -> {
+                        page = HubPage.WORKSHOP
                         true
                     }
                     else -> false
                 }
             }
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        0.0f to Prissma.colors.surfaceVoid,
-                        0.5f to activeAccent.copy(alpha = 0.11f),
-                        1.0f to Prissma.colors.surfaceVoid
-                    )
-                )
-        )
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(vertical = 14.dp),
-            verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(Prissma.colors.surfaceCard)
-                        .border(1.dp, prismBrush, CircleShape)
-                        .clickable { showAccountDialog = true }
-                        .padding(horizontal = 14.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(9.dp)
-                            .background(prismBrush, CircleShape)
-                    )
-                    Text(
-                        text = playerName,
-                        color = Prissma.colors.textPrimary,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = accountType,
-                        color = Prissma.colors.netP2P,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                Row(
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(Prissma.colors.surfaceCard)
-                        .border(1.dp, Prissma.colors.borderSubtle, CircleShape)
-                        .padding(4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    EngineFilter.entries.forEach { filter ->
-                        val isSelected = filter == selectedFilter
-                        val color = filter.type?.let { Prissma.colors.engineColor(it.name) }
-                            ?: Color(0xFF00F0FF)
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(
-                                    if (isSelected) Prissma.colors.surfaceElevated else Color.Transparent
-                                )
-                                .clickable {
-                                    selectedFilter = filter
-                                    focusedIndex = 0
-                                }
-                                .padding(horizontal = 12.dp, vertical = 5.dp)
-                        ) {
-                            Text(
-                                text = filter.label,
-                                color = if (isSelected) color else Prissma.colors.textMuted,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
+            when (page) {
+                HubPage.LIBRARY -> LibraryPage(
+                    visible, selected, favorites, filter, favoritesOnly, order, query,
+                    onQuery = { query = it }, onFilter = { filter = it },
+                    onFavoritesFilter = { favoritesOnly = !favoritesOnly },
+                    onOrder = { order = if (order == LibraryOrder.RECENT) LibraryOrder.NAME else LibraryOrder.RECENT },
+                    onSelect = { selectedId = it.id },
+                    onNew = { showNew = true },
+                    onPlay = { selected?.let(::prepare) },
+                    onWorkshop = { page = HubPage.WORKSHOP },
+                    onEdit = { editingId = selected?.id },
+                    onFavorite = {
+                        selected?.let {
+                            favorites = if (it.id in favorites) favorites - it.id else favorites + it.id
+                            preferences.setFavorites(favorites)
                         }
-                    }
-                }
-
-                Row(
-                    modifier = Modifier
-                        .width(175.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Prissma.colors.surfaceCard)
-                        .border(1.dp, Prissma.colors.borderSubtle, RoundedCornerShape(10.dp))
-                        .padding(horizontal = 10.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = "PRISSMA >",
-                        color = Color(0xFF00F0FF),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                    Box(modifier = Modifier.weight(1f)) {
-                        if (searchQuery.isEmpty()) {
-                            Text(
-                                text = "Buscar...",
-                                color = Prissma.colors.textMuted,
-                                fontSize = 11.sp,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
-                        BasicTextField(
-                            value = searchQuery,
-                            onValueChange = { searchQuery = it },
-                            singleLine = true,
-                            textStyle = TextStyle(
-                                color = Prissma.colors.textPrimary,
-                                fontSize = 11.sp,
-                                fontFamily = FontFamily.Monospace
-                            ),
-                            cursorBrush = SolidColor(Color(0xFF00F0FF)),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .background(Prissma.colors.surfaceCard)
-                            .border(1.dp, Prissma.colors.borderSubtle, CircleShape)
-                            .clickable { showSettingsDialog = true }
-                            .padding(horizontal = 13.dp, vertical = 8.dp)
-                    ) {
-                        Text(
-                            text = "⚙ Ajustes",
-                            color = Prissma.colors.textPrimary,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .background(prismBrush)
-                            .clickable { showNewInstanceDialog = true }
-                            .padding(horizontal = 14.dp, vertical = 8.dp)
-                    ) {
-                        Text(
-                            text = "+ Nueva",
-                            color = Prissma.colors.surfaceVoid,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                    }
-                }
-            }
-
-            bannerMessage?.let { msg ->
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Prissma.colors.surfaceElevated)
-                        .border(1.dp, prismBrush, RoundedCornerShape(10.dp))
-                        .clickable { bannerMessage = null }
-                        .padding(horizontal = 18.dp, vertical = 7.dp)
-                ) {
-                    Text(
-                        text = msg,
-                        color = Prissma.colors.textPrimary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-
-            if (visibleInstances.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "Sin resultados. Borra el filtro o toca '+ Nueva' para crear una instancia.",
-                        color = Prissma.colors.textMuted,
-                        fontSize = 14.sp
-                    )
-                }
-            } else {
-                LazyRow(
-                    state = listState,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    contentPadding = PaddingValues(horizontal = 44.dp),
-                    horizontalArrangement = Arrangement.spacedBy(20.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    itemsIndexed(visibleInstances, key = { _, item -> item.id }) { index, item ->
-                        val isFocused = index == focusedIndex
-                        InstanceCard(
-                            instance = item,
-                            isFocused = isFocused,
-                            prismBrush = prismBrush,
-                            focusRequester = focusRequesters[index],
-                            onFocus = { focusedIndex = index },
-                            onClick = {
-                                if (isFocused) {
-                                    triggerLaunch(item)
-                                } else {
-                                    focusedIndex = index
-                                }
-                            }
-                        )
-                    }
-                }
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    ActionPill(
-                        glyph = "A",
-                        label = "Jugar",
-                        color = Color(0xFF00F0FF),
-                        onClick = { focusedInstance?.let { triggerLaunch(it) } }
-                    )
-                    ActionPill(
-                        glyph = "Y",
-                        label = "Sala P2P",
-                        color = Prissma.colors.netP2P,
-                        onClick = {
-                            focusedInstance?.let {
-                                bannerMessage = "Sala P2P lista para ${it.title} (${it.engine.displayName})"
-                            }
-                        }
-                    )
-                    ActionPill(
-                        glyph = "X",
-                        label = "Mods y Shaders",
-                        color = activeAccent,
-                        onClick = {
-                            focusedInstance?.let { workshopTargetInstance = it }
-                        }
-                    )
-                    ActionPill(
-                        glyph = "START",
-                        label = "Frontends",
-                        color = Prissma.colors.textPrimary,
-                        onClick = { showFrontendBridgeDialog = true }
-                    )
-                }
-
-                Text(
-                    text = "PRISSMA v$currentVersion · ARM64",
-                    color = Prissma.colors.textMuted,
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.SemiBold
+                    },
+                    modifier = Modifier.fillMaxSize()
                 )
+                HubPage.CONNECTIONS -> ConnectionsPage(
+                    storage, instances, librarySelection(instances, selectedId), sourceFrontendPackage,
+                    onSelect = { selectedId = it.id }, onNotice = ::notify
+                )
+                HubPage.SETTINGS -> SettingsPage(updater, version, update, { update = it }, ::notify)
+                HubPage.WORKSHOP -> EmptyWorkshop { showNew = true }
             }
         }
+    }
 
-        if (showSettingsDialog) {
-            SettingsDialog(
-                currentVersion = currentVersion,
-                isCheckingUpdate = isCheckingUpdate,
-                updateStatusText = updateStatusText,
-                onCheckUpdate = {
-                    isCheckingUpdate = true
-                    updateStatusText = "Buscando en GitHub Releases..."
-                    updateScope.launch {
-                        val found = updater.checkForUpdate()
-                        isCheckingUpdate = false
-                        if (found != null) {
-                            updateStatusText = "Versión ${found.versionTag} disponible"
-                            showSettingsDialog = false
-                            availableUpdate = found
-                        } else {
-                            updateStatusText = "Ya tienes la última versión ($currentVersion)"
-                        }
-                    }
-                },
-                onCopiedBanner = { msg -> bannerMessage = msg },
-                onDismiss = { showSettingsDialog = false }
-            )
+    if (showAccount) ProfileDialog(profile, onDismiss = { showAccount = false }) { updated ->
+        runCatching { storage.saveProfile(updated.playerName, updated.accountType) }
+            .onSuccess { profile = updated; showAccount = false }
+            .onFailure { notify("No se pudo guardar el perfil.") }
+    }
+
+    if (showNew) InstanceEditor(onDismiss = { showNew = false }) { title, engine, gameVersion ->
+        val item = GameInstance(title = title, engine = engine, version = gameVersion, loader = engine.defaultLoader)
+        if (saveCatalog(listOf(item) + instances)) {
+            selectedId = item.id
+            filter = null
+            query = ""
+            favoritesOnly = false
+            page = HubPage.LIBRARY
+            showNew = false
         }
+    }
 
-        if (showNewInstanceDialog) {
-            NewInstanceDialog(
-                onDismiss = { showNewInstanceDialog = false },
-                onCreate = { title, engine, version ->
-                    val newItem = GameInstance(
-                        title = title,
-                        engine = engine,
-                        version = version,
-                        loader = engine.defaultLoader
-                    )
-                    val updated = listOf(newItem) + instances
-                    instances = updated
-                    storage.saveInstances(updated)
-                    selectedFilter = EngineFilter.ALL
-                    searchQuery = ""
-                    focusedIndex = 0
-                    showNewInstanceDialog = false
-                    bannerMessage = "Instancia '$title' guardada y exportada (.mcinst)"
-                }
-            )
+    instances.firstOrNull { it.id == editingId }?.let { item ->
+        InstanceEditor(
+            instance = item,
+            onDismiss = { editingId = null },
+            onRemove = { deleteId = item.id; editingId = null }
+        ) { title, _, _ ->
+            if (saveCatalog(instances.map { if (it.id == item.id) it.copy(title = title) else it })) {
+                editingId = null
+                query = ""
+            }
         }
+    }
 
-        if (showAccountDialog) {
-            AccountDialog(
-                currentName = playerName,
-                currentType = accountType,
-                onDismiss = { showAccountDialog = false },
-                onSave = { newName, newType ->
-                    playerName = newName
-                    accountType = newType
-                    storage.saveProfile(newName, newType)
-                    showAccountDialog = false
-                }
-            )
-        }
-
-        if (showFrontendBridgeDialog) {
-            FrontendBridgeDialog(
-                exportFolderPath = storage.exportInstancesDir.absolutePath,
-                selectedInstance = focusedInstance,
-                canDeleteSelected = focusedInstance != null && instances.size > 1,
-                onDeleteSelected = {
-                    val target = focusedInstance ?: return@FrontendBridgeDialog
-                    val updated = instances.filterNot { it.id == target.id }
-                    instances = updated
-                    storage.saveInstances(updated)
-                    focusedIndex = 0
-                    showFrontendBridgeDialog = false
-                    bannerMessage = "Instancia '${target.title}' eliminada"
-                },
-                onDismiss = { showFrontendBridgeDialog = false }
-            )
-        }
-
-        availableUpdate?.let { update ->
-            AlertDialog(
-                onDismissRequest = { if (!isDownloadingUpdate) availableUpdate = null },
-                containerColor = Prissma.colors.surfaceCard,
-                title = {
-                    Text(
-                        text = "Nueva versión disponible (${update.versionTag})",
-                        color = Prissma.colors.textPrimary
-                    )
-                },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(
-                            text = update.changelog.take(220),
-                            color = Prissma.colors.textMuted,
-                            fontSize = 12.sp
-                        )
-                        if (isDownloadingUpdate) {
-                            LinearProgressIndicator(
-                                progress = { updateProgress },
-                                color = Color(0xFF00F0FF),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Text(
-                                text = "Descargando... ${(updateProgress * 100).toInt()}%",
-                                color = Prissma.colors.textPrimary,
-                                fontSize = 11.sp
-                            )
-                        }
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        enabled = !isDownloadingUpdate,
-                        onClick = {
-                            isDownloadingUpdate = true
-                            updateScope.launch {
-                                updater.downloadAndInstall(update.apkDownloadUrl) { pct ->
-                                    updateProgress = pct
-                                }.onFailure { err ->
-                                    bannerMessage = err.message ?: "Error al actualizar"
-                                }
-                                isDownloadingUpdate = false
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00F0FF))
-                    ) {
-                        Text("Actualizar ahora", color = Prissma.colors.surfaceVoid, fontWeight = FontWeight.Bold)
-                    }
-                },
-                dismissButton = {
-                    if (!isDownloadingUpdate) {
-                        TextButton(onClick = { availableUpdate = null }) {
-                            Text("Más tarde", color = Prissma.colors.textMuted)
-                        }
-                    }
-                }
-            )
+    instances.firstOrNull { it.id == deleteId }?.let { item ->
+        RemoveInstanceDialog(item, onDismiss = { deleteId = null }) {
+            if (saveCatalog(instances.filterNot { it.id == item.id })) {
+                favorites = favorites - item.id
+                recent = recent.filterNot { it == item.id }
+                preferences.setFavorites(favorites)
+                preferences.setRecent(recent)
+                deleteId = null
+                selectedId = null
+            }
         }
     }
 }
 
 @Composable
-private fun SettingsDialog(
-    currentVersion: String,
-    isCheckingUpdate: Boolean,
-    updateStatusText: String,
-    onCheckUpdate: () -> Unit,
-    onCopiedBanner: (String) -> Unit,
-    onDismiss: () -> Unit
+private fun HubFrame(
+    page: HubPage,
+    onPage: (HubPage) -> Unit,
+    playerName: String,
+    updateAvailable: Boolean,
+    onProfile: () -> Unit,
+    modifier: Modifier,
+    content: @Composable () -> Unit
 ) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var uploadedUrl by remember { mutableStateOf<String?>(null) }
-    var isUploading by remember { mutableStateOf(false) }
-
-    val latestLogText = remember {
-        val instancesDir = File(context.filesDir, "instances")
-        val latestLogFile = instancesDir.walkTopDown()
-            .filter { it.isFile && it.name == "prissma_last.log" }
-            .maxByOrNull { it.lastModified() }
-
-        if (latestLogFile != null) {
-            runCatching {
-                RandomAccessFile(latestLogFile, "r").use { log ->
-                    val length = log.length()
-                    val limit = 128 * 1024
-                    if (length <= limit) {
-                        ByteArray(length.toInt()).also { log.readFully(it) }.toString(Charsets.UTF_8)
-                    } else {
-                        val head = ByteArray(32 * 1024).also { log.readFully(it) }.toString(Charsets.UTF_8)
-                        val tailSize = limit - 32 * 1024
-                        log.seek(length - tailSize)
-                        val tail = ByteArray(tailSize).also { log.readFully(it) }.toString(Charsets.UTF_8)
-                        head.substringBeforeLast('\n') + "\n[PRISSMA] Se omitió la parte intermedia del registro.\n" +
-                            tail.substringAfter('\n')
-                    }
-                }.ifBlank { "El archivo de log está vacío." }
-            }.getOrElse { "No se pudo leer el archivo de log." }
-        } else {
-            "Aún no hay ningún registro guardado (arranca una instancia primero)."
+    val firstFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { firstFocus.requestFocus() }
+    BoxWithConstraints(modifier) {
+        val landscape = maxWidth >= 585.dp && maxHeight >= 275.dp
+        val navigation: @Composable () -> Unit = {
+            HubPage.entries.forEach { item ->
+                val action = { onPage(item) }
+                NavigationItem(
+                    item, page == item, updateAvailable && item == HubPage.SETTINGS, action,
+                    modifier = if (item == HubPage.LIBRARY) Modifier.focusRequester(firstFocus) else Modifier
+                )
+            }
         }
-    }
-    val logPreview = remember(latestLogText) { latestLogText.lines().takeLast(80).joinToString("\n") }
-
-    fun copyToAndroidClipboard(label: String, text: String) {
-        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        cm.setPrimaryClip(ClipData.newPlainText(label, text))
-        Toast.makeText(context, "¡$label copiado!", Toast.LENGTH_SHORT).show()
-        onCopiedBanner("$label copiado al portapapeles")
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Prissma.colors.surfaceCard,
-        title = {
-            Text(
-                text = "Ajustes y Diagnóstico · v$currentVersion",
-                color = Prissma.colors.textPrimary,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold
-            )
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        val mainPanel: @Composable (Modifier) -> Unit = { panelModifier ->
+            Column(panelModifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                Row(Modifier.fillMaxWidth().padding(bottom = 9.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(page.label, Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold)
+                    LauncherButton(playerName.take(24), onProfile, Modifier.widthIn(max = 158.dp),
+                        icon = Icons.Default.Person)
+                }
+                Box(Modifier.fillMaxWidth().weight(1f)) { content() }
+            }
+        }
+        if (landscape) {
+            Row(Modifier.fillMaxSize()) {
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Prissma.colors.surfaceElevated, RoundedCornerShape(10.dp))
-                        .padding(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    Modifier.fillMaxHeight().width(84.dp).background(Prissma.colors.surfaceCard)
+                        .verticalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 9.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
-                    Text(
-                        text = "Actualizaciones de PRISSMA",
-                        color = Prissma.colors.textPrimary,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = updateStatusText,
-                        color = Prissma.colors.textMuted,
-                        fontSize = 11.sp
-                    )
-                    Button(
-                        enabled = !isCheckingUpdate,
-                        onClick = onCheckUpdate,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00F0FF))
-                    ) {
-                        Text(
-                            text = if (isCheckingUpdate) "Buscando..." else "Buscar nueva versión",
-                            color = Prissma.colors.surfaceVoid,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                    PrissmaMark(Modifier.size(36.dp))
+                    Text("PRISSMA", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold)
+                    Spacer(Modifier.height(3.dp))
+                    navigation()
                 }
-
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        text = "Último reporte (prissma_last.log):",
-                        color = Prissma.colors.textPrimary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(100.dp)
-                            .background(Color(0xFF07090D), RoundedCornerShape(8.dp))
-                            .border(1.dp, Prissma.colors.borderSubtle, RoundedCornerShape(8.dp))
-                            .padding(8.dp)
-                            .verticalScroll(rememberScrollState())
-                    ) {
-                        Text(
-                            text = logPreview,
-                            color = Prissma.colors.textMuted,
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    }
-
-                    uploadedUrl?.let { link ->
-                        Text(
-                            text = "Enlace listo: $link",
-                            color = Color(0xFF00F0FF),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            modifier = Modifier.clickable { copyToAndroidClipboard("Enlace", link) }
-                        )
-                    }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            enabled = !isUploading,
-                            onClick = {
-                                isUploading = true
-                                scope.launch {
-                                    val result = uploadLogToMclogs(latestLogText)
-                                    isUploading = false
-                                    if (result != null) {
-                                        uploadedUrl = result
-                                        copyToAndroidClipboard("Enlace mclo.gs", result)
-                                    } else {
-                                        Toast.makeText(context, "Error al subir el log", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Prissma.colors.engineJava)
-                        ) {
-                            Text(
-                                text = if (isUploading) "Subiendo..." else "Subir y obtener Link",
-                                color = Prissma.colors.surfaceVoid,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-
-                        OutlinedButton(
-                            onClick = { copyToAndroidClipboard("Reporte", latestLogText) }
-                        ) {
-                            Text("Copiar texto", color = Prissma.colors.textPrimary, fontSize = 11.sp)
-                        }
-                    }
-                }
+                mainPanel(Modifier.weight(1f).fillMaxHeight())
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cerrar", color = Prissma.colors.textMuted)
-            }
-        }
-    )
-}
-
-private suspend fun uploadLogToMclogs(content: String): String? = withContext(Dispatchers.IO) {
-    runCatching {
-        val url = URL("https://api.mclo.gs/1/log")
-        val conn = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            doOutput = true
-            connectTimeout = 10_000
-            readTimeout = 15_000
-            setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
-            setRequestProperty("User-Agent", "PRISSMA-Launcher/1.0")
-        }
-        val body = "content=${URLEncoder.encode(content, "UTF-8")}"
-        conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-        if (conn.responseCode in 200..299) {
-            val response = conn.inputStream.bufferedReader().use { it.readText() }
-            val json = JSONObject(response)
-            if (json.optBoolean("success", false)) json.optString("url", null) else null
         } else {
-            null
+            Column(Modifier.fillMaxSize()) {
+                mainPanel(Modifier.weight(1f).fillMaxWidth())
+                Row(Modifier.fillMaxWidth().background(Prissma.colors.surfaceCard).padding(4.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly) { navigation() }
+            }
         }
-    }.getOrNull()
+    }
 }
 
 @Composable
-private fun InstanceCard(
-    instance: GameInstance,
-    isFocused: Boolean,
-    prismBrush: Brush,
-    focusRequester: FocusRequester,
-    onFocus: () -> Unit,
-    onClick: () -> Unit
-) {
-    val engineColor = Prissma.colors.engineColor(instance.engine.name)
-    val scale by animateFloatAsState(
-        targetValue = if (isFocused) 1.05f else 0.95f,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-        label = "scale"
-    )
-    val borderWidth by animateDpAsState(
-        targetValue = if (isFocused) 2.5.dp else 1.dp,
-        animationSpec = tween(150),
-        label = "border"
-    )
-
-    val borderModifier = if (isFocused) {
-        Modifier.border(borderWidth, prismBrush, RoundedCornerShape(16.dp))
-    } else {
-        Modifier.border(borderWidth, Prissma.colors.borderSubtle, RoundedCornerShape(16.dp))
-    }
-
+private fun NavigationItem(page: HubPage, selected: Boolean, update: Boolean, onClick: () -> Unit,
+                           modifier: Modifier = Modifier) {
+    val source = remember { MutableInteractionSource() }
+    val focus by source.collectIsFocusedAsState()
+    val tint = if (selected || focus) Prissma.colors.brandAccent else Prissma.colors.textMuted
     Column(
-        modifier = Modifier
-            .width(290.dp)
-            .height(200.dp)
-            .scale(scale)
-            .clip(RoundedCornerShape(16.dp))
-            .background(Prissma.colors.surfaceCard)
-            .then(borderModifier)
-            .focusRequester(focusRequester)
-            .onFocusChanged { if (it.isFocused) onFocus() }
-            .focusable()
-            .clickable(onClick = onClick)
+        modifier.widthIn(min = 65.dp).clip(ControlShape)
+            .background(if (selected || focus) Prissma.colors.surfaceElevated else Color.Transparent)
+            .border(1.dp, if (focus) tint else Color.Transparent, ControlShape)
+            .gamepadClick(onClick = onClick)
+            .selectable(selected, interactionSource = source, indication = null, role = Role.Tab, onClick = onClick)
+            .heightIn(min = 43.dp).padding(horizontal = 4.dp, vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(126.dp)
-                .background(
-                    Brush.linearGradient(
-                        listOf(
-                            engineColor.copy(alpha = if (isFocused) 0.36f else 0.22f),
-                            Prissma.colors.surfaceElevated
-                        )
-                    )
-                )
-                .padding(12.dp)
-        ) {
-            Text(
-                text = instance.engine.displayName,
-                color = engineColor,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .background(Prissma.colors.surfaceGlass, RoundedCornerShape(6.dp))
-                    .border(1.dp, engineColor, RoundedCornerShape(6.dp))
-                    .padding(horizontal = 8.dp, vertical = 3.dp)
-            )
-
-            if (instance.friendsOnline > 0) {
-                Text(
-                    text = "${instance.friendsOnline} amigos en línea",
-                    color = Prissma.colors.brandAccent,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .background(Prissma.colors.surfaceGlass, RoundedCornerShape(6.dp))
-                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                )
-            }
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = instance.title,
-                color = Prissma.colors.textPrimary,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "${instance.loader} · ${instance.version}",
-                    color = if (isFocused) engineColor else Prissma.colors.textMuted,
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-                Text(
-                    text = String.format(Locale.US, "%.1f h", instance.playtimeHours),
-                    color = Prissma.colors.textMuted,
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-            }
-        }
+        BadgedBox(badge = { if (update) Badge() }) { Icon(page.icon, null, Modifier.size(17.dp), tint = tint) }
+        Text(page.label, style = MaterialTheme.typography.labelSmall, maxLines = 1, color = tint)
     }
 }
 
 @Composable
-private fun ActionPill(
-    glyph: String,
-    label: String,
-    color: Color,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Text(
-            text = glyph,
-            color = Prissma.colors.surfaceVoid,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier
-                .background(color, RoundedCornerShape(6.dp))
-                .padding(horizontal = 8.dp, vertical = 2.dp)
-        )
-        Text(
-            text = label,
-            color = Prissma.colors.textMuted,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium
-        )
+private fun EmptyWorkshop(onCreate: () -> Unit) {
+    Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("Crea una instancia Java para abrir el taller.", color = Prissma.colors.textMuted)
+        Spacer(Modifier.height(10.dp))
+        LauncherButton("Nueva instancia", onCreate, primary = true)
     }
-}
-
-@Composable
-private fun FrontendBridgeDialog(
-    exportFolderPath: String,
-    selectedInstance: GameInstance?,
-    canDeleteSelected: Boolean,
-    onDeleteSelected: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Prissma.colors.surfaceCard,
-        title = {
-            Text(
-                text = "Integración Cocoon, iiSU y Díptico",
-                color = Prissma.colors.textPrimary
-            )
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = "Carpeta de cartuchos .mcinst (para Cocoon):",
-                    color = Prissma.colors.textMuted,
-                    fontSize = 12.sp
-                )
-                Text(
-                    text = exportFolderPath,
-                    color = Prissma.colors.brandAccent,
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-                selectedInstance?.let { inst ->
-                    Text(
-                        text = "Enlace directo de '${inst.title}':",
-                        color = Prissma.colors.textMuted,
-                        fontSize = 12.sp
-                    )
-                    Text(
-                        text = "prissma://launch?instance_id=${inst.id}",
-                        color = Prissma.colors.netP2P,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(containerColor = Prissma.colors.brandAccent)
-            ) {
-                Text("Listo", color = Prissma.colors.surfaceVoid, fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            if (canDeleteSelected) {
-                TextButton(onClick = onDeleteSelected) {
-                    Text("Eliminar Instancia", color = Color(0xFFF87171))
-                }
-            }
-        }
-    )
-}
-
-@Composable
-private fun NewInstanceDialog(
-    onDismiss: () -> Unit,
-    onCreate: (String, EngineType, String) -> Unit
-) {
-    var title by remember { mutableStateOf("Mi Nuevo Mundo") }
-    var selectedEngine by remember { mutableStateOf(EngineType.JAVA) }
-    var version by remember { mutableStateOf("1.21.4") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Prissma.colors.surfaceCard,
-        title = { Text("Nueva Instancia", color = Prissma.colors.textPrimary) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text("Nombre de la instancia") },
-                    singleLine = true
-                )
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    EngineType.entries.forEach { engine ->
-                        val active = engine == selectedEngine
-                        val color = Prissma.colors.engineColor(engine.name)
-                        FilterChip(
-                            selected = active,
-                            onClick = { selectedEngine = engine },
-                            label = {
-                                Text(
-                                    engine.displayName,
-                                    color = if (active) color else Prissma.colors.textMuted
-                                )
-                            }
-                        )
-                    }
-                }
-
-                OutlinedTextField(
-                    value = version,
-                    onValueChange = { version = it },
-                    label = { Text("Versión (ej. 1.21.4 o 26.3)") },
-                    singleLine = true
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (title.isNotBlank()) onCreate(title.trim(), selectedEngine, version.trim())
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = Prissma.colors.brandAccent)
-            ) {
-                Text("Crear", color = Prissma.colors.surfaceVoid, fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancelar", color = Prissma.colors.textMuted)
-            }
-        }
-    )
-}
-
-@Composable
-private fun AccountDialog(
-    currentName: String,
-    currentType: String,
-    onDismiss: () -> Unit,
-    onSave: (String, String) -> Unit
-) {
-    var name by remember { mutableStateOf(currentName) }
-    var type by remember { mutableStateOf(currentType) }
-    val types = listOf("Offline", "Ely.by", "Microsoft")
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Prissma.colors.surfaceCard,
-        title = { Text("Perfil Omni-Account", color = Prissma.colors.textPrimary) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Nombre de jugador") },
-                    singleLine = true
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    types.forEach { item ->
-                        FilterChip(
-                            selected = type == item,
-                            onClick = { type = item },
-                            label = { Text(item) }
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { if (name.isNotBlank()) onSave(name.trim(), type) },
-                colors = ButtonDefaults.buttonColors(containerColor = Prissma.colors.brandAccent)
-            ) {
-                Text("Guardar", color = Prissma.colors.surfaceVoid, fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cerrar", color = Prissma.colors.textMuted)
-            }
-        }
-    )
 }

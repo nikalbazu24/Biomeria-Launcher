@@ -361,7 +361,10 @@ Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativeInitGraphicsSurface
         return env->NewStringUTF("Error: No se pudo crear el contexto gráfico EGL.");
     }
 
-    eglMakeCurrent(gDisplay, gSurface, gSurface, gContext);
+    if (!eglMakeCurrent(gDisplay, gSurface, gSurface, gContext)) {
+        const std::string error = "Error: eglMakeCurrent devolvió " + std::to_string(eglGetError());
+        return env->NewStringUTF(error.c_str());
+    }
 
     glViewport(0, 0, width, height);
     glClearColor(0.02f, 0.03f, 0.05f, 1.0f);
@@ -370,10 +373,8 @@ Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativeInitGraphicsSurface
 
     const char* renderer = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
     const char* glVersion = reinterpret_cast<const char*>(glGetString(GL_VERSION));
-    std::string modeLabel = useVulkanZink ? "Vulkan (Zink)" : "OpenGL ES 3.2";
-
     std::ostringstream info;
-    info << modeLabel << " · " << (renderer ? renderer : "GPU ARM64")
+    info << "EGL · " << (renderer ? renderer : "GPU ARM64")
          << " (" << width << "x" << height << ") · "
          << (glVersion ? glVersion : "GLES 3");
 

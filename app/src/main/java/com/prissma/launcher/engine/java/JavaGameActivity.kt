@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,12 +21,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.prissma.launcher.ui.components.LauncherButton
+import com.prissma.launcher.ui.components.PanelShape
 import com.prissma.launcher.ui.theme.Prissma
 import com.prissma.launcher.ui.theme.PrissmaTheme
 import kotlinx.coroutines.delay
@@ -103,7 +105,7 @@ private fun JavaNativeViewportScreen(
 ) {
     BackHandler(onBack = onExitGame)
 
-    var gpuStatus by remember { mutableStateOf("Inicializando superficie gráfica EGL/Vulkan...") }
+    var gpuStatus by remember { mutableStateOf("Inicializando superficie EGL…") }
     var showConsole by remember { mutableStateOf(true) }
     var jvmStarted by remember { mutableStateOf(false) }
     var viewportSize by remember { mutableStateOf("0x0") }
@@ -146,7 +148,6 @@ private fun JavaNativeViewportScreen(
                 }
             }
     ) {
-        // 1. Lienzo nativo Android SurfaceView conectado a EGL / OpenGL ES / Vulkan
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
@@ -162,9 +163,10 @@ private fun JavaNativeViewportScreen(
                                 useVulkanZink = useVulkanZink
                             )
 
-                            if (!jvmStarted && libJvmPath.isNotBlank()) {
-                                jvmStarted = true
-                                NativeJavaBridge.nativeLaunchJvm(
+                            if (gpuStatus.startsWith("Error:")) {
+                                logLines.add("[ERROR] " + gpuStatus)
+                            } else if (!jvmStarted && libJvmPath.isNotBlank()) {
+                                val status = NativeJavaBridge.nativeLaunchJvm(
                                     libJvmPath = libJvmPath,
                                     javaHomePath = javaHomePath,
                                     gameDirPath = gameDirPath,
@@ -175,8 +177,10 @@ private fun JavaNativeViewportScreen(
                                     gameArgs = gameArgs,
                                     useVulkanZink = useVulkanZink
                                 )
+                                jvmStarted = status == 0 || status == 1
+                                if (!jvmStarted) logLines.add("[ERROR] No se pudo iniciar el hilo de Java ($status).")
                             } else if (libJvmPath.isBlank()) {
-                                logLines.add("[AVISO] Falta instalar el paquete JRE 21 ARM64. Vuelve atrás [B] para descargarlo o importarlo.")
+                                logLines.add("[AVISO] Instala Java 21 ARM64 para iniciar Minecraft.")
                             }
                         }
 
@@ -197,18 +201,18 @@ private fun JavaNativeViewportScreen(
             }
         )
 
-        // 2. HUD flotante superior (telemetría GPU + resolución + controles)
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
+                .windowInsetsPadding(WindowInsets.displayCutout)
+                .padding(12.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xCC0B0E14), RoundedCornerShape(12.dp))
-                    .border(1.dp, Prissma.colors.borderSubtle, RoundedCornerShape(12.dp))
+                    .background(Prissma.colors.surfaceGlass, PanelShape)
+                    .border(1.dp, Prissma.colors.borderSubtle, PanelShape)
                     .padding(horizontal = 14.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
@@ -218,46 +222,36 @@ private fun JavaNativeViewportScreen(
                         text = "$instanceTitle · MC $version ($viewportSize)",
                         color = Prissma.colors.textPrimary,
                         fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = gpuStatus,
                         color = Prissma.colors.brandAccent,
                         fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { showConsole = !showConsole }) {
-                        Text(
-                            text = if (showConsole) "Ocultar Logs [Y]" else "Ver Logs [Y]",
-                            color = Prissma.colors.textPrimary,
-                            fontSize = 11.sp
-                        )
-                    }
-                    Button(
-                        onClick = onExitGame,
-                        colors = ButtonDefaults.buttonColors(containerColor = Prissma.colors.engineJava)
-                    ) {
-                        Text(
-                            text = "Salir [B]",
-                            color = Prissma.colors.surfaceVoid,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp
-                        )
-                    }
+                    LauncherButton(
+                        if (showConsole) "Ocultar registro" else "Ver registro",
+                        { showConsole = !showConsole }
+                    )
+                    LauncherButton("Salir", onExitGame)
                 }
             }
 
-            // 3. Consola en tiempo real de la JVM (opcional con botón Y)
             if (showConsole) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(175.dp)
-                        .background(Color(0xD9080A0F), RoundedCornerShape(12.dp))
-                        .border(1.dp, Prissma.colors.engineJava.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+                        .fillMaxHeight(.40f)
+                        .background(Prissma.colors.surfaceGlass, PanelShape)
+                        .border(1.dp, Prissma.colors.borderSubtle, PanelShape)
                         .padding(12.dp)
                 ) {
                     if (logLines.isEmpty()) {
@@ -275,7 +269,7 @@ private fun JavaNativeViewportScreen(
                             items(logLines) { line ->
                                 Text(
                                     text = line,
-                                    color = if (line.contains("[ERROR]")) Color(0xFFF87171) else Prissma.colors.textPrimary,
+                                    color = if (line.contains("[ERROR]")) Prissma.colors.error else Prissma.colors.textPrimary,
                                     fontSize = 11.sp,
                                     fontFamily = FontFamily.Monospace
                                 )

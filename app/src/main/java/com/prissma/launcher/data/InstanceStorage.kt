@@ -2,8 +2,6 @@ package com.prissma.launcher.data
 
 import android.content.Context
 import android.net.Uri
-import com.prissma.launcher.ui.hub.EngineType
-import com.prissma.launcher.ui.hub.GameInstance
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -21,7 +19,8 @@ class InstanceStorage(private val context: Context) {
 
     // Carpeta accesible para frontends (Cocoon / exploradores) sin pedir permisos especiales
     val exportInstancesDir: File
-        get() = File(context.getExternalFilesDir(null), "PRISSMA/instances").apply { mkdirs() }
+        get() = File(context.getExternalFilesDir(null) ?: context.filesDir, "PRISSMA/instances")
+            .apply { mkdirs() }
 
     fun loadProfile(): SavedProfile {
         if (!profileFile.exists()) {
@@ -70,7 +69,7 @@ class InstanceStorage(private val context: Context) {
                     )
                 )
             }
-            if (list.isEmpty()) defaultInstances() else list
+            list
         }.getOrElse { defaultInstances() }
     }
 
@@ -106,22 +105,35 @@ class InstanceStorage(private val context: Context) {
                 val fileName = "$slug.mcinst"
                 validFiles.add(fileName)
 
-                val cartridge = JSONObject().apply {
-                    put("schema_version", 1)
-                    put("instance_id", inst.id)
-                    put("slug", slug)
-                    put("title", inst.title)
-                    put("engine", inst.engine.name.lowercase(Locale.US))
-                    put("mc_version", inst.version)
-                    put("loader", inst.loader)
-                    put("deep_link", "prissma://launch?instance_id=${inst.id}")
-                }
-                File(dir, fileName).writeText(cartridge.toString(2), Charsets.UTF_8)
+                File(dir, fileName).writeText(cartridge(inst).toString(2), Charsets.UTF_8)
             }
 
             dir.listFiles()?.filter { it.extension == "mcinst" && it.name !in validFiles }
                 ?.forEach { it.delete() }
         }
+    }
+
+    fun cartridgeName(instance: GameInstance) = "${slugify(instance.title, instance.id)}.mcinst"
+
+    fun launchLink(instance: GameInstance): String = Uri.Builder()
+        .scheme("prissma").authority("launch").appendQueryParameter("instance_id", instance.id)
+        .build().toString()
+
+    fun exportCartridge(instance: GameInstance, destination: Uri) {
+        val output = context.contentResolver.openOutputStream(destination, "wt")
+            ?: error("No se pudo abrir el destino del cartucho.")
+        output.bufferedWriter(Charsets.UTF_8).use { it.write(cartridge(instance).toString(2)) }
+    }
+
+    private fun cartridge(instance: GameInstance) = JSONObject().apply {
+        put("schema_version", 1)
+        put("instance_id", instance.id)
+        put("slug", slugify(instance.title, instance.id))
+        put("title", instance.title)
+        put("engine", instance.engine.name.lowercase(Locale.US))
+        put("mc_version", instance.version)
+        put("loader", instance.loader)
+        put("deep_link", launchLink(instance))
     }
 
     /**

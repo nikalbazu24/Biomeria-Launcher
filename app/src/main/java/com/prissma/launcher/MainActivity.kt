@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -20,6 +21,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         handleIncomingIntent(intent)
 
         setContent {
@@ -49,16 +51,16 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIncomingIntent(intent: Intent?) {
         val dataUri = intent?.data ?: return
-        sourceFrontendPackage = dataUri.getQueryParameter("source_frontend")
-            ?: intent.getStringExtra("source_frontend")
-
-        val fromQuery = dataUri.getQueryParameter("instance_id")
-        if (!fromQuery.isNullOrBlank()) {
-            externalLaunchInstanceId = fromQuery
+        if (dataUri.isHierarchical && dataUri.host == "launch" && dataUri.scheme in listOf("prissma", "mchub")) {
+            sourceFrontendPackage = dataUri.getQueryParameter("source_frontend")
+                ?: intent.getStringExtra("source_frontend")
+            val instanceId = dataUri.getQueryParameter("instance_id")
+            if (!instanceId.isNullOrBlank()) externalLaunchInstanceId = instanceId
             return
         }
 
-        // Si el frontend abrió un archivo .mcinst
+        if (dataUri.scheme !in listOf("content", "file")) return
+        sourceFrontendPackage = intent.getStringExtra("source_frontend")
         val storage = InstanceStorage(applicationContext)
         val fromFile = storage.extractInstanceIdFromUri(dataUri)
         if (!fromFile.isNullOrBlank()) {

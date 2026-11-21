@@ -56,7 +56,7 @@ jobs:
         run: |
           chmod +x ./gradlew || true
           VER="1.0.0-beta.${{ github.run_number }}"
-          ./gradlew assembleRelease -PversionCode=${{ github.run_number }} -PversionName=$VER || gradle assembleRelease -PversionCode=${{ github.run_number }} -PversionName=$VER
+          ./gradlew testDebugUnitTest assembleRelease -PversionCode=${{ github.run_number }} -PversionName=$VER || gradle testDebugUnitTest assembleRelease -PversionCode=${{ github.run_number }} -PversionName=$VER
 
       - name: Renombrar APK con número de build
         run: |

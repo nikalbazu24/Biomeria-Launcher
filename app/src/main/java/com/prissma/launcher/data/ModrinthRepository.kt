@@ -1,15 +1,16 @@
 package com.prissma.launcher.data
 
 import android.content.Context
+import android.util.AtomicFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.security.MessageDigest
 
 enum class WorkshopCategory(
     val label: String,
@@ -18,7 +19,7 @@ enum class WorkshopCategory(
 ) {
     MODS("Mods", "mod", "mods"),
     SHADERS("Shaders", "shader", "shaderpacks"),
-    RESOURCE_PACKS("Resource Packs", "resourcepack", "resourcepacks")
+    RESOURCE_PACKS("Paquetes de recursos", "resourcepack", "resourcepacks")
 }
 
 data class ModrinthItem(
@@ -44,12 +45,18 @@ class ModrinthRepository(private val context: Context) {
 
     suspend fun searchProjects(
         query: String,
-        category: WorkshopCategory
+        category: WorkshopCategory,
+        gameVersion: String,
+        loader: String?
     ): Result<List<ModrinthItem>> = withContext(Dispatchers.IO) {
         runCatching {
             val encodedQuery = URLEncoder.encode(query.trim(), "UTF-8")
-            val facetsJson = """[["project_type:${category.modrinthType}"]]"""
-            val encodedFacets = URLEncoder.encode(facetsJson, "UTF-8")
+            val facets = JSONArray().put(JSONArray().put("project_type:${category.modrinthType}"))
+                .put(JSONArray().put("versions:$gameVersion"))
+            if (category == WorkshopCategory.MODS && loader != null) {
+                facets.put(JSONArray().put("categories:$loader"))
+            }
+            val encodedFacets = URLEncoder.encode(facets.toString(), "UTF-8")
 
             val urlStr = "https://api.modrinth.com/v2/search" +
                 "?query=$encodedQuery&facets=$encodedFacets&limit=20&index=downloads"
@@ -80,36 +87,37 @@ class ModrinthRepository(private val context: Context) {
     suspend fun downloadAndInstall(
         item: ModrinthItem,
         instanceId: String,
-        preferredMcVersion: String
+        preferredMcVersion: String,
+        loader: String?
     ): Result<File> = withContext(Dispatchers.IO) {
         runCatching {
+            require(item.category != WorkshopCategory.MODS || loader != null) {
+                "Los mods requieren una instancia con un cargador configurado."
+            }
             val versionsUrl = "https://api.modrinth.com/v2/project/${item.projectId}/version"
             val versionsArray = JSONArray(httpGetText(versionsUrl))
             require(versionsArray.length() > 0) { "Este proyecto no tiene archivos disponibles." }
 
-            // Busca una versión que coincida con la de la instancia, o usa la más reciente disponible
-            var selectedVersion: JSONObject? = null
-            for (i in 0 until versionsArray.length()) {
-                val candidate = versionsArray.getJSONObject(i)
-                val gameVersions = candidate.optJSONArray("game_versions")
-                if (gameVersions != null) {
-                    for (j in 0 until gameVersions.length()) {
-                        if (gameVersions.getString(j) == preferredMcVersion) {
-                            selectedVersion = candidate
-                            break
-                        }
-                    }
-                }
-                if (selectedVersion != null) break
-            }
-            val finalVersion = selectedVersion ?: versionsArray.getJSONObject(0)
+            val finalVersion = (0 until versionsArray.length()).asSequence()
+                .map(versionsArray::getJSONObject)
+                .firstOrNull { candidate ->
+                    candidate.optJSONArray("game_versions").containsValue(preferredMcVersion) &&
+                        (item.category != WorkshopCategory.MODS ||
+                            candidate.optJSONArray("loaders").containsValue(loader))
+                } ?: error("No hay un archivo compatible con Minecraft $preferredMcVersion.")
 
             val filesArray = finalVersion.getJSONArray("files")
             require(filesArray.length() > 0) { "No se encontró archivo descargable." }
-            val primaryFile = filesArray.getJSONObject(0)
+            val primaryFile = (0 until filesArray.length()).asSequence()
+                .map(filesArray::getJSONObject).firstOrNull { it.optBoolean("primary") }
+                ?: filesArray.getJSONObject(0)
 
             val downloadUrl = primaryFile.getString("url")
             val fileName = primaryFile.getString("filename")
+            require(fileName.isNotBlank() && File(fileName).name == fileName && fileName !in listOf(".", "..")) {
+                "Modrinth devolvió un nombre de archivo inválido."
+            }
+            val sha512 = primaryFile.getJSONObject("hashes").getString("sha512")
 
             val targetDir = File(
                 context.filesDir,
@@ -117,7 +125,7 @@ class ModrinthRepository(private val context: Context) {
             ).apply { mkdirs() }
 
             val destinationFile = File(targetDir, fileName)
-            downloadBinary(downloadUrl, destinationFile)
+            downloadBinary(downloadUrl, destinationFile, sha512)
             destinationFile
         }
     }
@@ -166,7 +174,7 @@ class ModrinthRepository(private val context: Context) {
         }
     }
 
-    private fun downloadBinary(fileUrl: String, destination: File) {
+    private fun downloadBinary(fileUrl: String, destination: File, expectedSha512: String) {
         val conn = (URL(fileUrl).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 15_000
@@ -177,13 +185,25 @@ class ModrinthRepository(private val context: Context) {
             if (conn.responseCode !in 200..299) {
                 error("Fallo al descargar archivo (HTTP ${conn.responseCode})")
             }
-            conn.inputStream.use { input ->
-                FileOutputStream(destination).use { output ->
+            val atomic = AtomicFile(destination)
+            val output = atomic.startWrite()
+            try {
+                val digest = MessageDigest.getInstance("SHA-512")
+                java.security.DigestInputStream(conn.inputStream, digest).use { input ->
                     input.copyTo(output)
                 }
+                val actualSha512 = digest.digest().joinToString("") { "%02x".format(it) }
+                check(actualSha512.equals(expectedSha512, ignoreCase = true)) { "La descarga está incompleta o dañada." }
+                atomic.finishWrite(output)
+            } catch (error: Exception) {
+                atomic.failWrite(output)
+                throw error
             }
         } finally {
             conn.disconnect()
         }
     }
 }
+
+private fun JSONArray?.containsValue(value: String?): Boolean =
+    this != null && value != null && (0 until length()).any { optString(it) == value }
