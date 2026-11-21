@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
+import android.content.pm.Signature
 import android.os.Build
 import android.net.Uri
 import android.provider.Settings
@@ -21,6 +22,8 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
+import java.util.Locale
 
 data class UpdateInfo(
     val versionTag: String,
@@ -35,6 +38,13 @@ internal fun newestPreview(releases: Sequence<UpdateInfo>, installedBuild: Long)
     releases.mapNotNull { release -> betaBuildNumber(release.versionTag)?.let { it to release } }
         .filter { (build, _) -> build > installedBuild }
         .maxByOrNull { (build, _) -> build }?.second
+
+@Suppress("DEPRECATION")
+internal fun archiveSigningFlags(sdk: Int): Int {
+    val modern = if (sdk >= Build.VERSION_CODES.P) PackageManager.GET_SIGNING_CERTIFICATES else 0
+    // Android 9 collects certificates from an APK only when GET_SIGNATURES is set.
+    return modern or PackageManager.GET_SIGNATURES
+}
 
 class AppUpdater(private val context: Context) {
 
@@ -210,11 +220,7 @@ class AppUpdater(private val context: Context) {
     @Suppress("DEPRECATION")
     private fun verifyUpdate(apkFile: File) {
         val packageManager = context.packageManager
-        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            PackageManager.GET_SIGNING_CERTIFICATES
-        } else {
-            PackageManager.GET_SIGNATURES
-        }
+        val flags = archiveSigningFlags(Build.VERSION.SDK_INT)
         val installed = packageManager.getPackageInfo(context.packageName, flags)
         val candidate = packageManager.getPackageArchiveInfo(apkFile.absolutePath, flags)
             ?: error("El archivo descargado no es un APK válido.")
@@ -225,8 +231,17 @@ class AppUpdater(private val context: Context) {
             "El APK descargado no es más reciente que la versión instalada."
         }
         val installedSigners = signingCertificates(installed)
-        check(installedSigners.isNotEmpty() && installedSigners == signingCertificates(candidate)) {
-            "Esta instalación tiene otra firma. Respalda tus mundos antes de migrar a la APK con firma persistente."
+        val candidateSigners = signingCertificates(candidate)
+        check(installedSigners.isNotEmpty()) {
+            "Android no pudo leer el certificado de la versión instalada (${installed.versionName})."
+        }
+        check(candidateSigners.isNotEmpty()) {
+            "Android no pudo leer el certificado de la APK descargada (${candidate.versionName})."
+        }
+        check(installedSigners == candidateSigners) {
+            "Los certificados de firma son distintos. " +
+                "Instalada ${installed.versionName} (${certificateFingerprints(installedSigners)}). " +
+                "Descargada ${candidate.versionName} (${certificateFingerprints(candidateSigners)})."
         }
     }
 
@@ -237,4 +252,9 @@ class AppUpdater(private val context: Context) {
         } else {
             info.signatures.orEmpty().toSet()
         }
+
+    private fun certificateFingerprints(signatures: Set<Signature>) = signatures.map { signature ->
+        MessageDigest.getInstance("SHA-256").digest(signature.toByteArray())
+            .take(6).joinToString("") { "%02x".format(Locale.ROOT, it) }
+    }.sorted().joinToString(", ")
 }
