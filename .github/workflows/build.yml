@@ -1,34 +1,55 @@
-name: Fabricar APK de PRISSMA
+name: Build & Auto-Release PRISSMA
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Descargar código del repositorio
+      - name: Checkout código
         uses: actions/checkout@v4
 
-      - name: Instalar Java 21
+      - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: "21"
+          distribution: 'temurin'
+          java-version: '17'
 
-      - name: Instalar Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.10.2"
+      - name: Configurar Android SDK y NDK
+        uses: android-actions/setup-android@v3
 
-      - name: Construir APK de prueba
-        run: gradle assembleDebug --no-daemon
+      - name: Instalar CMake y NDK
+        run: |
+          sdkmanager "cmake;3.22.1" "ndk;26.1.10909125"
 
-      - name: Guardar APK listo para descargar
+      - name: Compilar APK Debug ARM64
+        run: |
+          chmod +x ./gradlew || true
+          gradle assembleDebug || ./gradlew assembleDebug
+
+      - name: Renombrar APK con número de build
+        run: |
+          TAG="v1.0.0-beta.${{ github.run_number }}"
+          echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
+          cp app/build/outputs/apk/debug/app-debug.apk "PRISSMA-Launcher-${TAG}.apk"
+
+      - name: Subir Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PRISSMA-Launcher-v0.1
-          path: app/build/outputs/apk/debug/*.apk
+          name: PRISSMA-APK
+          path: PRISSMA-Launcher-*.apk
+
+      - name: Publicar Release automático
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: "PRISSMA Launcher ${{ env.RELEASE_TAG }}"
+          body: "Compilación automática generada desde main (Build #${{ github.run_number }})."
+          files: PRISSMA-Launcher-*.apk
