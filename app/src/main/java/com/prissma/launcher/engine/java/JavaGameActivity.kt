@@ -1,7 +1,6 @@
 package com.prissma.launcher.engine.java
 
 import android.os.Bundle
-import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.WindowManager
@@ -32,6 +31,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.prissma.launcher.ui.theme.Prissma
 import com.prissma.launcher.ui.theme.PrissmaTheme
 import kotlinx.coroutines.delay
+import kotlin.system.exitProcess
 
 class JavaGameActivity : ComponentActivity() {
 
@@ -71,6 +71,11 @@ class JavaGameActivity : ComponentActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) enableImmersiveMode()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        exitProcess(0)
     }
 
     private fun enableImmersiveMode() {
