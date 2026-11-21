@@ -39,6 +39,32 @@ namespace {
         gLogQueue.push_back(line);
     }
 
+    std::string describeJavaException(JNIEnv* env) {
+        if (!env || !env->ExceptionCheck()) return "";
+        jthrowable ex = env->ExceptionOccurred();
+        env->ExceptionClear();
+        if (!ex) return "Excepción desconocida";
+
+        jclass objCls = env->FindClass("java/lang/Object");
+        jmethodID toStringMethod = objCls ? env->GetMethodID(objCls, "toString", "()Ljava/lang/String;") : nullptr;
+        std::string result = "Excepción Java";
+
+        if (toStringMethod) {
+            auto jStr = static_cast<jstring>(env->CallObjectMethod(ex, toStringMethod));
+            if (jStr) {
+                const char* chars = env->GetStringUTFChars(jStr, nullptr);
+                if (chars) {
+                    result = chars;
+                    env->ReleaseStringUTFChars(jStr, chars);
+                }
+                env->DeleteLocalRef(jStr);
+            }
+        }
+        if (objCls) env->DeleteLocalRef(objCls);
+        env->DeleteLocalRef(ex);
+        return result;
+    }
+
     void* stdioReaderThread(void* arg) {
         int readFd = *static_cast<int*>(arg);
         delete static_cast<int*>(arg);
@@ -120,6 +146,13 @@ namespace {
 
         chdir(cfg->gameDir.c_str());
 
+        // Contar cuántos JARs entraron en el classpath
+        int jarCount = cfg->classpath.empty() ? 0 : 1;
+        for (char c : cfg->classpath) {
+            if (c == ':') jarCount++;
+        }
+        pushLogLine("[PRISSMA] Classpath preparado con " + std::to_string(jarCount) + " archivos JAR.");
+
         pushLogLine("[PRISSMA] Cargando librería nativa: " + cfg->libJvmPath);
         void* jvmHandle = dlopen(cfg->libJvmPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
         if (!jvmHandle) {
@@ -145,6 +178,7 @@ namespace {
         std::vector<std::string> optionStrings;
         optionStrings.push_back("-Djava.class.path=" + cfg->classpath);
         optionStrings.push_back("-Djava.home=" + cfg->javaHome);
+        optionStrings.push_back("-Djava.library.path=" + ldPath);
         optionStrings.push_back("-Duser.dir=" + cfg->gameDir);
         optionStrings.push_back("-Dorg.lwjgl.opengl.libname=libGLESv2.so");
         optionStrings.push_back("-Dglfwstub.initEgl=false");
@@ -183,11 +217,8 @@ namespace {
 
         jclass mainCls = jvmEnv->FindClass(slashClass.c_str());
         if (!mainCls) {
-            if (jvmEnv->ExceptionCheck()) {
-                jvmEnv->ExceptionDescribe();
-                jvmEnv->ExceptionClear();
-            }
-            pushLogLine("[ERROR] No se encontró la clase " + cfg->mainClass + " en client.jar");
+            std::string exDetail = describeJavaException(jvmEnv);
+            pushLogLine("[ERROR] No se pudo cargar " + cfg->mainClass + " -> " + exDetail);
             gJvmRunning = false;
             delete cfg;
             return nullptr;
@@ -195,7 +226,8 @@ namespace {
 
         jmethodID mainMethod = jvmEnv->GetStaticMethodID(mainCls, "main", "([Ljava/lang/String;)V");
         if (!mainMethod) {
-            pushLogLine("[ERROR] Método main(String[]) no encontrado.");
+            std::string exDetail = describeJavaException(jvmEnv);
+            pushLogLine("[ERROR] Método main(String[]) no encontrado -> " + exDetail);
             gJvmRunning = false;
             delete cfg;
             return nullptr;
@@ -217,9 +249,8 @@ namespace {
         jvmEnv->CallStaticVoidMethod(mainCls, mainMethod, jArgs);
 
         if (jvmEnv->ExceptionCheck()) {
-            jvmEnv->ExceptionDescribe();
-            jvmEnv->ExceptionClear();
-            pushLogLine("[AVISO] El proceso Java terminó con una excepción (revisa los logs arriba).");
+            std::string exDetail = describeJavaException(jvmEnv);
+            pushLogLine("[ERROR] Excepción en Minecraft -> " + exDetail);
         } else {
             pushLogLine("[PRISSMA] Sesión Java finalizada correctamente.");
         }
