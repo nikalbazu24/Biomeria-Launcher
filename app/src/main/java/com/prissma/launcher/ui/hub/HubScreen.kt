@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.prissma.launcher.ui.theme.Prissma
+import com.prissma.launcher.ui.workshop.ContentWorkshopScreen
 import java.util.Locale
 import java.util.UUID
 
@@ -70,11 +71,22 @@ fun HubScreen() {
 
     var showNewInstanceDialog by remember { mutableStateOf(false) }
     var showAccountDialog by remember { mutableStateOf(false) }
+    var workshopTargetInstance by remember { mutableStateOf<GameInstance?>(null) }
 
     var instances by remember {
         mutableStateOf(
             listOf(
                 GameInstance(
+                    id = "survival-mods-java",
+                    title = "Survival Con Mods",
+                    engine = EngineType.JAVA,
+                    version = "1.21.4",
+                    loader = "Fabric 0.16.9",
+                    playtimeHours = 42.0f,
+                    friendsOnline = 1
+                ),
+                GameInstance(
+                    id = "rust-120fps",
                     title = "Minecraft Rust 120FPS",
                     engine = EngineType.RUST,
                     version = "26.3",
@@ -83,14 +95,7 @@ fun HubScreen() {
                     friendsOnline = 2
                 ),
                 GameInstance(
-                    title = "Survival Con Mods",
-                    engine = EngineType.JAVA,
-                    version = "26.3",
-                    loader = "Fabric 0.16.9",
-                    playtimeHours = 42.0f,
-                    friendsOnline = 1
-                ),
-                GameInstance(
+                    id = "crossplay-bedrock",
                     title = "Crossplay Amigos",
                     engine = EngineType.BEDROCK,
                     version = "26.10",
@@ -100,6 +105,15 @@ fun HubScreen() {
                 )
             )
         )
+    }
+
+    // Si el usuario abrió el Taller de Modrinth, mostramos esa pantalla
+    workshopTargetInstance?.let { target ->
+        ContentWorkshopScreen(
+            instance = target,
+            onBack = { workshopTargetInstance = null }
+        )
+        return
     }
 
     val visibleInstances = remember(instances, selectedFilter) {
@@ -166,14 +180,12 @@ fun HubScreen() {
                         true
                     }
                     Key.ButtonX -> {
-                        focusedInstance?.let {
-                            bannerMessage = "Abriendo taller de mods y shaders para ${it.title}"
-                        }
+                        focusedInstance?.let { workshopTargetInstance = it }
                         true
                     }
                     Key.ButtonY -> {
                         focusedInstance?.let {
-                            bannerMessage = "Abriendo sala P2P y mundos de ${it.title}"
+                            bannerMessage = "Sala P2P lista para ${it.title}"
                         }
                         true
                     }
@@ -181,7 +193,6 @@ fun HubScreen() {
                 }
             }
     ) {
-        // Degradado ambiental sutil según el motor seleccionado
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -208,7 +219,6 @@ fun HubScreen() {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Perfil Omni-Account
                 Row(
                     modifier = Modifier
                         .clip(CircleShape)
@@ -238,7 +248,6 @@ fun HubScreen() {
                     )
                 }
 
-                // Filtros por Motor
                 Row(
                     modifier = Modifier
                         .clip(CircleShape)
@@ -270,7 +279,6 @@ fun HubScreen() {
                     }
                 }
 
-                // Botón Crear Nueva Instancia
                 Box(
                     modifier = Modifier
                         .clip(CircleShape)
@@ -287,7 +295,6 @@ fun HubScreen() {
                 }
             }
 
-            // Aviso interactivo superior si el usuario pulsó alguna acción
             bannerMessage?.let { msg ->
                 Box(
                     modifier = Modifier
@@ -307,7 +314,6 @@ fun HubScreen() {
                 }
             }
 
-            // Carrusel Horizontal de Instancias
             if (visibleInstances.isEmpty()) {
                 Box(
                     modifier = Modifier
@@ -350,7 +356,7 @@ fun HubScreen() {
                 }
             }
 
-            // Guía inferior de controles (táctil y mando)
+            // Guía inferior de controles
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -381,18 +387,16 @@ fun HubScreen() {
                     )
                     ActionPill(
                         glyph = "X",
-                        label = "Mods",
+                        label = "Mods y Shaders",
                         color = activeAccent,
                         onClick = {
-                            focusedInstance?.let {
-                                bannerMessage = "Abriendo gestor de mods de ${it.title}"
-                            }
+                            focusedInstance?.let { workshopTargetInstance = it }
                         }
                     )
                 }
 
                 Text(
-                    text = "PRISSMA v0.2 · L1/R1 Filtrar",
+                    text = "PRISSMA v0.3 · Modrinth Activo",
                     color = Prissma.colors.textMuted,
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace
@@ -400,7 +404,6 @@ fun HubScreen() {
             }
         }
 
-        // Ventana para crear nueva instancia
         if (showNewInstanceDialog) {
             NewInstanceDialog(
                 onDismiss = { showNewInstanceDialog = false },
@@ -420,7 +423,6 @@ fun HubScreen() {
             )
         }
 
-        // Ventana para cambiar perfil Omni-Account
         if (showAccountDialog) {
             AccountDialog(
                 currentName = playerName,
@@ -474,7 +476,6 @@ private fun InstanceCard(
             .focusable()
             .clickable(onClick = onClick)
     ) {
-        // Cabecera visual de la tarjeta
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -516,7 +517,6 @@ private fun InstanceCard(
             }
         }
 
-        // Pie de tarjeta
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -592,8 +592,8 @@ private fun NewInstanceDialog(
     onCreate: (String, EngineType, String) -> Unit
 ) {
     var title by remember { mutableStateOf("Mi Nuevo Mundo") }
-    var selectedEngine by remember { mutableStateOf(EngineType.RUST) }
-    var version by remember { mutableStateOf("26.3") }
+    var selectedEngine by remember { mutableStateOf(EngineType.JAVA) }
+    var version by remember { mutableStateOf("1.21.4") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -615,7 +615,12 @@ private fun NewInstanceDialog(
                         FilterChip(
                             selected = active,
                             onClick = { selectedEngine = engine },
-                            label = { Text(engine.displayName, color = if (active) color else Prissma.colors.textMuted) }
+                            label = {
+                                Text(
+                                    engine.displayName,
+                                    color = if (active) color else Prissma.colors.textMuted
+                                )
+                            }
                         )
                     }
                 }
@@ -623,14 +628,16 @@ private fun NewInstanceDialog(
                 OutlinedTextField(
                     value = version,
                     onValueChange = { version = it },
-                    label = { Text("Versión (ej. 26.3)") },
+                    label = { Text("Versión (ej. 1.21.4 o 26.3)") },
                     singleLine = true
                 )
             }
         },
         confirmButton = {
             Button(
-                onClick = { if (title.isNotBlank()) onCreate(title.trim(), selectedEngine, version.trim()) },
+                onClick = {
+                    if (title.isNotBlank()) onCreate(title.trim(), selectedEngine, version.trim())
+                },
                 colors = ButtonDefaults.buttonColors(containerColor = Prissma.colors.brandAccent)
             ) {
                 Text("Crear", color = Prissma.colors.surfaceVoid, fontWeight = FontWeight.Bold)
