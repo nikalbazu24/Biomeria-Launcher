@@ -22,17 +22,13 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Configurar Android SDK y NDK
-        uses: android-actions/setup-android@v3
-
-      - name: Instalar CMake y NDK
-        run: |
-          sdkmanager "cmake;3.22.1" "ndk;26.1.10909125"
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Compilar APK Debug ARM64
         run: |
           chmod +x ./gradlew || true
-          gradle assembleDebug || ./gradlew assembleDebug
+          ./gradlew assembleDebug || gradle assembleDebug
 
       - name: Renombrar APK con número de build
         run: |
