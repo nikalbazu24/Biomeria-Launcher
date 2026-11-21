@@ -75,7 +75,7 @@ internal class MojangDownloader(context: Context) {
             val path = artifact.getString("path")
             Artifact(
                 artifact.getString("url"), File(shared, "libraries/$path"), artifact.getString("sha1"),
-                File(instanceRoot, "libraries/$path")
+                File(instanceRoot, "libraries/$path"), library.getString("name")
             )
         }.toMutableList()
         val mainClass = if (loader.startsWith("Fabric")) {
@@ -86,14 +86,17 @@ internal class MojangDownloader(context: Context) {
             val profile = JSONObject(httpText("$fabricMeta/$version/$fabricVersion/profile/json"))
             check(profile.getString("inheritsFrom") == version)
             val fabricLibraries = profile.getJSONArray("libraries").objects().map { library ->
-                val path = mavenPath(library.getString("name"))
+                val coordinate = library.getString("name")
+                val path = mavenPath(coordinate)
                 val repository = library.getString("url")
                 require(repository in setOf("https://maven.fabricmc.net/", "https://libraries.minecraft.net/"))
                 val url = repository + path
                 val sha1 = library.optString("sha1").ifEmpty { httpText("$url.sha1").trim().substringBefore(' ') }
-                Artifact(url, File(shared, "fabric/$path"), sha1)
+                Artifact(url, File(shared, "fabric/$path"), sha1, coordinate = coordinate)
             }
-            // Fabric's ASM and Mixin must precede the game libraries.
+            // Fabric rejects duplicate class definitions, even if its newer ASM JAR comes first.
+            val fabricModules = fabricLibraries.map { mavenModule(it.coordinate) }.toSet()
+            artifacts.removeAll { mavenModule(it.coordinate) in fabricModules }
             artifacts.addAll(0, fabricLibraries)
             check(profile.getString("mainClass") == "net.fabricmc.loader.impl.launch.knot.KnotClient")
             profile.getString("mainClass")
@@ -199,7 +202,11 @@ internal class MojangDownloader(context: Context) {
     }
 }
 
-private data class Artifact(val url: String, val file: File, val sha1: String, val previous: File? = null)
+private data class Artifact(
+    val url: String, val file: File, val sha1: String, val previous: File? = null, val coordinate: String = ""
+)
+
+internal fun mavenModule(coordinate: String) = coordinate.split(':', limit = 3).take(2).joinToString(":")
 
 internal fun mavenPath(coordinate: String): String {
     val parts = coordinate.split(':')

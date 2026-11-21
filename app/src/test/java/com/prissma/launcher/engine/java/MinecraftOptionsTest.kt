@@ -23,6 +23,12 @@ class MinecraftOptionsTest {
     }
 
     @Test
+    fun vanillaAsmAndFabricAsmResolveToOneModule() {
+        assertEquals(mavenModule("org.ow2.asm:asm:9.6"), mavenModule("org.ow2.asm:asm:9.7.1"))
+        assertFalse(mavenModule("org.ow2.asm:asm-tree:9.6") == mavenModule("org.ow2.asm:asm:9.7.1"))
+    }
+
+    @Test
     fun fabricLibrariesUseMavenLayout() {
         assertEquals("net/fabricmc/sponge-mixin/0.15.4+mixin.0.8.7/sponge-mixin-0.15.4+mixin.0.8.7.jar",
             mavenPath("net.fabricmc:sponge-mixin:0.15.4+mixin.0.8.7"))
