@@ -24,7 +24,6 @@ data class InstalledJavaRuntime(
 class JavaRuntimeManager(private val context: Context) {
 
     companion object {
-        // La palabra "AUTO" activa la búsqueda automática en GitHub Releases
         const val DEFAULT_JRE21_URL = "AUTO"
 
         private val GITHUB_RELEASE_REPOS = listOf(
@@ -59,7 +58,8 @@ class JavaRuntimeManager(private val context: Context) {
     }
 
     /**
-     * Consulta la API de GitHub para obtener el enlace real y vigente de JRE 21 ARM64.
+     * Busca estrictamente un paquete JRE/JDK 21 ARM64 en GitHub Releases,
+     * descartando versiones anteriores (Java 8 / Java 17).
      */
     private fun resolveLatestJre21AssetUrl(): Pair<String, String> {
         for (repo in GITHUB_RELEASE_REPOS) {
@@ -79,6 +79,7 @@ class JavaRuntimeManager(private val context: Context) {
                 for (i in 0 until releases.length()) {
                     val release = releases.getJSONObject(i)
                     val tag = release.optString("tag_name", "").lowercase()
+                    val releaseName = release.optString("name", "").lowercase()
                     val assets = release.optJSONArray("assets") ?: continue
 
                     for (j in 0 until assets.length()) {
@@ -87,13 +88,29 @@ class JavaRuntimeManager(private val context: Context) {
                         val lower = name.lowercase()
                         val downloadUrl = asset.optString("browser_download_url", "")
 
-                        val isJre21 = lower.contains("21") || tag.contains("21")
+                        val combined = "$tag $releaseName $lower"
+                        val isExplicitJre21 = combined.contains("jre21") ||
+                            combined.contains("jre-21") ||
+                            combined.contains("jdk21") ||
+                            combined.contains("jdk-21") ||
+                            combined.contains("java21") ||
+                            combined.contains("java-21") ||
+                            combined.contains("21.0")
+
+                        val isOlderJava = lower.contains("jre17") ||
+                            lower.contains("jre-17") ||
+                            lower.contains("jdk17") ||
+                            lower.contains("jdk-17") ||
+                            lower.contains("jre8") ||
+                            lower.contains("jre-8") ||
+                            lower.contains("jdk8")
+
                         val isArm64 = lower.contains("arm64") || lower.contains("aarch64")
                         val isArchive = lower.endsWith(".tar.xz") ||
                             lower.endsWith(".zip") ||
                             lower.endsWith(".tar.gz")
 
-                        if (isJre21 && isArm64 && isArchive && downloadUrl.isNotBlank()) {
+                        if (isExplicitJre21 && !isOlderJava && isArm64 && isArchive && downloadUrl.isNotBlank()) {
                             return name to downloadUrl
                         }
                     }
