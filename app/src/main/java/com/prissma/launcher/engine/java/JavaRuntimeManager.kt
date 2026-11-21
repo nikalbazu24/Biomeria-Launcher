@@ -25,23 +25,27 @@ class JavaRuntimeManager(private val context: Context) {
     }
 
     private val runtimeRootDir: File
-        get() = File(context.filesDir, "runtimes/jre21").apply { mkdirs() }
+        get() = File(context.filesDir, "runtimes/jre21")
 
-    /**
-     * Busca libjvm.so dentro de la carpeta del runtime para localizar JAVA_HOME automáticamente.
-     */
+    private val runtimeStagingDir: File
+        get() = File(context.filesDir, "runtimes/jre21_tmp")
+
     fun getInstalledRuntime(): InstalledJavaRuntime? {
         val root = runtimeRootDir
         if (!root.exists()) return null
+        return findRuntimeInDir(root)
+    }
 
-        val libJvm = root.walkTopDown()
+    private fun findRuntimeInDir(dir: File): InstalledJavaRuntime? {
+        if (!dir.exists()) return null
+
+        val libJvm = dir.walkTopDown()
             .firstOrNull { it.isFile && it.name == "libjvm.so" }
             ?: return null
 
-        // Normalmente libjvm.so está en <JAVA_HOME>/lib/server/libjvm.so
         val serverDir = libJvm.parentFile ?: return null
         val libDir = serverDir.parentFile ?: return null
-        val javaHome = libDir.parentFile ?: root
+        val javaHome = libDir.parentFile ?: dir
         return InstalledJavaRuntime(javaHomeDir = javaHome, libJvmFile = libJvm)
     }
 
@@ -65,7 +69,7 @@ class JavaRuntimeManager(private val context: Context) {
                 }
                 val totalBytes = conn.contentLengthLong
                 conn.inputStream.use { rawIn ->
-                    extractZipStream(rawIn, totalBytes, onProgress)
+                    extractZipSafely(rawIn, totalBytes, onProgress)
                 }
             } finally {
                 conn.disconnect()
@@ -85,7 +89,7 @@ class JavaRuntimeManager(private val context: Context) {
             val stream = context.contentResolver.openInputStream(uri)
                 ?: error("No se pudo leer el archivo seleccionado.")
             stream.use { rawIn ->
-                extractZipStream(rawIn, -1L, onProgress)
+                extractZipSafely(rawIn, -1L, onProgress)
             }
 
             getInstalledRuntime()
@@ -93,53 +97,68 @@ class JavaRuntimeManager(private val context: Context) {
         }
     }
 
-    private fun extractZipStream(
+    private fun extractZipSafely(
         inputStream: InputStream,
         totalBytes: Long,
         onProgress: (Float, String) -> Unit
     ) {
-        val targetDir = runtimeRootDir
-        targetDir.deleteRecursively()
-        targetDir.mkdirs()
+        val staging = runtimeStagingDir
+        staging.deleteRecursively()
+        staging.mkdirs()
 
-        val canonicalTarget = targetDir.canonicalPath
+        val canonicalStaging = staging.canonicalPath
         var extractedFiles = 0
 
-        ZipInputStream(BufferedInputStream(inputStream)).use { zis ->
-            var entry = zis.nextEntry
-            while (entry != null) {
-                val outFile = File(targetDir, entry.name)
-                if (!outFile.canonicalPath.startsWith(canonicalTarget)) {
-                    error("Entrada inválida dentro del archivo ZIP.")
-                }
-
-                if (entry.isDirectory) {
-                    outFile.mkdirs()
-                } else {
-                    outFile.parentFile?.mkdirs()
-                    FileOutputStream(outFile).use { fos ->
-                        zis.copyTo(fos)
+        try {
+            ZipInputStream(BufferedInputStream(inputStream)).use { zis ->
+                var entry = zis.nextEntry
+                while (entry != null) {
+                    val outFile = File(staging, entry.name)
+                    if (!outFile.canonicalPath.startsWith(canonicalStaging)) {
+                        error("Entrada inválida dentro del archivo ZIP.")
                     }
-                    // Permisos de ejecución necesarios en Android para librerías .so y binarios
-                    outFile.setReadable(true, false)
-                    outFile.setExecutable(true, false)
-                    extractedFiles++
 
-                    if (extractedFiles % 25 == 0) {
-                        val pct = if (totalBytes > 0) 0.50f else (0.15f + (extractedFiles % 70) / 100f)
-                        onProgress(pct.coerceIn(0.1f, 0.92f), "Extrayendo runtime JRE 21 ($extractedFiles archivos)...")
+                    if (entry.isDirectory) {
+                        outFile.mkdirs()
+                    } else {
+                        outFile.parentFile?.mkdirs()
+                        FileOutputStream(outFile).use { fos ->
+                            zis.copyTo(fos)
+                        }
+                        outFile.setReadable(true, false)
+                        outFile.setExecutable(true, false)
+                        extractedFiles++
+
+                        if (extractedFiles % 25 == 0) {
+                            val pct = if (totalBytes > 0) 0.50f else (0.15f + (extractedFiles % 70) / 100f)
+                            onProgress(pct.coerceIn(0.1f, 0.92f), "Extrayendo runtime JRE 21 ($extractedFiles archivos)...")
+                        }
                     }
+                    zis.closeEntry()
+                    entry = zis.nextEntry
                 }
-                zis.closeEntry()
-                entry = zis.nextEntry
             }
+
+            val stagedRuntime = findRuntimeInDir(staging)
+                ?: error("El archivo ZIP no contiene libjvm.so para ARM64.")
+
+            stagedRuntime.libJvmFile.setReadable(true, false)
+            stagedRuntime.libJvmFile.setExecutable(true, false)
+
+            val finalDir = runtimeRootDir
+            finalDir.deleteRecursively()
+            if (!staging.renameTo(finalDir)) {
+                staging.copyRecursively(finalDir, overwrite = true)
+                staging.deleteRecursively()
+            }
+
+            onProgress(1.0f, "Runtime JRE 21 ARM64 listo ($extractedFiles archivos).")
+        } catch (e: Exception) {
+            staging.deleteRecursively()
+            throw e
         }
-        onProgress(1.0f, "Runtime JRE 21 ARM64 listo ($extractedFiles archivos).")
     }
 
-    /**
-     * Construye el Classpath completo (librerías + client.jar) para arrancar Minecraft.
-     */
     fun buildClasspath(instanceId: String, clientJarFile: File): String {
         val instanceRoot = File(context.filesDir, "instances/$instanceId")
         val librariesDir = File(instanceRoot, "libraries")
@@ -148,20 +167,24 @@ class JavaRuntimeManager(private val context: Context) {
         if (librariesDir.exists()) {
             librariesDir.walkTopDown()
                 .filter { it.isFile && it.extension == "jar" }
+                .sortedBy { it.absolutePath }
                 .forEach { jars.add(it.absolutePath) }
         }
-        jars.add(clientJarFile.absolutePath)
-        return jars.joinToString(File.pathSeparator)
+        if (clientJarFile.exists()) {
+            jars.add(clientJarFile.absolutePath)
+        }
+
+        return jars
+            .distinctBy { File(it).name }
+            .joinToString(File.pathSeparator)
     }
 
-    /**
-     * Prepara los argumentos estándar de lanzamiento para Minecraft Java Edition.
-     */
     fun buildMinecraftArgs(
         instanceId: String,
         resolvedVersion: String,
         playerName: String,
-        playerUuid: String
+        playerUuid: String,
+        accountType: String = "Offline"
     ): Array<String> {
         val instanceRoot = File(context.filesDir, "instances/$instanceId")
         val assetsDir = File(instanceRoot, "assets").apply { mkdirs() }
@@ -171,6 +194,12 @@ class JavaRuntimeManager(private val context: Context) {
             ?.nameWithoutExtension
             ?: resolvedVersion
 
+        val userType = when (accountType.lowercase()) {
+            "microsoft" -> "msa"
+            "ely.by" -> "mojang"
+            else -> "legacy"
+        }
+
         return arrayOf(
             "--username", playerName,
             "--version", resolvedVersion,
@@ -179,7 +208,7 @@ class JavaRuntimeManager(private val context: Context) {
             "--assetIndex", assetIndexId,
             "--uuid", playerUuid,
             "--accessToken", "0",
-            "--userType", "legacy",
+            "--userType", userType,
             "--versionType", "PRISSMA"
         )
     }
