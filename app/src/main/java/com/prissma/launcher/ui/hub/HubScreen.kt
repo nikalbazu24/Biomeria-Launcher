@@ -1,6 +1,9 @@
 package com.prissma.launcher.ui.hub
 
-import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -32,9 +35,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.*
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -47,8 +48,14 @@ import com.prissma.launcher.data.UpdateInfo
 import com.prissma.launcher.ui.launch.JavaLaunchScreen
 import com.prissma.launcher.ui.theme.Prissma
 import com.prissma.launcher.ui.workshop.ContentWorkshopScreen
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
 import java.util.Locale
 import java.util.UUID
 
@@ -109,7 +116,6 @@ fun HubScreen(
 
     var instances by remember { mutableStateOf(storage.loadInstances()) }
 
-    // Actualizador automático vía GitHub Releases
     val updater = remember { AppUpdater(context) }
     val currentVersion = remember { updater.getCurrentVersionName() }
     val updateScope = rememberCoroutineScope()
@@ -274,7 +280,6 @@ fun HubScreen(
                 .padding(vertical = 14.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Barra Superior: Perfil + Filtros + Buscador + Ajustes + Nueva
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -311,7 +316,6 @@ fun HubScreen(
                     )
                 }
 
-                // Filtros por motor [L1 / R1]
                 Row(
                     modifier = Modifier
                         .clip(CircleShape)
@@ -346,7 +350,6 @@ fun HubScreen(
                     }
                 }
 
-                // Buscador compacto
                 Row(
                     modifier = Modifier
                         .width(175.dp)
@@ -484,7 +487,6 @@ fun HubScreen(
                 }
             }
 
-            // Barra inferior de controles + versión real
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -686,7 +688,9 @@ private fun SettingsDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val clipboard = LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
+    var uploadedUrl by remember { mutableStateOf<String?>(null) }
+    var isUploading by remember { mutableStateOf(false) }
 
     val latestLogText = remember {
         val instancesDir = File(context.filesDir, "instances")
@@ -697,10 +701,17 @@ private fun SettingsDialog(
         if (latestLogFile != null && latestLogFile.exists()) {
             val lines = runCatching { latestLogFile.readLines() }.getOrDefault(emptyList())
             if (lines.isEmpty()) "El archivo de log está vacío."
-            else lines.takeLast(60).joinToString("\n")
+            else lines.takeLast(80).joinToString("\n")
         } else {
             "Aún no hay ningún registro guardado (arranca una instancia primero)."
         }
+    }
+
+    fun copyToAndroidClipboard(label: String, text: String) {
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cm.setPrimaryClip(ClipData.newPlainText(label, text))
+        Toast.makeText(context, "¡$label copiado!", Toast.LENGTH_SHORT).show()
+        onCopiedBanner("$label copiado al portapapeles")
     }
 
     AlertDialog(
@@ -715,8 +726,7 @@ private fun SettingsDialog(
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // Sección 1: Actualizaciones
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -749,10 +759,9 @@ private fun SettingsDialog(
                     }
                 }
 
-                // Sección 2: Reporte de errores (prissma_last.log)
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        text = "Último reporte de errores (prissma_last.log):",
+                        text = "Último reporte (prissma_last.log):",
                         color = Prissma.colors.textPrimary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
@@ -760,7 +769,7 @@ private fun SettingsDialog(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(120.dp)
+                            .height(100.dp)
                             .background(Color(0xFF07090D), RoundedCornerShape(8.dp))
                             .border(1.dp, Prissma.colors.borderSubtle, RoundedCornerShape(8.dp))
                             .padding(8.dp)
@@ -773,32 +782,48 @@ private fun SettingsDialog(
                             fontFamily = FontFamily.Monospace
                         )
                     }
+
+                    uploadedUrl?.let { link ->
+                        Text(
+                            text = "Enlace listo: $link",
+                            color = Color(0xFF00F0FF),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.clickable { copyToAndroidClipboard("Enlace", link) }
+                        )
+                    }
+
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
-                            onClick = {
-                                clipboard.setText(AnnotatedString(latestLogText))
-                                onCopiedBanner("Reporte copiado al portapapeles")
-                            }
-                        ) {
-                            Text("Copiar reporte", color = Prissma.colors.textPrimary, fontSize = 11.sp)
-                        }
                         Button(
+                            enabled = !isUploading,
                             onClick = {
-                                val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_SUBJECT, "Reporte PRISSMA v$currentVersion")
-                                    putExtra(Intent.EXTRA_TEXT, latestLogText)
+                                isUploading = true
+                                scope.launch {
+                                    val result = uploadLogToMclogs(latestLogText)
+                                    isUploading = false
+                                    if (result != null) {
+                                        uploadedUrl = result
+                                        copyToAndroidClipboard("Enlace mclo.gs", result)
+                                    } else {
+                                        Toast.makeText(context, "Error al subir el log", Toast.LENGTH_SHORT).show()
+                                    }
                                 }
-                                context.startActivity(Intent.createChooser(sendIntent, "Enviar reporte de errores"))
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Prissma.colors.engineJava)
                         ) {
                             Text(
-                                text = "Compartir reporte",
+                                text = if (isUploading) "Subiendo..." else "Subir y obtener Link",
                                 color = Prissma.colors.surfaceVoid,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
+                        }
+
+                        OutlinedButton(
+                            onClick = { copyToAndroidClipboard("Reporte", latestLogText) }
+                        ) {
+                            Text("Copiar texto", color = Prissma.colors.textPrimary, fontSize = 11.sp)
                         }
                     }
                 }
@@ -810,6 +835,29 @@ private fun SettingsDialog(
             }
         }
     )
+}
+
+private suspend fun uploadLogToMclogs(content: String): String? = withContext(Dispatchers.IO) {
+    runCatching {
+        val url = URL("https://api.mclo.gs/1/log")
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            connectTimeout = 10_000
+            readTimeout = 15_000
+            setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+            setRequestProperty("User-Agent", "PRISSMA-Launcher/1.0")
+        }
+        val body = "content=${URLEncoder.encode(content, "UTF-8")}"
+        conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+        if (conn.responseCode in 200..299) {
+            val response = conn.inputStream.bufferedReader().use { it.readText() }
+            val json = JSONObject(response)
+            if (json.optBoolean("success", false)) json.optString("url", null) else null
+        } else {
+            null
+        }
+    }.getOrNull()
 }
 
 @Composable
