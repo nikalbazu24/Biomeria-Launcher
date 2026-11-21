@@ -2,6 +2,7 @@ package com.prissma.launcher.engine.java
 
 import android.content.Context
 import android.net.Uri
+import android.util.AtomicFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
@@ -299,24 +300,45 @@ class JavaRuntimeManager(private val context: Context) {
         return count
     }
 
-    fun buildClasspath(instanceId: String, clientJarFile: File): String {
+    private fun bundledLwjglJar(name: String): File {
+        val relativePath = "lwjgl/$ANDROID_LWJGL_VERSION/$name"
+        // Android vacía codeCacheDir al actualizar la app.
+        val target = File(context.codeCacheDir, relativePath)
+        if (target.isFile && target.length() > 0) return target
+
+        val atomic = AtomicFile(target)
+        val output = atomic.startWrite()
+        try {
+            context.assets.open(relativePath).use { it.copyTo(output) }
+            atomic.finishWrite(output)
+        } catch (error: Exception) {
+            atomic.failWrite(output)
+            throw error
+        }
+        return target
+    }
+
+    suspend fun buildClasspath(instanceId: String, clientJarFile: File): String = withContext(Dispatchers.IO) {
         val instanceRoot = File(context.filesDir, "instances/$instanceId")
         val librariesDir = File(instanceRoot, "libraries")
         val jars = mutableListOf<String>()
 
         if (librariesDir.exists()) {
             val lwjglDir = File(librariesDir, "org/lwjgl")
+            val androidModules = setOf("lwjgl", "lwjgl-opengl", "lwjgl-stb")
+                .map { "$it-$ANDROID_LWJGL_VERSION.jar" }.toSet()
             librariesDir.walkTopDown()
                 .filter { it.isFile && it.extension == "jar" }
                 .filterNot { it.startsWith(lwjglDir) && it.name.contains("-$ANDROID_LWJGL_VERSION-natives-") }
                 .sortedBy { it.absolutePath }
+                .map { if (it.startsWith(lwjglDir) && it.name in androidModules) bundledLwjglJar(it.name) else it }
                 .forEach { jars.add(it.absolutePath) }
         }
         if (clientJarFile.exists()) {
             jars.add(clientJarFile.absolutePath)
         }
 
-        return jars
+        jars
             .distinctBy { File(it).name }
             .joinToString(File.pathSeparator)
     }

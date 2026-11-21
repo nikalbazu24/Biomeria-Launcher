@@ -29,6 +29,7 @@ import com.prissma.launcher.ui.hub.GameInstance
 import com.prissma.launcher.ui.theme.Prissma
 import kotlinx.coroutines.launch
 import java.io.File
+import java.io.IOException
 
 @Composable
 fun JavaLaunchScreen(
@@ -51,6 +52,7 @@ fun JavaLaunchScreen(
     var installedRuntime by remember { mutableStateOf(runtimeManager.getInstalledRuntime()) }
     var useVulkanZink by remember { mutableStateOf(true) }
     var isInstallingRuntime by remember { mutableStateOf(false) }
+    var isOpeningGame by remember { mutableStateOf(false) }
     var retryCounter by remember { mutableIntStateOf(0) }
 
     val animatedProgress by animateFloatAsState(
@@ -80,7 +82,7 @@ fun JavaLaunchScreen(
         }
     }
 
-    fun openGameViewport(session: PreparedJavaSession) {
+    suspend fun openGameViewport(session: PreparedJavaSession) {
         val instanceDir = File(context.filesDir, "instances/${session.instanceId}")
         val classpath = runtimeManager.buildClasspath(session.instanceId, session.clientJarFile)
         val gameArgs = runtimeManager.buildMinecraftArgs(
@@ -296,8 +298,20 @@ fun JavaLaunchScreen(
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             readySession?.let { session ->
                 Button(
-                    enabled = !isInstallingRuntime,
-                    onClick = { openGameViewport(session) },
+                    enabled = !isInstallingRuntime && !isOpeningGame,
+                    onClick = {
+                        isOpeningGame = true
+                        errorText = null
+                        scope.launch {
+                            try {
+                                openGameViewport(session)
+                            } catch (error: IOException) {
+                                errorText = error.message ?: "No se pudo preparar el classpath de LWJGL."
+                            } finally {
+                                isOpeningGame = false
+                            }
+                        }
+                    },
                     colors = ButtonDefaults.buttonColors(containerColor = Prissma.colors.brandAccent)
                 ) {
                     Text(

@@ -16,6 +16,9 @@ jobs:
       - name: Checkout código
         uses: actions/checkout@v4
 
+      - name: Probar el verificador del APK
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
+
       - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
@@ -83,6 +86,9 @@ jobs:
         with:
           name: PRISSMA-APK
           path: PRISSMA-Launcher-*.apk
+
+      - name: Verificar nativos ARM64 para Minecraft Java
+        run: python3 scripts/verify_java_apk.py "PRISSMA-Launcher-${RELEASE_TAG}.apk"
 
       - name: Publicar Release automático
         uses: softprops/action-gh-release@v2

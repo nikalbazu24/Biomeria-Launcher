@@ -24,20 +24,28 @@ val lwjglRevision = "166af615dbdca1a507b8c2d379822cca02795132"
 val lwjglSha256 = "3ec756806be63e5446964464777146d7c87660d3d4e238d5b74c76d68d6070d7"
 val lwjglArchive = layout.buildDirectory.file("downloads/lwjgl-3.3.3-natives.aar")
 val lwjglJniLibs = layout.buildDirectory.dir("generated/lwjgl/jniLibs")
+val lwjglAssets = layout.buildDirectory.dir("generated/lwjgl/assets")
+val lwjglSource = "https://raw.githubusercontent.com/AngelAuraMC/Amethyst-Android/$lwjglRevision"
+
+fun verifiedDownload(url: String, expectedSha256: String): ByteArray {
+    val connection = URI(url).toURL().openConnection().apply {
+        connectTimeout = 15_000
+        readTimeout = 30_000
+    }
+    val bytes = connection.getInputStream().use { it.readBytes() }
+    val sha256 = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+    check(sha256 == expectedSha256) { "SHA-256 inesperado para $url." }
+    return bytes
+}
+
 val downloadLwjglAndroid by tasks.registering {
     inputs.property("revision", lwjglRevision)
     inputs.property("sha256", lwjglSha256)
     outputs.file(lwjglArchive)
     doLast {
-        val uri = URI("https://raw.githubusercontent.com/AngelAuraMC/Amethyst-Android/" +
-            "$lwjglRevision/app_pojavlauncher/libs/lwjgl-3.3.3-natives-release.aar")
-        val connection = uri.toURL().openConnection().apply {
-            connectTimeout = 15_000
-            readTimeout = 30_000
-        }
-        val bytes = connection.getInputStream().use { it.readBytes() }
-        val sha256 = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
-        check(sha256 == lwjglSha256) { "SHA-256 inesperado para los nativos de LWJGL 3.3.3." }
+        val bytes = verifiedDownload(
+            "$lwjglSource/app_pojavlauncher/libs/lwjgl-3.3.3-natives-release.aar", lwjglSha256
+        )
         lwjglArchive.get().asFile.apply { parentFile.mkdirs() }.writeBytes(bytes)
     }
 }
@@ -51,7 +59,24 @@ val unpackLwjglAndroid by tasks.registering(Sync::class) {
     }
     into(lwjglJniLibs)
 }
-tasks.named("preBuild") { dependsOn(unpackJnaAndroid, unpackLwjglAndroid) }
+val prepareLwjglJars by tasks.registering {
+    val jars = mapOf(
+        "lwjgl" to "c26bc7db30a3414d907530eb3128c582612c10674328408e560feb5444ceefd1",
+        "lwjgl-opengl" to "941bd9e9d1818f732b614e104a885d313e88368eab348b8541832ae12a414114",
+        "lwjgl-stb" to "7a8145cadeee92d682515c8a37d561ed594026fa9d83a6b033eeaec4a587a010"
+    )
+    inputs.property("revision", lwjglRevision)
+    inputs.property("jars", jars)
+    outputs.dir(lwjglAssets)
+    doLast {
+        val directory = lwjglAssets.get().dir("lwjgl/3.3.3").asFile.apply { mkdirs() }
+        jars.forEach { (module, sha256) ->
+            val source = "$lwjglSource/jre_lwjgl3glfw/lwjgl-3.3.3/libs/lwjgl-3.3.3/$module.jar"
+            directory.resolve("$module-3.3.3.jar").writeBytes(verifiedDownload(source, sha256))
+        }
+    }
+}
+tasks.named("preBuild") { dependsOn(unpackJnaAndroid, unpackLwjglAndroid, prepareLwjglJars) }
 
 android {
     namespace = "com.prissma.launcher"
@@ -101,8 +126,12 @@ android {
 
     sourceSets.getByName("main").jniLibs.srcDir(jnaJniLibs)
     sourceSets.getByName("main").jniLibs.srcDir(lwjglJniLibs)
+    sourceSets.getByName("main").assets.srcDir(lwjglAssets)
     // La JVM de Minecraft carga las bibliotecas desde applicationInfo.nativeLibraryDir.
     packaging.jniLibs.useLegacyPackaging = true
+    packaging.jniLibs.keepDebugSymbols.addAll(
+        setOf("**/liblwjgl.so", "**/liblwjgl_opengl.so", "**/liblwjgl_stb.so")
+    )
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
