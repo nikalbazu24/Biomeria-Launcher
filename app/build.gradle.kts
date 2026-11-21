@@ -4,6 +4,9 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val buildVersionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
+val buildVersionName = (project.findProperty("versionName") as String?) ?: "1.0.0-beta.1"
+
 android {
     namespace = "com.prissma.launcher"
     compileSdk = 35
@@ -12,23 +15,41 @@ android {
         applicationId = "com.prissma.launcher"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "1.0.0-beta.1"
+        versionCode = buildVersionCode
+        versionName = buildVersionName
 
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
     }
 
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
+    signingConfigs {
+        create("release") {
+            val keystoreFile = file("prissma.jks")
+            if (keystoreFile.exists()) {
+                storeFile = keystoreFile
+                storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "prissma2026"
+                keyAlias = System.getenv("KEY_ALIAS") ?: "prissma"
+                keyPassword = System.getenv("KEY_PASSWORD") ?: "prissma2026"
+            }
         }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = if (file("prissma.jks").exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 
