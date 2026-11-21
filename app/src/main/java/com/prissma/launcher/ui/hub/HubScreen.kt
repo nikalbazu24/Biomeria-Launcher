@@ -42,6 +42,7 @@ import com.prissma.launcher.engine.java.MojangDownloader
 import com.prissma.launcher.ui.components.ControlShape
 import com.prissma.launcher.ui.components.LauncherButton
 import com.prissma.launcher.ui.components.PrissmaMark
+import com.prissma.launcher.ui.components.ReleaseNotesDialog
 import com.prissma.launcher.ui.components.gamepadClick
 import com.prissma.launcher.ui.launch.JavaLaunchScreen
 import com.prissma.launcher.ui.theme.Prissma
@@ -90,6 +91,13 @@ fun HubScreen(
     var deleteId by rememberSaveable { mutableStateOf<String?>(null) }
     var launchingId by rememberSaveable { mutableStateOf<String?>(null) }
     var update by remember { mutableStateOf<UpdateInfo?>(null) }
+    var installedNotes by remember(updater, version) { mutableStateOf<String?>(null) }
+    var releaseNotesSeen by remember(updater, version) { mutableStateOf(updater.hasSeenReleaseNotes(version)) }
+
+    fun acknowledgeReleaseNotes() {
+        updater.markReleaseNotesSeen(version)
+        releaseNotesSeen = true
+    }
 
     val visible = remember(instances, filter, query, favorites, favoritesOnly, recent, order) {
         visibleLibrary(instances, filter, query, favorites, favoritesOnly, recent, order)
@@ -135,6 +143,7 @@ fun HubScreen(
         }) downloads.game(sample)
     }
     LaunchedEffect(updater) { update = updater.checkForUpdate().getOrNull() }
+    LaunchedEffect(updater, version) { installedNotes = updater.installedReleaseNotes(version) }
     LaunchedEffect(externalLaunchInstanceId) {
         val id = externalLaunchInstanceId ?: return@LaunchedEffect
         page = HubPage.LIBRARY
@@ -222,10 +231,18 @@ fun HubScreen(
                     storage, instances, librarySelection(instances, selectedId), sourceFrontendPackage,
                     onSelect = { selectedId = it.id }, onNotice = ::notify
                 )
-                HubPage.SETTINGS -> SettingsPage(updater, version, update, { update = it }, ::notify)
+                HubPage.SETTINGS -> SettingsPage(
+                    updater, version, update, installedNotes, ::acknowledgeReleaseNotes, { update = it }, ::notify
+                )
                 HubPage.WORKSHOP -> EmptyWorkshop { showNew = true }
             }
         }
+    }
+
+    if (!releaseNotesSeen && page == HubPage.LIBRARY && externalLaunchInstanceId == null &&
+        updateSettingsRequest == 0 && !showAccount && !showNew && editingId == null && deleteId == null
+    ) {
+        installedNotes?.let { ReleaseNotesDialog(version, it, ::acknowledgeReleaseNotes) }
     }
 
     if (showAccount) ProfileDialog(profile, onDismiss = { showAccount = false }) { updated ->

@@ -45,6 +45,22 @@ class AppUpdater(private val context: Context) {
         private const val RELEASES_API = "https://api.github.com/repos/$REPO/releases"
     }
 
+    private val updatePreferences = context.getSharedPreferences("prissma_updates", Context.MODE_PRIVATE)
+
+    suspend fun installedReleaseNotes(version: String): String? = withContext(Dispatchers.IO) {
+        if (betaBuildNumber(version) == null) return@withContext null
+        val tag = version.trim().removePrefix("v")
+        runCatching {
+            context.assets.open("release-notes/$tag.md").bufferedReader().use { it.readText().trim() }
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+    }
+
+    fun hasSeenReleaseNotes(version: String) = updatePreferences.getString("seen_release_notes", null) == version
+
+    fun markReleaseNotesSeen(version: String) {
+        updatePreferences.edit().putString("seen_release_notes", version).apply()
+    }
+
     fun getCurrentVersionName(): String {
         return runCatching {
             val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
@@ -104,7 +120,8 @@ class AppUpdater(private val context: Context) {
             .map { it.optString("browser_download_url") }
             .firstOrNull { it.startsWith(DOWNLOAD_PREFIX) }
             ?: return null
-        return UpdateInfo(tag, json.optString("body", "Nueva actualización disponible."), apkUrl)
+        val changelog = if (json.isNull("body")) "" else json.optString("body").trim()
+        return UpdateInfo(tag, changelog, apkUrl)
     }
 
     fun canInstall() = context.packageManager.canRequestPackageInstalls()

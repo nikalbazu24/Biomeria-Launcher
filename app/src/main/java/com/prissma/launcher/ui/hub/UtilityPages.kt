@@ -36,6 +36,7 @@ import com.prissma.launcher.data.UpdateNotifications
 import com.prissma.launcher.ui.components.ControlShape
 import com.prissma.launcher.ui.components.LauncherButton
 import com.prissma.launcher.ui.components.PanelShape
+import com.prissma.launcher.ui.components.ReleaseNotesDialog
 import com.prissma.launcher.ui.components.gamepadClick
 import com.prissma.launcher.ui.theme.Prissma
 import kotlinx.coroutines.Dispatchers
@@ -116,6 +117,8 @@ internal fun SettingsPage(
     updater: AppUpdater,
     version: String,
     update: UpdateInfo?,
+    installedNotes: String?,
+    onInstalledNotesSeen: () -> Unit,
     onUpdate: (UpdateInfo?) -> Unit,
     onNotice: (String) -> Unit
 ) {
@@ -124,6 +127,7 @@ internal fun SettingsPage(
     val scope = rememberCoroutineScope()
     var updateStatus by remember { mutableStateOf<String?>(null) }
     var checking by remember { mutableStateOf(false) }
+    var notesDialog by remember { mutableStateOf<Pair<String, String>?>(null) }
     var progress by remember { mutableStateOf<Float?>(null) }
     var preview by remember { mutableStateOf<UpdateInfo?>(null) }
     var previewError by remember { mutableStateOf<String?>(null) }
@@ -216,8 +220,12 @@ internal fun SettingsPage(
             update?.let { found ->
                 LauncherButton("Instalar " + found.versionTag, { requestInstall(found.apkDownloadUrl) },
                     primary = true, enabled = !checking && progress == null)
-                Text(found.changelog.take(240), color = Prissma.colors.textMuted,
-                    style = MaterialTheme.typography.bodySmall, maxLines = 5, overflow = TextOverflow.Ellipsis)
+                LauncherButton("Novedades de " + found.versionTag, {
+                    notesDialog = found.versionTag to found.changelog
+                })
+            }
+            if (installedNotes != null) {
+                LauncherButton("Novedades de la versión instalada", { notesDialog = version to installedNotes })
             }
             LauncherButton(if (notificationsEnabled) "Gestionar avisos de Android" else "Activar avisos de actualización", {
                 if (!notificationsEnabled && Build.VERSION.SDK_INT >= 33) {
@@ -241,10 +249,20 @@ internal fun SettingsPage(
                         color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
                     LauncherButton("Instalar " + availablePreview.versionTag,
                         { requestInstall(availablePreview.apkDownloadUrl) }, enabled = progress == null)
+                    LauncherButton("Novedades de " + availablePreview.versionTag, {
+                        notesDialog = availablePreview.versionTag to availablePreview.changelog
+                    })
                 }
             }
         }
     }
+    notesDialog?.let { (notesVersion, body) ->
+        ReleaseNotesDialog(notesVersion, body) {
+            if (notesVersion == version) onInstalledNotesSeen()
+            notesDialog = null
+        }
+    }
+
     val reportPanel: @Composable (Modifier) -> Unit = { modifier ->
         val report = latest
         val detail = report?.let {

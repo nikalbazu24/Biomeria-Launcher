@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Checkout código
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Probar el verificador del APK
         run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
@@ -53,6 +55,24 @@ jobs:
           else
             echo "persistent=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Preparar novedades de la versión
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: 1.0.0-beta.${{ github.run_number }}
+        run: |
+          notes="app/src/main/assets/release-notes/$RELEASE_VERSION.md"
+          if [ ! -s "$notes" ]; then
+            previous="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name || true)"
+            if [ -n "$previous" ] && git merge-base --is-ancestor "$previous" HEAD 2>/dev/null; then
+              changes="$(git log --no-merges --format='- %s' "$previous..HEAD")"
+            else
+              changes="$(git log -1 --format='- %s')"
+            fi
+            mkdir -p "$(dirname "$notes")"
+            printf '### Cambios de la versión\n\n%s\n' "${changes:-Esta compilación conserva los cambios de la versión anterior.}" > "$notes"
+          fi
+          echo "RELEASE_NOTES_FILE=$notes" >> "$GITHUB_ENV"
 
       - name: Compilar APK Release Firmado ARM64
         env:
@@ -105,7 +125,7 @@ jobs:
           name: "PRISSMA Launcher ${{ env.RELEASE_TAG }}"
           prerelease: false
           make_latest: true
-          body: "Compilación firmada generada automáticamente (Build #${{ github.run_number }})."
+          body_path: ${{ env.RELEASE_NOTES_FILE }}
           files: PRISSMA-Launcher-*.apk
 
 
