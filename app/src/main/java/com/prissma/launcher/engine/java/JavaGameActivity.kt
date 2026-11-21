@@ -9,6 +9,7 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -19,7 +20,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -102,6 +105,7 @@ class JavaGameActivity : ComponentActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) enableImmersiveMode()
+        else if (controlsActive) gameInput.reset()
     }
 
     override fun onDestroy() {
@@ -258,6 +262,15 @@ private fun JavaNativeViewportScreen(
         )
 
         if (canSendInput) {
+            if (!captured && input.gamepadUsed) {
+                Canvas(Modifier.matchParentSize()) {
+                    val position = input.menuCursor
+                    val center = Offset(position.x * size.width, position.y * size.height)
+                    drawCircle(Color.Black.copy(alpha = .75f), radius = 8.dp.toPx(), center = center)
+                    drawCircle(Color.White, radius = 6.dp.toPx(), center = center, style = Stroke(1.5.dp.toPx()))
+                    drawCircle(Color.White, radius = 1.5.dp.toPx(), center = center)
+                }
+            }
             if (captured && showTouchControls && !input.gamepadUsed) {
                 TouchControls(input, Modifier.align(Alignment.BottomCenter).fillMaxWidth())
             }

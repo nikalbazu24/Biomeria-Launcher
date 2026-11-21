@@ -6,9 +6,39 @@ import android.view.MotionEvent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
 import kotlin.math.abs
 
-internal class GameInput {
+internal enum class GameInputEvent(val nativeId: Int) {
+    POINTER(0), RELATIVE_POINTER(1), MOUSE_BUTTON(2), KEY(3), SCROLL(4), RESET(5)
+}
+
+private enum class GamepadAction(val event: GameInputEvent, val code: Int) {
+    ATTACK(GameInputEvent.MOUSE_BUTTON, 0),
+    USE(GameInputEvent.MOUSE_BUTTON, 1),
+    JUMP(GameInputEvent.KEY, 32),
+    SNEAK(GameInputEvent.KEY, 340),
+    SPRINT(GameInputEvent.KEY, 341),
+    ESCAPE(GameInputEvent.KEY, 256),
+    INVENTORY(GameInputEvent.KEY, 69),
+    SWAP_HANDS(GameInputEvent.KEY, 70),
+    WALK_LEFT(GameInputEvent.KEY, 65),
+    WALK_RIGHT(GameInputEvent.KEY, 68),
+    WALK_FORWARD(GameInputEvent.KEY, 87),
+    WALK_BACK(GameInputEvent.KEY, 83),
+    ARROW_LEFT(GameInputEvent.KEY, 263),
+    ARROW_RIGHT(GameInputEvent.KEY, 262),
+    ARROW_UP(GameInputEvent.KEY, 265),
+    ARROW_DOWN(GameInputEvent.KEY, 264),
+    PREVIOUS_SLOT(GameInputEvent.SCROLL, 1),
+    NEXT_SLOT(GameInputEvent.SCROLL, -1)
+}
+
+internal class GameInput(
+    private val emit: (GameInputEvent, Int, Int, Double, Double) -> Unit = { event, code, action, x, y ->
+        NativeJavaBridge.nativeInput(event.nativeId, code, action, x, y)
+    }
+) {
     private var viewWidth = 1
     private var viewHeight = 1
     private var width = 1
@@ -25,11 +55,13 @@ internal class GameInput {
     private var moveY = 0f
     private var hatX = 0f
     private var hatY = 0f
-    private var leftTrigger = false
-    private var rightTrigger = false
-    private val moveKeys = mutableSetOf<Int>()
+    private val gamepadButtons = mutableMapOf<Int, GamepadAction>()
+    private val analogActions = mutableSetOf<GamepadAction>()
+    private val activeGamepadActions = mutableSetOf<GamepadAction>()
     private var captured = false
     var gamepadUsed by mutableStateOf(false)
+        private set
+    var menuCursor by mutableStateOf(Offset(.5f, .5f))
         private set
 
     fun resize(viewWidth: Int, viewHeight: Int, width: Int, height: Int) {
@@ -37,7 +69,7 @@ internal class GameInput {
         this.viewHeight = viewHeight.coerceAtLeast(1)
         this.width = width.coerceAtLeast(1)
         this.height = height.coerceAtLeast(1)
-        movePointer(width / 2.0, height / 2.0)
+        if (!captured) movePointer(this.width / 2.0, this.height / 2.0)
     }
 
     fun setCaptured(value: Boolean) {
@@ -57,11 +89,10 @@ internal class GameInput {
         moveY = 0f
         hatX = 0f
         hatY = 0f
-        leftTrigger = false
-        rightTrigger = false
-        moveKeys.clear()
-        padMappings.clear()
-        NativeJavaBridge.nativeInput(5, 0, 0, 0.0, 0.0)
+        gamepadButtons.clear()
+        analogActions.clear()
+        activeGamepadActions.clear()
+        send(GameInputEvent.RESET)
     }
 
     fun touch(event: MotionEvent): Boolean {
@@ -102,6 +133,7 @@ internal class GameInput {
     }
 
     private fun mouse(event: MotionEvent): Boolean {
+        gamepadUsed = false
         val x = event.x * width.toDouble() / viewWidth
         val y = event.y * height.toDouble() / viewHeight
         if (captured) {
@@ -118,9 +150,10 @@ internal class GameInput {
             movePointer(x, y)
         }
         when (event.actionMasked) {
-            MotionEvent.ACTION_SCROLL -> NativeJavaBridge.nativeInput(
-                4, 0, 0, event.getAxisValue(MotionEvent.AXIS_HSCROLL).toDouble(),
-                event.getAxisValue(MotionEvent.AXIS_VSCROLL).toDouble()
+            MotionEvent.ACTION_SCROLL -> send(
+                GameInputEvent.SCROLL,
+                x = event.getAxisValue(MotionEvent.AXIS_HSCROLL).toDouble(),
+                y = event.getAxisValue(MotionEvent.AXIS_VSCROLL).toDouble()
             )
             MotionEvent.ACTION_BUTTON_PRESS, MotionEvent.ACTION_BUTTON_RELEASE -> {
                 val button = when (event.actionButton) {
@@ -140,32 +173,46 @@ internal class GameInput {
     fun motion(event: MotionEvent): Boolean {
         if (event.isFromSource(InputDevice.SOURCE_MOUSE)) return mouse(event)
         if (!event.isFromSource(InputDevice.SOURCE_JOYSTICK)) return false
-        gamepadUsed = true
-        moveX = axis(event, MotionEvent.AXIS_X)
-        moveY = axis(event, MotionEvent.AXIS_Y)
-        lookX = axis(event, MotionEvent.AXIS_Z)
-        lookY = axis(event, MotionEvent.AXIS_RZ)
-        if (event.device?.getMotionRange(MotionEvent.AXIS_Z, event.source) == null) {
-            lookX = axis(event, MotionEvent.AXIS_RX)
-            lookY = axis(event, MotionEvent.AXIS_RY)
-        }
-        hatX = axis(event, MotionEvent.AXIS_HAT_X)
-        hatY = axis(event, MotionEvent.AXIS_HAT_Y)
-        val attack = maxOf(event.getAxisValue(MotionEvent.AXIS_RTRIGGER), event.getAxisValue(MotionEvent.AXIS_GAS)) > .45f
-        val use = maxOf(event.getAxisValue(MotionEvent.AXIS_LTRIGGER), event.getAxisValue(MotionEvent.AXIS_BRAKE)) > .45f
-        if (attack != rightTrigger) mouseButton(0, attack)
-        if (use != leftTrigger) mouseButton(1, use)
-        rightTrigger = attack
-        leftTrigger = use
+        val useZAxes = event.device?.getMotionRange(MotionEvent.AXIS_Z, event.source) != null &&
+            event.device?.getMotionRange(MotionEvent.AXIS_RZ, event.source) != null
+        gamepadMotion(
+            moveX = axis(event, MotionEvent.AXIS_X),
+            moveY = axis(event, MotionEvent.AXIS_Y),
+            lookX = axis(event, if (useZAxes) MotionEvent.AXIS_Z else MotionEvent.AXIS_RX),
+            lookY = axis(event, if (useZAxes) MotionEvent.AXIS_RZ else MotionEvent.AXIS_RY),
+            hatX = axis(event, MotionEvent.AXIS_HAT_X),
+            hatY = axis(event, MotionEvent.AXIS_HAT_Y),
+            attack = maxOf(event.getAxisValue(MotionEvent.AXIS_RTRIGGER), event.getAxisValue(MotionEvent.AXIS_GAS)) > .45f,
+            use = maxOf(event.getAxisValue(MotionEvent.AXIS_LTRIGGER), event.getAxisValue(MotionEvent.AXIS_BRAKE)) > .45f
+        )
         return true
+    }
+
+    internal fun gamepadMotion(
+        moveX: Float, moveY: Float, lookX: Float, lookY: Float,
+        hatX: Float, hatY: Float, attack: Boolean, use: Boolean
+    ) {
+        this.moveX = moveX
+        this.moveY = moveY
+        this.lookX = lookX
+        this.lookY = lookY
+        this.hatX = hatX
+        this.hatY = hatY
+        if (moveX != 0f || moveY != 0f || lookX != 0f || lookY != 0f ||
+            hatX != 0f || hatY != 0f || attack || use
+        ) gamepadUsed = true
+        if (captured) {
+            setAnalogAction(GamepadAction.WALK_LEFT, moveX < -.35f || hatX < -.5f)
+            setAnalogAction(GamepadAction.WALK_RIGHT, moveX > .35f || hatX > .5f)
+            setAnalogAction(GamepadAction.WALK_FORWARD, moveY < -.35f || hatY < -.5f)
+            setAnalogAction(GamepadAction.WALK_BACK, moveY > .35f || hatY > .5f)
+        }
+        setAnalogAction(GamepadAction.ATTACK, attack)
+        setAnalogAction(GamepadAction.USE, use)
     }
 
     fun tick() {
         if (captured) {
-            updateMoveKey(65, moveX < -.35f || hatX < -.5f)
-            updateMoveKey(68, moveX > .35f || hatX > .5f)
-            updateMoveKey(87, moveY < -.35f || hatY < -.5f)
-            updateMoveKey(83, moveY > .35f || hatY > .5f)
             if (lookX != 0f || lookY != 0f) relative(lookX * 26.0, lookY * 26.0)
         } else {
             val dx = (moveX + lookX + hatX).coerceIn(-1f, 1f)
@@ -177,8 +224,6 @@ internal class GameInput {
         }
     }
 
-    private val padMappings = mutableMapOf<Int, Int>()
-
     fun keyEvent(event: KeyEvent): Boolean {
         if (event.action != KeyEvent.ACTION_UP && event.action != KeyEvent.ACTION_DOWN) return false
         val down = event.action == KeyEvent.ACTION_DOWN
@@ -186,61 +231,83 @@ internal class GameInput {
         if (event.isFromSource(InputDevice.SOURCE_GAMEPAD) ||
             event.isFromSource(InputDevice.SOURCE_JOYSTICK) || KeyEvent.isGamepadButton(code)
         ) {
-            gamepadUsed = true
-            val mapping = if (down) padMappings.getOrPut(code) { padMapping(code) }
-                          else padMappings.remove(code) ?: return false
-            if (mapping == 0) return false
-            if (event.repeatCount == 0) {
-                if (mapping < 0) mouseButton(-mapping - 1, down) else key(mapping, down)
-            }
-            return true
+            return gamepadButton(code, down, event.repeatCount > 0)
         }
         val translated = keyboardMapping(code)
         if (translated == 0) return false
         val character = event.unicodeChar.takeIf { it in 32..0x10ffff } ?: 0
-        NativeJavaBridge.nativeInput(3, translated, if (!down) 0 else if (event.repeatCount > 0) 2 else 1,
-            character.toDouble(), 0.0)
+        send(GameInputEvent.KEY, translated, if (!down) 0 else if (event.repeatCount > 0) 2 else 1,
+            character.toDouble())
         return true
     }
 
-    private fun padMapping(code: Int): Int = when (code) {
-        KeyEvent.KEYCODE_BUTTON_A -> if (captured) 32 else -1
-        KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_BUTTON_START -> 256
-        KeyEvent.KEYCODE_BUTTON_X -> if (captured) 69 else -1
-        KeyEvent.KEYCODE_BUTTON_Y -> 70
-        KeyEvent.KEYCODE_BUTTON_L1 -> 81
-        KeyEvent.KEYCODE_BUTTON_R1 -> 70
-        KeyEvent.KEYCODE_BUTTON_L2 -> -2
-        KeyEvent.KEYCODE_BUTTON_R2 -> -1
-        KeyEvent.KEYCODE_BUTTON_THUMBL -> 341
-        KeyEvent.KEYCODE_BUTTON_THUMBR -> 340
-        KeyEvent.KEYCODE_DPAD_CENTER -> if (captured) 32 else -1
-        KeyEvent.KEYCODE_DPAD_UP -> if (captured) 87 else 265
-        KeyEvent.KEYCODE_DPAD_DOWN -> if (captured) 83 else 264
-        KeyEvent.KEYCODE_DPAD_LEFT -> if (captured) 65 else 263
-        KeyEvent.KEYCODE_DPAD_RIGHT -> if (captured) 68 else 262
-        else -> 0
+    internal fun gamepadButton(code: Int, down: Boolean, repeated: Boolean = false): Boolean {
+        val mapping = gamepadAction(code) ?: return false
+        if (down && repeated) return true
+        if (down) {
+            if (gamepadButtons.putIfAbsent(code, mapping) != null) return true
+            gamepadUsed = true
+            if (mapping.event == GameInputEvent.SCROLL) send(GameInputEvent.SCROLL, y = mapping.code.toDouble())
+            else updateGamepadAction(mapping)
+        } else {
+            val held = gamepadButtons.remove(code)
+            if (held != null && held.event != GameInputEvent.SCROLL) updateGamepadAction(held)
+        }
+        return true
+    }
+
+    private fun gamepadAction(code: Int): GamepadAction? = when (code) {
+        KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_DPAD_CENTER ->
+            if (captured) GamepadAction.JUMP else GamepadAction.ATTACK
+        KeyEvent.KEYCODE_BUTTON_B -> if (captured) GamepadAction.SNEAK else GamepadAction.ESCAPE
+        KeyEvent.KEYCODE_BUTTON_START -> GamepadAction.ESCAPE
+        KeyEvent.KEYCODE_BUTTON_X -> if (captured) GamepadAction.INVENTORY else GamepadAction.ATTACK
+        KeyEvent.KEYCODE_BUTTON_Y -> GamepadAction.SWAP_HANDS
+        KeyEvent.KEYCODE_BUTTON_L1 -> GamepadAction.PREVIOUS_SLOT.takeIf { captured }
+        KeyEvent.KEYCODE_BUTTON_R1 -> GamepadAction.NEXT_SLOT.takeIf { captured }
+        KeyEvent.KEYCODE_BUTTON_L2 -> GamepadAction.USE
+        KeyEvent.KEYCODE_BUTTON_R2 -> GamepadAction.ATTACK
+        KeyEvent.KEYCODE_BUTTON_THUMBL -> GamepadAction.SPRINT
+        KeyEvent.KEYCODE_BUTTON_THUMBR -> GamepadAction.SNEAK
+        KeyEvent.KEYCODE_DPAD_UP -> if (captured) GamepadAction.WALK_FORWARD else GamepadAction.ARROW_UP
+        KeyEvent.KEYCODE_DPAD_DOWN -> if (captured) GamepadAction.WALK_BACK else GamepadAction.ARROW_DOWN
+        KeyEvent.KEYCODE_DPAD_LEFT -> if (captured) GamepadAction.WALK_LEFT else GamepadAction.ARROW_LEFT
+        KeyEvent.KEYCODE_DPAD_RIGHT -> if (captured) GamepadAction.WALK_RIGHT else GamepadAction.ARROW_RIGHT
+        else -> null
+    }
+
+    private fun setAnalogAction(action: GamepadAction, pressed: Boolean) {
+        val changed = if (pressed) analogActions.add(action) else analogActions.remove(action)
+        if (changed) updateGamepadAction(action)
+    }
+
+    private fun updateGamepadAction(action: GamepadAction) {
+        // Some controllers report one press both as an axis and as an Android key.
+        val pressed = action in analogActions || action in gamepadButtons.values
+        val changed = if (pressed) activeGamepadActions.add(action) else activeGamepadActions.remove(action)
+        if (changed) send(action.event, action.code, if (pressed) 1 else 0)
     }
 
     fun key(key: Int, down: Boolean) {
-        NativeJavaBridge.nativeInput(3, key, if (down) 1 else 0, 0.0, 0.0)
+        send(GameInputEvent.KEY, key, if (down) 1 else 0)
     }
 
     fun mouseButton(button: Int, down: Boolean) {
-        NativeJavaBridge.nativeInput(2, button, if (down) 1 else 0, 0.0, 0.0)
-    }
-
-    private fun updateMoveKey(key: Int, down: Boolean) {
-        if (if (down) moveKeys.add(key) else moveKeys.remove(key)) key(key, down)
+        send(GameInputEvent.MOUSE_BUTTON, button, if (down) 1 else 0)
     }
 
     private fun movePointer(x: Double, y: Double) {
         cursorX = x.coerceIn(0.0, (width - 1).toDouble())
         cursorY = y.coerceIn(0.0, (height - 1).toDouble())
-        NativeJavaBridge.nativeInput(0, 0, 0, cursorX, cursorY)
+        menuCursor = Offset((cursorX / width).toFloat(), (cursorY / height).toFloat())
+        send(GameInputEvent.POINTER, x = cursorX, y = cursorY)
     }
 
-    private fun relative(dx: Double, dy: Double) = NativeJavaBridge.nativeInput(1, 0, 0, dx, dy)
+    private fun relative(dx: Double, dy: Double) = send(GameInputEvent.RELATIVE_POINTER, x = dx, y = dy)
+
+    private fun send(
+        event: GameInputEvent, code: Int = 0, action: Int = 0, x: Double = 0.0, y: Double = 0.0
+    ) = emit(event, code, action, x, y)
 
     private fun axis(event: MotionEvent, axis: Int): Float {
         val value = event.getAxisValue(axis)

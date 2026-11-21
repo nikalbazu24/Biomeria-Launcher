@@ -12,6 +12,7 @@ static int cursorChanges;
 static int keyChanges;
 static int buttonChanges;
 static int characterChanges;
+static int scrollChanges;
 
 static void pointerMoved(GLFWwindow* window, double x, double y)
 {
@@ -29,6 +30,15 @@ static void mouseChanged(GLFWwindow* window, int button, int action, int mods)
 {
     assert(button == GLFW_MOUSE_BUTTON_LEFT);
     ++buttonChanges;
+}
+
+static void hotbarScrolled(GLFWwindow* window, double x, double y)
+{
+    (void) window;
+    assert(x == 0.0);
+    assert(scrollChanges < 2);
+    assert(y == (scrollChanges == 0 ? 1.0 : -1.0));
+    ++scrollChanges;
 }
 
 static void typed(GLFWwindow* window, unsigned int codePoint)
@@ -112,6 +122,11 @@ int main(void)
     assert(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS);
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     assert(prissmaGlfwCursorCaptured());
+    glfwSetScrollCallback(window, hotbarScrolled);
+    prissmaGlfwInput(4, 0, 0, 0.0, 1.0);
+    prissmaGlfwInput(4, 0, 0, 0.0, -1.0);
+    glfwPollEvents();
+    assert(scrollChanges == 2);
     prissmaGlfwInput(1, 0, 0, 2.0, 1.0);
     prissmaGlfwInput(1, 0, 0, 3.0, 2.0);
     prissmaGlfwInput(5, 0, 0, 0.0, 0.0);
