@@ -7,6 +7,18 @@ plugins {
 val buildVersionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
 val buildVersionName = (project.findProperty("versionName") as String?) ?: "1.0.0-beta.1"
 
+val jnaAndroid by configurations.creating
+val jnaJniLibs = layout.buildDirectory.dir("generated/jna/jniLibs")
+val unpackJnaAndroid by tasks.registering(Sync::class) {
+    from({ zipTree(jnaAndroid.singleFile) }) {
+        include("jni/arm64-v8a/libjnidispatch.so")
+        eachFile { path = path.removePrefix("jni/") }
+        includeEmptyDirs = false
+    }
+    into(jnaJniLibs)
+}
+tasks.named("preBuild") { dependsOn(unpackJnaAndroid) }
+
 android {
     namespace = "com.prissma.launcher"
     compileSdk = 35
@@ -53,6 +65,10 @@ android {
         }
     }
 
+    sourceSets.getByName("main").jniLibs.srcDir(jnaJniLibs)
+    // La JVM de Minecraft carga libjnidispatch desde applicationInfo.nativeLibraryDir.
+    packaging.jniLibs.useLegacyPackaging = true
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -68,6 +84,7 @@ android {
 }
 
 dependencies {
+    jnaAndroid("net.java.dev.jna:jna:5.15.0@aar")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation(platform("androidx.compose:compose-bom:2024.10.01"))

@@ -45,41 +45,6 @@ namespace {
         gLogQueue.push_back(line);
     }
 
-    void closeLogFile() {
-        std::lock_guard<std::mutex> lock(gLogMutex);
-        if (gLogFile) {
-            fflush(gLogFile);
-            fclose(gLogFile);
-            gLogFile = nullptr;
-        }
-    }
-
-    std::string describeJavaException(JNIEnv* env) {
-        if (!env || !env->ExceptionCheck()) return "";
-        jthrowable ex = env->ExceptionOccurred();
-        env->ExceptionClear();
-        if (!ex) return "Excepción desconocida";
-
-        jclass objCls = env->FindClass("java/lang/Object");
-        jmethodID toStringMethod = objCls ? env->GetMethodID(objCls, "toString", "()Ljava/lang/String;") : nullptr;
-        std::string result = "Excepción Java";
-
-        if (toStringMethod) {
-            auto jStr = static_cast<jstring>(env->CallObjectMethod(ex, toStringMethod));
-            if (jStr) {
-                const char* chars = env->GetStringUTFChars(jStr, nullptr);
-                if (chars) {
-                    result = chars;
-                    env->ReleaseStringUTFChars(jStr, chars);
-                }
-                env->DeleteLocalRef(jStr);
-            }
-        }
-        if (objCls) env->DeleteLocalRef(objCls);
-        env->DeleteLocalRef(ex);
-        return result;
-    }
-
     void preloadLibraryIfExists(const std::string& fullPath) {
         if (access(fullPath.c_str(), F_OK) != 0) return;
         void* handle = dlopen(fullPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
@@ -161,6 +126,8 @@ namespace {
         std::string libJvmPath;
         std::string javaHome;
         std::string gameDir;
+        std::string cacheDir;
+        std::string nativeLibraryDir;
         std::string classpath;
         std::string mainClass;
         std::vector<std::string> gameArgs;
@@ -175,6 +142,7 @@ namespace {
 
         {
             std::lock_guard<std::mutex> lock(gLogMutex);
+            // stderr se lee en otro hilo y puede seguir llegando tras el retorno de main().
             if (gLogFile) {
                 fclose(gLogFile);
                 gLogFile = nullptr;
@@ -217,7 +185,6 @@ namespace {
             std::string msg = std::string("[ERROR] No se pudo abrir libjvm.so: ") + (err ? err : "desconocido");
             LOGE("%s", msg.c_str());
             pushLogLine(msg);
-            closeLogFile();
             gJvmRunning = false;
             delete cfg;
             return nullptr;
@@ -231,7 +198,6 @@ namespace {
         );
         if (!createJvmFn) {
             pushLogLine("[ERROR] Símbolo JNI_CreateJavaVM no encontrado en libjvm.so");
-            closeLogFile();
             gJvmRunning = false;
             delete cfg;
             return nullptr;
@@ -242,6 +208,17 @@ namespace {
         optionStrings.push_back("-Djava.home=" + cfg->javaHome);
         optionStrings.push_back("-Djava.library.path=" + ldPath);
         optionStrings.push_back("-Duser.dir=" + cfg->gameDir);
+        optionStrings.push_back("-Djava.io.tmpdir=" + cfg->cacheDir);
+        optionStrings.push_back("-Djna.tmpdir=" + cfg->cacheDir);
+        if ((cfg->classpath + ":").find("/jna-5.15.0.jar:") != std::string::npos) {
+            optionStrings.push_back("-Djna.boot.library.path=" + cfg->nativeLibraryDir);
+            optionStrings.push_back("-Djna.nosys=true");
+            optionStrings.push_back("-Djna.noclasspath=true");
+            pushLogLine("[PRISSMA] JNA 5.15.0 configurada con libjnidispatch de Android ARM64.");
+        }
+        pushLogLine("[PRISSMA] Directorio temporal de Java: " + cfg->cacheDir);
+        optionStrings.push_back("-Djna.debug_load.jna=true");
+        optionStrings.push_back("-Dorg.lwjgl.util.DebugLoader=true");
         optionStrings.push_back("-Dorg.lwjgl.opengl.libname=libGLESv2.so");
         optionStrings.push_back("-Dglfwstub.initEgl=false");
         optionStrings.push_back("-Xmx1536M");
@@ -265,7 +242,6 @@ namespace {
         jint status = createJvmFn(&jvm, reinterpret_cast<void**>(&jvmEnv), &vmArgs);
         if (status != JNI_OK || !jvmEnv) {
             pushLogLine("[ERROR] JNI_CreateJavaVM falló con código: " + std::to_string(status));
-            closeLogFile();
             gJvmRunning = false;
             delete cfg;
             return nullptr;
@@ -280,9 +256,8 @@ namespace {
 
         jclass mainCls = jvmEnv->FindClass(slashClass.c_str());
         if (!mainCls) {
-            std::string exDetail = describeJavaException(jvmEnv);
-            pushLogLine("[ERROR] No se pudo cargar " + cfg->mainClass + " -> " + exDetail);
-            closeLogFile();
+            pushLogLine("[ERROR] No se pudo cargar " + cfg->mainClass);
+            if (jvmEnv->ExceptionCheck()) jvmEnv->ExceptionDescribe();
             gJvmRunning = false;
             delete cfg;
             return nullptr;
@@ -290,9 +265,8 @@ namespace {
 
         jmethodID mainMethod = jvmEnv->GetStaticMethodID(mainCls, "main", "([Ljava/lang/String;)V");
         if (!mainMethod) {
-            std::string exDetail = describeJavaException(jvmEnv);
-            pushLogLine("[ERROR] Método main(String[]) no encontrado -> " + exDetail);
-            closeLogFile();
+            pushLogLine("[ERROR] No se pudo resolver main(String[])");
+            if (jvmEnv->ExceptionCheck()) jvmEnv->ExceptionDescribe();
             gJvmRunning = false;
             delete cfg;
             return nullptr;
@@ -314,13 +288,12 @@ namespace {
         jvmEnv->CallStaticVoidMethod(mainCls, mainMethod, jArgs);
 
         if (jvmEnv->ExceptionCheck()) {
-            std::string exDetail = describeJavaException(jvmEnv);
-            pushLogLine("[ERROR] Excepción en Minecraft -> " + exDetail);
+            pushLogLine("[ERROR] Excepción en Minecraft:");
+            jvmEnv->ExceptionDescribe();
         } else {
             pushLogLine("[PRISSMA] Sesión Java finalizada correctamente.");
         }
 
-        closeLogFile();
         gJvmRunning = false;
         delete cfg;
         return nullptr;
@@ -433,6 +406,8 @@ Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativeLaunchJvm(
     jstring libJvmPath,
     jstring javaHomePath,
     jstring gameDirPath,
+    jstring cacheDirPath,
+    jstring nativeLibraryDir,
     jstring classpath,
     jstring mainClass,
     jobjectArray gameArgs,
@@ -456,6 +431,8 @@ Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativeLaunchJvm(
     cfg->libJvmPath = toStdString(libJvmPath);
     cfg->javaHome = toStdString(javaHomePath);
     cfg->gameDir = toStdString(gameDirPath);
+    cfg->cacheDir = toStdString(cacheDirPath);
+    cfg->nativeLibraryDir = toStdString(nativeLibraryDir);
     cfg->classpath = toStdString(classpath);
     cfg->mainClass = toStdString(mainClass);
     cfg->useVulkanZink = (useVulkanZink == JNI_TRUE);

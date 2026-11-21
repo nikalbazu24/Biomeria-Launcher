@@ -19,6 +19,8 @@ object NativeJavaBridge {
         libJvmPath: String,
         javaHomePath: String,
         gameDirPath: String,
+        cacheDirPath: String,
+        nativeLibraryDir: String,
         classpath: String,
         mainClass: String,
         gameArgs: Array<String>,

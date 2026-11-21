@@ -53,6 +53,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
+import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -698,14 +699,28 @@ private fun SettingsDialog(
             .filter { it.isFile && it.name == "prissma_last.log" }
             .maxByOrNull { it.lastModified() }
 
-        if (latestLogFile != null && latestLogFile.exists()) {
-            val lines = runCatching { latestLogFile.readLines() }.getOrDefault(emptyList())
-            if (lines.isEmpty()) "El archivo de log está vacío."
-            else lines.takeLast(80).joinToString("\n")
+        if (latestLogFile != null) {
+            runCatching {
+                RandomAccessFile(latestLogFile, "r").use { log ->
+                    val length = log.length()
+                    val limit = 128 * 1024
+                    if (length <= limit) {
+                        ByteArray(length.toInt()).also { log.readFully(it) }.toString(Charsets.UTF_8)
+                    } else {
+                        val head = ByteArray(32 * 1024).also { log.readFully(it) }.toString(Charsets.UTF_8)
+                        val tailSize = limit - 32 * 1024
+                        log.seek(length - tailSize)
+                        val tail = ByteArray(tailSize).also { log.readFully(it) }.toString(Charsets.UTF_8)
+                        head.substringBeforeLast('\n') + "\n[PRISSMA] Se omitió la parte intermedia del registro.\n" +
+                            tail.substringAfter('\n')
+                    }
+                }.ifBlank { "El archivo de log está vacío." }
+            }.getOrElse { "No se pudo leer el archivo de log." }
         } else {
             "Aún no hay ningún registro guardado (arranca una instancia primero)."
         }
     }
+    val logPreview = remember(latestLogText) { latestLogText.lines().takeLast(80).joinToString("\n") }
 
     fun copyToAndroidClipboard(label: String, text: String) {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -776,7 +791,7 @@ private fun SettingsDialog(
                             .verticalScroll(rememberScrollState())
                     ) {
                         Text(
-                            text = latestLogText,
+                            text = logPreview,
                             color = Prissma.colors.textMuted,
                             fontSize = 10.sp,
                             fontFamily = FontFamily.Monospace

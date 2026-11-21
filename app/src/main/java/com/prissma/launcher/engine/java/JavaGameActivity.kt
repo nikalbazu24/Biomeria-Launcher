@@ -168,6 +168,8 @@ private fun JavaNativeViewportScreen(
                                     libJvmPath = libJvmPath,
                                     javaHomePath = javaHomePath,
                                     gameDirPath = gameDirPath,
+                                    cacheDirPath = ctx.cacheDir.absolutePath,
+                                    nativeLibraryDir = ctx.applicationInfo.nativeLibraryDir,
                                     classpath = classpath,
                                     mainClass = mainClass,
                                     gameArgs = gameArgs,

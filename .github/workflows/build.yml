@@ -26,11 +26,15 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Restaurar llave de firma
+        id: signing
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "$KEYSTORE_BASE64" | base64 --decode > app/prissma.jks
+            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > app/prissma.jks
+            echo "persistent=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "persistent=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Compilar APK Release Firmado ARM64
@@ -56,5 +60,7 @@ jobs:
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           name: "PRISSMA Launcher ${{ env.RELEASE_TAG }}"
+          prerelease: ${{ steps.signing.outputs.persistent != 'true' }}
+          make_latest: ${{ steps.signing.outputs.persistent == 'true' }}
           body: "Compilación firmada generada automáticamente (Build #${{ github.run_number }})."
           files: PRISSMA-Launcher-*.apk
