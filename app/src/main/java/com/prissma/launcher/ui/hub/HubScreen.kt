@@ -28,11 +28,13 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.prissma.launcher.data.InstanceStorage
 import com.prissma.launcher.ui.theme.Prissma
 import com.prissma.launcher.ui.workshop.ContentWorkshopScreen
 import java.util.Locale
@@ -62,52 +64,45 @@ data class GameInstance(
 )
 
 @Composable
-fun HubScreen() {
-    var playerName by remember { mutableStateOf("Jugador_Local") }
-    var accountType by remember { mutableStateOf("Offline") }
+fun HubScreen(
+    externalLaunchInstanceId: String? = null,
+    sourceFrontendPackage: String? = null,
+    onConsumeExternalLaunch: () -> Unit = {}
+) {
+    val context = LocalContext.current
+    val storage = remember { InstanceStorage(context) }
+
+    val initialProfile = remember { storage.loadProfile() }
+    var playerName by remember { mutableStateOf(initialProfile.playerName) }
+    var accountType by remember { mutableStateOf(initialProfile.accountType) }
+
     var selectedFilter by remember { mutableStateOf(EngineFilter.ALL) }
     var focusedIndex by remember { mutableIntStateOf(0) }
     var bannerMessage by remember { mutableStateOf<String?>(null) }
 
     var showNewInstanceDialog by remember { mutableStateOf(false) }
     var showAccountDialog by remember { mutableStateOf(false) }
+    var showFrontendBridgeDialog by remember { mutableStateOf(false) }
     var workshopTargetInstance by remember { mutableStateOf<GameInstance?>(null) }
 
-    var instances by remember {
-        mutableStateOf(
-            listOf(
-                GameInstance(
-                    id = "survival-mods-java",
-                    title = "Survival Con Mods",
-                    engine = EngineType.JAVA,
-                    version = "1.21.4",
-                    loader = "Fabric 0.16.9",
-                    playtimeHours = 42.0f,
-                    friendsOnline = 1
-                ),
-                GameInstance(
-                    id = "rust-120fps",
-                    title = "Minecraft Rust 120FPS",
-                    engine = EngineType.RUST,
-                    version = "26.3",
-                    loader = "Starling wgpu",
-                    playtimeHours = 18.5f,
-                    friendsOnline = 2
-                ),
-                GameInstance(
-                    id = "crossplay-bedrock",
-                    title = "Crossplay Amigos",
-                    engine = EngineType.BEDROCK,
-                    version = "26.10",
-                    loader = "MCPE Oficial",
-                    playtimeHours = 11.2f,
-                    friendsOnline = 3
-                )
-            )
-        )
+    var instances by remember { mutableStateOf(storage.loadInstances()) }
+
+    // Detecta si Cocoon, iiSU o Díptico ordenó arrancar una instancia específica
+    LaunchedEffect(externalLaunchInstanceId) {
+        val targetId = externalLaunchInstanceId ?: return@LaunchedEffect
+        selectedFilter = EngineFilter.ALL
+        val foundIndex = instances.indexOfFirst { it.id == targetId }
+        if (foundIndex >= 0) {
+            focusedIndex = foundIndex
+            val target = instances[foundIndex]
+            val origin = sourceFrontendPackage ?: "Frontend externo"
+            bannerMessage = "Arranque directo desde $origin: ${target.title} (${target.engine.displayName})"
+        } else {
+            bannerMessage = "Instancia solicitada no encontrada ($targetId)"
+        }
+        onConsumeExternalLaunch()
     }
 
-    // Si el usuario abrió el Taller de Modrinth, mostramos esa pantalla
     workshopTargetInstance?.let { target ->
         ContentWorkshopScreen(
             instance = target,
@@ -122,7 +117,9 @@ fun HubScreen() {
     }
 
     LaunchedEffect(selectedFilter) {
-        focusedIndex = 0
+        if (focusedIndex > visibleInstances.lastIndex) {
+            focusedIndex = 0
+        }
     }
 
     val listState = rememberLazyListState()
@@ -165,12 +162,14 @@ fun HubScreen() {
                         val list = EngineFilter.entries
                         val prev = (list.indexOf(selectedFilter) - 1 + list.size) % list.size
                         selectedFilter = list[prev]
+                        focusedIndex = 0
                         true
                     }
                     Key.ButtonR1 -> {
                         val list = EngineFilter.entries
                         val next = (list.indexOf(selectedFilter) + 1) % list.size
                         selectedFilter = list[next]
+                        focusedIndex = 0
                         true
                     }
                     Key.ButtonA, Key.DirectionCenter, Key.Enter -> {
@@ -187,6 +186,10 @@ fun HubScreen() {
                         focusedInstance?.let {
                             bannerMessage = "Sala P2P lista para ${it.title}"
                         }
+                        true
+                    }
+                    Key.ButtonStart -> {
+                        showFrontendBridgeDialog = true
                         true
                     }
                     else -> false
@@ -266,7 +269,10 @@ fun HubScreen() {
                                 .background(
                                     if (isSelected) Prissma.colors.surfaceElevated else Color.Transparent
                                 )
-                                .clickable { selectedFilter = filter }
+                                .clickable {
+                                    selectedFilter = filter
+                                    focusedIndex = 0
+                                }
                                 .padding(horizontal = 14.dp, vertical = 6.dp)
                         ) {
                             Text(
@@ -393,10 +399,16 @@ fun HubScreen() {
                             focusedInstance?.let { workshopTargetInstance = it }
                         }
                     )
+                    ActionPill(
+                        glyph = "START",
+                        label = "Frontends",
+                        color = Prissma.colors.textPrimary,
+                        onClick = { showFrontendBridgeDialog = true }
+                    )
                 }
 
                 Text(
-                    text = "PRISSMA v0.3 · Modrinth Activo",
+                    text = "PRISSMA v0.4 · Frontends Ready",
                     color = Prissma.colors.textMuted,
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace
@@ -414,11 +426,13 @@ fun HubScreen() {
                         version = version,
                         loader = engine.defaultLoader
                     )
-                    instances = listOf(newItem) + instances
+                    val updated = listOf(newItem) + instances
+                    instances = updated
+                    storage.saveInstances(updated)
                     selectedFilter = EngineFilter.ALL
                     focusedIndex = 0
                     showNewInstanceDialog = false
-                    bannerMessage = "Instancia '$title' creada en motor ${engine.displayName}"
+                    bannerMessage = "Instancia '$title' guardada y exportada (.mcinst)"
                 }
             )
         }
@@ -431,8 +445,27 @@ fun HubScreen() {
                 onSave = { newName, newType ->
                     playerName = newName
                     accountType = newType
+                    storage.saveProfile(newName, newType)
                     showAccountDialog = false
                 }
+            )
+        }
+
+        if (showFrontendBridgeDialog) {
+            FrontendBridgeDialog(
+                exportFolderPath = storage.exportInstancesDir.absolutePath,
+                selectedInstance = focusedInstance,
+                canDeleteSelected = focusedInstance != null && instances.size > 1,
+                onDeleteSelected = {
+                    val target = focusedInstance ?: return@FrontendBridgeDialog
+                    val updated = instances.filterNot { it.id == target.id }
+                    instances = updated
+                    storage.saveInstances(updated)
+                    focusedIndex = 0
+                    showFrontendBridgeDialog = false
+                    bannerMessage = "Instancia '${target.title}' eliminada"
+                },
+                onDismiss = { showFrontendBridgeDialog = false }
             )
         }
     }
@@ -584,6 +617,69 @@ private fun ActionPill(
             fontWeight = FontWeight.Medium
         )
     }
+}
+
+@Composable
+private fun FrontendBridgeDialog(
+    exportFolderPath: String,
+    selectedInstance: GameInstance?,
+    canDeleteSelected: Boolean,
+    onDeleteSelected: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Prissma.colors.surfaceCard,
+        title = {
+            Text(
+                text = "Integración Cocoon, iiSU y Díptico",
+                color = Prissma.colors.textPrimary
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "Carpeta de cartuchos .mcinst (para Cocoon):",
+                    color = Prissma.colors.textMuted,
+                    fontSize = 12.sp
+                )
+                Text(
+                    text = exportFolderPath,
+                    color = Prissma.colors.brandAccent,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+                selectedInstance?.let { inst ->
+                    Text(
+                        text = "Enlace directo de '${inst.title}':",
+                        color = Prissma.colors.textMuted,
+                        fontSize = 12.sp
+                    )
+                    Text(
+                        text = "prissma://launch?instance_id=${inst.id}",
+                        color = Prissma.colors.netP2P,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = Prissma.colors.brandAccent)
+            ) {
+                Text("Listo", color = Prissma.colors.surfaceVoid, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            if (canDeleteSelected) {
+                TextButton(onClick = onDeleteSelected) {
+                    Text("Eliminar Instancia", color = Color(0xFFF87171))
+                }
+            }
+        }
+    )
 }
 
 @Composable
