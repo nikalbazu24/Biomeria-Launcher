@@ -4,12 +4,16 @@ import android.content.Context
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
+import org.json.JSONArray
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.zip.GZIPInputStream
 import java.util.zip.ZipInputStream
 
 data class InstalledJavaRuntime(
@@ -20,8 +24,13 @@ data class InstalledJavaRuntime(
 class JavaRuntimeManager(private val context: Context) {
 
     companion object {
-        const val DEFAULT_JRE21_URL =
-            "https://github.com/QuestCraftPlusPlus/android-openjdk-build-multiarch/releases/download/JRE-21/JRE-21.zip"
+        // La palabra "AUTO" activa la búsqueda automática en GitHub Releases
+        const val DEFAULT_JRE21_URL = "AUTO"
+
+        private val GITHUB_RELEASE_REPOS = listOf(
+            "PojavLauncherTeam/android-openjdk-build-multiarch",
+            "QuestCraftPlusPlus/android-openjdk-build-multiarch"
+        )
     }
 
     private val runtimeRootDir: File
@@ -49,27 +58,83 @@ class JavaRuntimeManager(private val context: Context) {
         return InstalledJavaRuntime(javaHomeDir = javaHome, libJvmFile = libJvm)
     }
 
+    /**
+     * Consulta la API de GitHub para obtener el enlace real y vigente de JRE 21 ARM64.
+     */
+    private fun resolveLatestJre21AssetUrl(): Pair<String, String> {
+        for (repo in GITHUB_RELEASE_REPOS) {
+            val apiUrl = "https://api.github.com/repos/$repo/releases"
+            val conn = (URL(apiUrl).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 15_000
+                readTimeout = 20_000
+                setRequestProperty("Accept", "application/vnd.github+json")
+                setRequestProperty("User-Agent", "PRISSMA-Launcher/1.0")
+            }
+            try {
+                if (conn.responseCode !in 200..299) continue
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                val releases = JSONArray(body)
+
+                for (i in 0 until releases.length()) {
+                    val release = releases.getJSONObject(i)
+                    val tag = release.optString("tag_name", "").lowercase()
+                    val assets = release.optJSONArray("assets") ?: continue
+
+                    for (j in 0 until assets.length()) {
+                        val asset = assets.getJSONObject(j)
+                        val name = asset.optString("name", "")
+                        val lower = name.lowercase()
+                        val downloadUrl = asset.optString("browser_download_url", "")
+
+                        val isJre21 = lower.contains("21") || tag.contains("21")
+                        val isArm64 = lower.contains("arm64") || lower.contains("aarch64")
+                        val isArchive = lower.endsWith(".tar.xz") ||
+                            lower.endsWith(".zip") ||
+                            lower.endsWith(".tar.gz")
+
+                        if (isJre21 && isArm64 && isArchive && downloadUrl.isNotBlank()) {
+                            return name to downloadUrl
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                // Intenta con el siguiente repositorio
+            } finally {
+                conn.disconnect()
+            }
+        }
+        error("No se encontró un paquete JRE 21 ARM64 disponible en GitHub.")
+    }
+
     suspend fun installFromUrl(
         downloadUrl: String,
         onProgress: (Float, String) -> Unit
     ): Result<InstalledJavaRuntime> = withContext(Dispatchers.IO) {
         runCatching {
-            onProgress(0.05f, "Conectando para descargar JRE 21 ARM64...")
-            val conn = (URL(downloadUrl.trim()).openConnection() as HttpURLConnection).apply {
+            val (fileName, finalUrl) = if (downloadUrl == DEFAULT_JRE21_URL) {
+                onProgress(0.05f, "Buscando última versión de JRE 21 ARM64 en GitHub...")
+                resolveLatestJre21AssetUrl()
+            } else {
+                downloadUrl.substringAfterLast('/') to downloadUrl.trim()
+            }
+
+            onProgress(0.10f, "Descargando $fileName...")
+            val conn = (URL(finalUrl).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 instanceFollowRedirects = true
-                connectTimeout = 15_000
-                readTimeout = 30_000
-                setRequestProperty("User-Agent", "PRISSMA-Launcher/0.6")
+                connectTimeout = 20_000
+                readTimeout = 60_000
+                setRequestProperty("User-Agent", "PRISSMA-Launcher/1.0")
             }
 
             try {
                 if (conn.responseCode !in 200..299) {
-                    error("No se pudo descargar JRE 21 (HTTP ${conn.responseCode}). Prueba importarlo como .zip.")
+                    error("Error al descargar JRE 21 (HTTP ${conn.responseCode}).")
                 }
                 val totalBytes = conn.contentLengthLong
                 conn.inputStream.use { rawIn ->
-                    extractZipSafely(rawIn, totalBytes, onProgress)
+                    extractArchiveSafely(rawIn, fileName, totalBytes, onProgress)
                 }
             } finally {
                 conn.disconnect()
@@ -86,19 +151,21 @@ class JavaRuntimeManager(private val context: Context) {
     ): Result<InstalledJavaRuntime> = withContext(Dispatchers.IO) {
         runCatching {
             onProgress(0.05f, "Abriendo paquete JRE 21 seleccionado...")
+            val fileName = uri.lastPathSegment ?: "jre21.zip"
             val stream = context.contentResolver.openInputStream(uri)
                 ?: error("No se pudo leer el archivo seleccionado.")
             stream.use { rawIn ->
-                extractZipSafely(rawIn, -1L, onProgress)
+                extractArchiveSafely(rawIn, fileName, -1L, onProgress)
             }
 
             getInstalledRuntime()
-                ?: error("El archivo .zip seleccionado no contiene libjvm.so.")
+                ?: error("El archivo seleccionado no contiene libjvm.so.")
         }
     }
 
-    private fun extractZipSafely(
+    private fun extractArchiveSafely(
         inputStream: InputStream,
+        fileName: String,
         totalBytes: Long,
         onProgress: (Float, String) -> Unit
     ) {
@@ -107,40 +174,57 @@ class JavaRuntimeManager(private val context: Context) {
         staging.mkdirs()
 
         val canonicalStaging = staging.canonicalPath
+        val lowerName = fileName.lowercase()
         var extractedFiles = 0
 
         try {
-            ZipInputStream(BufferedInputStream(inputStream)).use { zis ->
-                var entry = zis.nextEntry
-                while (entry != null) {
-                    val outFile = File(staging, entry.name)
-                    if (!outFile.canonicalPath.startsWith(canonicalStaging)) {
-                        error("Entrada inválida dentro del archivo ZIP.")
-                    }
+            val buffered = BufferedInputStream(inputStream)
 
-                    if (entry.isDirectory) {
-                        outFile.mkdirs()
-                    } else {
-                        outFile.parentFile?.mkdirs()
-                        FileOutputStream(outFile).use { fos ->
-                            zis.copyTo(fos)
-                        }
-                        outFile.setReadable(true, false)
-                        outFile.setExecutable(true, false)
-                        extractedFiles++
-
-                        if (extractedFiles % 25 == 0) {
-                            val pct = if (totalBytes > 0) 0.50f else (0.15f + (extractedFiles % 70) / 100f)
-                            onProgress(pct.coerceIn(0.1f, 0.92f), "Extrayendo runtime JRE 21 ($extractedFiles archivos)...")
+            when {
+                lowerName.endsWith(".tar.xz") -> {
+                    XZCompressorInputStream(buffered).use { xzIn ->
+                        TarArchiveInputStream(xzIn).use { tarIn ->
+                            extractedFiles = extractTarEntries(tarIn, staging, canonicalStaging, totalBytes, onProgress)
                         }
                     }
-                    zis.closeEntry()
-                    entry = zis.nextEntry
+                }
+                lowerName.endsWith(".tar.gz") || lowerName.endsWith(".tgz") -> {
+                    GZIPInputStream(buffered).use { gzIn ->
+                        TarArchiveInputStream(gzIn).use { tarIn ->
+                            extractedFiles = extractTarEntries(tarIn, staging, canonicalStaging, totalBytes, onProgress)
+                        }
+                    }
+                }
+                else -> {
+                    ZipInputStream(buffered).use { zis ->
+                        var entry = zis.nextEntry
+                        while (entry != null) {
+                            val outFile = File(staging, entry.name)
+                            if (!outFile.canonicalPath.startsWith(canonicalStaging)) {
+                                error("Entrada inválida dentro del archivo ZIP.")
+                            }
+                            if (entry.isDirectory) {
+                                outFile.mkdirs()
+                            } else {
+                                outFile.parentFile?.mkdirs()
+                                FileOutputStream(outFile).use { fos -> zis.copyTo(fos) }
+                                outFile.setReadable(true, false)
+                                outFile.setExecutable(true, false)
+                                extractedFiles++
+                                if (extractedFiles % 25 == 0) {
+                                    val pct = (0.15f + (extractedFiles % 75) / 100f).coerceIn(0.15f, 0.92f)
+                                    onProgress(pct, "Extrayendo JRE 21 ($extractedFiles archivos)...")
+                                }
+                            }
+                            zis.closeEntry()
+                            entry = zis.nextEntry
+                        }
+                    }
                 }
             }
 
             val stagedRuntime = findRuntimeInDir(staging)
-                ?: error("El archivo ZIP no contiene libjvm.so para ARM64.")
+                ?: error("El paquete extraído no contiene libjvm.so para ARM64.")
 
             stagedRuntime.libJvmFile.setReadable(true, false)
             stagedRuntime.libJvmFile.setExecutable(true, false)
@@ -157,6 +241,38 @@ class JavaRuntimeManager(private val context: Context) {
             staging.deleteRecursively()
             throw e
         }
+    }
+
+    private fun extractTarEntries(
+        tarIn: TarArchiveInputStream,
+        staging: File,
+        canonicalStaging: String,
+        totalBytes: Long,
+        onProgress: (Float, String) -> Unit
+    ): Int {
+        var count = 0
+        var entry = tarIn.nextEntry
+        while (entry != null) {
+            val outFile = File(staging, entry.name)
+            if (!outFile.canonicalPath.startsWith(canonicalStaging)) {
+                error("Entrada inválida dentro del archivo TAR.")
+            }
+            if (entry.isDirectory) {
+                outFile.mkdirs()
+            } else if (!entry.isSymbolicLink && !entry.isLink) {
+                outFile.parentFile?.mkdirs()
+                FileOutputStream(outFile).use { fos -> tarIn.copyTo(fos) }
+                outFile.setReadable(true, false)
+                outFile.setExecutable(true, false)
+                count++
+                if (count % 25 == 0) {
+                    val pct = if (totalBytes > 0) 0.55f else (0.15f + (count % 75) / 100f)
+                    onProgress(pct.coerceIn(0.15f, 0.92f), "Extrayendo JRE 21 ($count archivos)...")
+                }
+            }
+            entry = tarIn.nextEntry
+        }
+        return count
     }
 
     fun buildClasspath(instanceId: String, clientJarFile: File): String {
