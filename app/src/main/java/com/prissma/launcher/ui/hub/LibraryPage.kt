@@ -12,9 +12,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
@@ -25,15 +27,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -204,31 +211,32 @@ private fun LibraryList(
             }
             LauncherButton("Nueva", onNew, icon = Icons.Default.Add)
         }
-        OutlinedTextField(
-            value = query, onValueChange = onQuery, singleLine = true,
-            modifier = Modifier.fillMaxWidth(), shape = ControlShape,
-            placeholder = { Text("Buscar por nombre o versión", maxLines = 1) },
-            leadingIcon = { Icon(Icons.Default.Search, null, modifier = Modifier.size(18.dp)) },
-            trailingIcon = if (query.isNotEmpty()) {
-                { IconButton(onClick = { onQuery("") }) { Icon(Icons.Default.Close, "Borrar búsqueda") } }
-            } else null,
-            textStyle = MaterialTheme.typography.bodyMedium
-        )
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            (listOf(null) + EngineType.entries).forEach { engine ->
-                val choose = { onFilter(engine) }
-                FilterChip(selected = filter == engine, onClick = choose,
-                    label = { Text(engine?.displayName ?: "Todos") }, modifier = Modifier.gamepadClick(onClick = choose))
-            }
-        }
+        LibrarySearch(query, onQuery)
+        var filtersOpen by remember { mutableStateOf(false) }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically) {
+            Box {
+                val open = { filtersOpen = true }
+                FilterChip(filter != null || order != LibraryOrder.RECENT, open,
+                    label = { Text(filter?.displayName ?: "Filtrar") },
+                    trailingIcon = { Icon(Icons.Default.ArrowDropDown, null, Modifier.size(14.dp)) },
+                    modifier = Modifier.gamepadClick(onClick = open))
+                DropdownMenu(filtersOpen, onDismissRequest = { filtersOpen = false }) {
+                    (listOf(null) + EngineType.entries).forEach { engine ->
+                        val choose = { onFilter(engine); filtersOpen = false }
+                        DropdownMenuItem(text = { Text(engine?.displayName ?: "Todos los motores") },
+                            onClick = choose, modifier = Modifier.gamepadClick(onClick = choose))
+                    }
+                    HorizontalDivider()
+                    val reorder = { onOrder(); filtersOpen = false }
+                    DropdownMenuItem(text = { Text("Orden · " + order.label) },
+                        onClick = reorder, modifier = Modifier.gamepadClick(onClick = reorder))
+                }
+            }
             FilterChip(selected = favoritesOnly, onClick = onFavoritesFilter,
                 label = { Text("Favoritos") },
                 leadingIcon = { Icon(Icons.Default.Star, null, Modifier.size(14.dp)) },
                 modifier = Modifier.gamepadClick(onClick = onFavoritesFilter))
-            TextButton(onClick = onOrder, modifier = Modifier.gamepadClick(onClick = onOrder)) { Text(order.label) }
         }
         if (instances.isEmpty()) {
             Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
@@ -249,6 +257,38 @@ private fun LibraryList(
             }
         }
     }
+}
+
+@Composable
+private fun LibrarySearch(query: String, onQuery: (String) -> Unit) {
+    val palette = Prissma.colors
+    val source = remember { MutableInteractionSource() }
+    val focused by source.collectIsFocusedAsState()
+    BasicTextField(
+        query, onQuery, singleLine = true, interactionSource = source,
+        textStyle = MaterialTheme.typography.bodyMedium.copy(color = palette.textPrimary),
+        cursorBrush = SolidColor(palette.brandAccent),
+        modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Buscar instancias" },
+        decorationBox = { textField ->
+            Row(
+                Modifier.heightIn(min = 43.dp).background(palette.surfaceVoid, ControlShape)
+                    .border(1.dp, if (focused) palette.brandAccent else palette.borderSubtle, ControlShape)
+                    .padding(start = 8.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                Icon(Icons.Default.Search, null, Modifier.size(16.dp), tint = palette.textMuted)
+                Box(Modifier.weight(1f)) {
+                    if (query.isEmpty()) Text("Buscar instancias", color = palette.textMuted,
+                        style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    textField()
+                }
+                if (query.isNotEmpty()) IconButton(onClick = { onQuery("") }, modifier = Modifier.size(34.dp)) {
+                    Icon(Icons.Default.Close, "Borrar búsqueda", Modifier.size(16.dp))
+                }
+            }
+        }
+    )
 }
 
 @Composable
