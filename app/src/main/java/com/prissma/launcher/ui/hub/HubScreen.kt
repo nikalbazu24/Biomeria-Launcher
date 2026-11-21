@@ -36,10 +36,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.prissma.launcher.data.AppUpdater
 import com.prissma.launcher.data.InstanceStorage
+import com.prissma.launcher.data.UpdateInfo
 import com.prissma.launcher.ui.launch.JavaLaunchScreen
 import com.prissma.launcher.ui.theme.Prissma
 import com.prissma.launcher.ui.workshop.ContentWorkshopScreen
+import kotlinx.coroutines.launch
 import java.util.Locale
 import java.util.UUID
 
@@ -98,6 +101,17 @@ fun HubScreen(
     var launchingJavaInstance by remember { mutableStateOf<GameInstance?>(null) }
 
     var instances by remember { mutableStateOf(storage.loadInstances()) }
+
+    // Actualizador automático vía GitHub Releases
+    val updater = remember { AppUpdater(context) }
+    val updateScope = rememberCoroutineScope()
+    var availableUpdate by remember { mutableStateOf<UpdateInfo?>(null) }
+    var isDownloadingUpdate by remember { mutableStateOf(false) }
+    var updateProgress by remember { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(Unit) {
+        availableUpdate = updater.checkForUpdate()
+    }
 
     val prismBrush = remember { Brush.linearGradient(PrismGradientColors) }
 
@@ -547,6 +561,66 @@ fun HubScreen(
                 onDismiss = { showFrontendBridgeDialog = false }
             )
         }
+
+        availableUpdate?.let { update ->
+            AlertDialog(
+                onDismissRequest = { if (!isDownloadingUpdate) availableUpdate = null },
+                containerColor = Prissma.colors.surfaceCard,
+                title = {
+                    Text(
+                        text = "Nueva versión disponible (${update.versionTag})",
+                        color = Prissma.colors.textPrimary
+                    )
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            text = update.changelog.take(220),
+                            color = Prissma.colors.textMuted,
+                            fontSize = 12.sp
+                        )
+                        if (isDownloadingUpdate) {
+                            LinearProgressIndicator(
+                                progress = { updateProgress },
+                                color = Color(0xFF00F0FF),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Text(
+                                text = "Descargando... ${(updateProgress * 100).toInt()}%",
+                                color = Prissma.colors.textPrimary,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        enabled = !isDownloadingUpdate,
+                        onClick = {
+                            isDownloadingUpdate = true
+                            updateScope.launch {
+                                updater.downloadAndInstall(update.apkDownloadUrl) { pct ->
+                                    updateProgress = pct
+                                }.onFailure { err ->
+                                    bannerMessage = err.message ?: "Error al actualizar"
+                                    isDownloadingUpdate = false
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00F0FF))
+                    ) {
+                        Text("Actualizar ahora", color = Prissma.colors.surfaceVoid, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    if (!isDownloadingUpdate) {
+                        TextButton(onClick = { availableUpdate = null }) {
+                            Text("Más tarde", color = Prissma.colors.textMuted)
+                        }
+                    }
+                }
+            )
+        }
     }
 }
 
@@ -651,7 +725,7 @@ private fun InstanceCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "${instance.loader} · ${instance.version}",
+                    text = "${instance.loader} ·${instance.version}",
                     color = if (isFocused) engineColor else Prissma.colors.textMuted,
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace
@@ -755,125 +829,4 @@ private fun FrontendBridgeDialog(
         },
         dismissButton = {
             if (canDeleteSelected) {
-                TextButton(onClick = onDeleteSelected) {
-                    Text("Eliminar Instancia", color = Color(0xFFF87171))
-                }
-            }
-        }
-    )
-}
-
-@Composable
-private fun NewInstanceDialog(
-    onDismiss: () -> Unit,
-    onCreate: (String, EngineType, String) -> Unit
-) {
-    var title by remember { mutableStateOf("Mi Nuevo Mundo") }
-    var selectedEngine by remember { mutableStateOf(EngineType.JAVA) }
-    var version by remember { mutableStateOf("1.21.4") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Prissma.colors.surfaceCard,
-        title = { Text("Nueva Instancia", color = Prissma.colors.textPrimary) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text("Nombre de la instancia") },
-                    singleLine = true
-                )
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    EngineType.entries.forEach { engine ->
-                        val active = engine == selectedEngine
-                        val color = Prissma.colors.engineColor(engine.name)
-                        FilterChip(
-                            selected = active,
-                            onClick = { selectedEngine = engine },
-                            label = {
-                                Text(
-                                    engine.displayName,
-                                    color = if (active) color else Prissma.colors.textMuted
-                                )
-                            }
-                        )
-                    }
-                }
-
-                OutlinedTextField(
-                    value = version,
-                    onValueChange = { version = it },
-                    label = { Text("Versión (ej. 1.21.4 o 26.3)") },
-                    singleLine = true
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (title.isNotBlank()) onCreate(title.trim(), selectedEngine, version.trim())
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = Prissma.colors.brandAccent)
-            ) {
-                Text("Crear", color = Prissma.colors.surfaceVoid, fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancelar", color = Prissma.colors.textMuted)
-            }
-        }
-    )
-}
-
-@Composable
-private fun AccountDialog(
-    currentName: String,
-    currentType: String,
-    onDismiss: () -> Unit,
-    onSave: (String, String) -> Unit
-) {
-    var name by remember { mutableStateOf(currentName) }
-    var type by remember { mutableStateOf(currentType) }
-    val types = listOf("Offline", "Ely.by", "Microsoft")
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Prissma.colors.surfaceCard,
-        title = { Text("Perfil Omni-Account", color = Prissma.colors.textPrimary) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Nombre de jugador") },
-                    singleLine = true
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    types.forEach { item ->
-                        FilterChip(
-                            selected = type == item,
-                            onClick = { type = item },
-                            label = { Text(item) }
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { if (name.isNotBlank()) onSave(name.trim(), type) },
-                colors = ButtonDefaults.buttonColors(containerColor = Prissma.colors.brandAccent)
-            ) {
-                Text("Guardar", color = Prissma.colors.surfaceVoid, fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cerrar", color = Prissma.colors.textMuted)
-            }
-        }
-    )
-}
+                TextButton(onClick = on
