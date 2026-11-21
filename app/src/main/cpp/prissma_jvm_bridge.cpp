@@ -65,6 +65,40 @@ namespace {
         return result;
     }
 
+    void preloadLibraryIfExists(const std::string& fullPath) {
+        if (access(fullPath.c_str(), F_OK) != 0) return;
+        void* handle = dlopen(fullPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
+        if (!handle) {
+            const char* err = dlerror();
+            LOGE("Aviso precargando %s: %s", fullPath.c_str(), err ? err : "desconocido");
+        }
+    }
+
+    void preloadJreCoreLibraries(const std::string& javaHome) {
+        const std::string libDir = javaHome + "/lib/";
+        // Orden estricto de dependencias para evitar UnsatisfiedLinkError en Android
+        const std::vector<std::string> coreLibs = {
+            "libjli.so",
+            "jli/libjli.so",
+            "libverify.so",
+            "libjava.so",
+            "libjimage.so",
+            "libzip.so",
+            "libnet.so",
+            "libnio.so",
+            "libmanagement.so",
+            "libmanagement_ext.so",
+            "libextnet.so",
+            "libprefs.so",
+            "libawt.so",
+            "libawt_headless.so"
+        };
+
+        for (const auto& name : coreLibs) {
+            preloadLibraryIfExists(libDir + name);
+        }
+    }
+
     void* stdioReaderThread(void* arg) {
         int readFd = *static_cast<int*>(arg);
         delete static_cast<int*>(arg);
@@ -146,7 +180,6 @@ namespace {
 
         chdir(cfg->gameDir.c_str());
 
-        // Contar cuántos JARs entraron en el classpath
         int jarCount = cfg->classpath.empty() ? 0 : 1;
         for (char c : cfg->classpath) {
             if (c == ':') jarCount++;
@@ -164,6 +197,10 @@ namespace {
             delete cfg;
             return nullptr;
         }
+
+        // Precargar dependencias nativas del JRE (libjava, libzip, libnet, libnio...) en espacio global
+        pushLogLine("[PRISSMA] Precargando librerías nativas del JRE 21...");
+        preloadJreCoreLibraries(cfg->javaHome);
 
         auto createJvmFn = reinterpret_cast<JNI_CreateJavaVM_t>(
             dlsym(jvmHandle, "JNI_CreateJavaVM")
