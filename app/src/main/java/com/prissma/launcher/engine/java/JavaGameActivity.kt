@@ -1,16 +1,19 @@
 package com.prissma.launcher.engine.java
 
 import android.os.Bundle
+import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -65,6 +68,11 @@ class JavaGameActivity : ComponentActivity() {
         }
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) enableImmersiveMode()
+    }
+
     private fun enableImmersiveMode() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowInsetsControllerCompat(window, window.decorView).apply {
@@ -88,22 +96,29 @@ private fun JavaNativeViewportScreen(
     useVulkanZink: Boolean,
     onExitGame: () -> Unit
 ) {
+    BackHandler(onBack = onExitGame)
+
     var gpuStatus by remember { mutableStateOf("Inicializando superficie gráfica EGL/Vulkan...") }
     var showConsole by remember { mutableStateOf(true) }
     var jvmStarted by remember { mutableStateOf(false) }
+    var viewportSize by remember { mutableStateOf("0x0") }
     val logLines = remember { mutableStateListOf<String>() }
+    val logListState = rememberLazyListState()
 
-    // Recoge los registros en tiempo real desde C++ / JVM
+    // Recoge los registros en tiempo real desde C++ / JVM con auto-scroll
     LaunchedEffect(Unit) {
         while (true) {
             val freshLogs = NativeJavaBridge.nativePollLogs()
             if (freshLogs.isNotEmpty()) {
                 logLines.addAll(freshLogs)
-                if (logLines.size > 120) {
-                    logLines.removeRange(0, logLines.size - 120)
+                if (logLines.size > 150) {
+                    logLines.removeRange(0, logLines.size - 150)
+                }
+                if (showConsole && logLines.isNotEmpty()) {
+                    logListState.scrollToItem(logLines.lastIndex)
                 }
             }
-            delay(200L)
+            delay(150L)
         }
     }
 
@@ -131,6 +146,10 @@ private fun JavaNativeViewportScreen(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
                 SurfaceView(ctx).apply {
+                    isFocusable = true
+                    isFocusableInTouchMode = true
+                    requestFocus()
+
                     holder.addCallback(object : SurfaceHolder.Callback {
                         override fun surfaceCreated(holder: SurfaceHolder) {
                             gpuStatus = NativeJavaBridge.nativeInitGraphicsSurface(
@@ -160,7 +179,7 @@ private fun JavaNativeViewportScreen(
                             width: Int,
                             height: Int
                         ) {
-                            // Superficie lista
+                            viewportSize = "${width}x${height}"
                         }
 
                         override fun surfaceDestroyed(holder: SurfaceHolder) {
@@ -171,7 +190,7 @@ private fun JavaNativeViewportScreen(
             }
         )
 
-        // 2. HUD flotante superior (telemetría GPU + controles)
+        // 2. HUD flotante superior (telemetría GPU + resolución + controles)
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -189,7 +208,7 @@ private fun JavaNativeViewportScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "$instanceTitle · MC $version",
+                        text = "$instanceTitle · MC $version ($viewportSize)",
                         color = Prissma.colors.textPrimary,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
@@ -242,7 +261,10 @@ private fun JavaNativeViewportScreen(
                             fontFamily = FontFamily.Monospace
                         )
                     } else {
-                        LazyColumn(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        LazyColumn(
+                            state = logListState,
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
                             items(logLines) { line ->
                                 Text(
                                     text = line,
