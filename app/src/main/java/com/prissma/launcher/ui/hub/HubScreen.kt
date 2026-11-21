@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.prissma.launcher.data.InstanceStorage
+import com.prissma.launcher.ui.launch.JavaLaunchScreen
 import com.prissma.launcher.ui.theme.Prissma
 import com.prissma.launcher.ui.workshop.ContentWorkshopScreen
 import java.util.Locale
@@ -84,8 +85,17 @@ fun HubScreen(
     var showAccountDialog by remember { mutableStateOf(false) }
     var showFrontendBridgeDialog by remember { mutableStateOf(false) }
     var workshopTargetInstance by remember { mutableStateOf<GameInstance?>(null) }
+    var launchingJavaInstance by remember { mutableStateOf<GameInstance?>(null) }
 
     var instances by remember { mutableStateOf(storage.loadInstances()) }
+
+    fun triggerLaunch(target: GameInstance) {
+        if (target.engine == EngineType.JAVA) {
+            launchingJavaInstance = target
+        } else {
+            bannerMessage = "Motor ${target.engine.displayName} seleccionado. Prueba una instancia JAVA para descargar Minecraft oficial."
+        }
+    }
 
     // Detecta si Cocoon, iiSU o Díptico ordenó arrancar una instancia específica
     LaunchedEffect(externalLaunchInstanceId) {
@@ -95,12 +105,21 @@ fun HubScreen(
         if (foundIndex >= 0) {
             focusedIndex = foundIndex
             val target = instances[foundIndex]
-            val origin = sourceFrontendPackage ?: "Frontend externo"
-            bannerMessage = "Arranque directo desde $origin: ${target.title} (${target.engine.displayName})"
+            triggerLaunch(target)
         } else {
             bannerMessage = "Instancia solicitada no encontrada ($targetId)"
         }
         onConsumeExternalLaunch()
+    }
+
+    launchingJavaInstance?.let { target ->
+        JavaLaunchScreen(
+            instance = target,
+            playerName = playerName,
+            accountType = accountType,
+            onBack = { launchingJavaInstance = null }
+        )
+        return
     }
 
     workshopTargetInstance?.let { target ->
@@ -173,9 +192,7 @@ fun HubScreen(
                         true
                     }
                     Key.ButtonA, Key.DirectionCenter, Key.Enter -> {
-                        focusedInstance?.let {
-                            bannerMessage = "Iniciando ${it.title} con motor ${it.engine.displayName}..."
-                        }
+                        focusedInstance?.let { triggerLaunch(it) }
                         true
                     }
                     Key.ButtonX -> {
@@ -352,7 +369,7 @@ fun HubScreen(
                             onFocus = { focusedIndex = index },
                             onClick = {
                                 if (isFocused) {
-                                    bannerMessage = "Iniciando ${item.title} (${item.engine.displayName})..."
+                                    triggerLaunch(item)
                                 } else {
                                     focusedIndex = index
                                 }
@@ -375,11 +392,7 @@ fun HubScreen(
                         glyph = "A",
                         label = "Jugar",
                         color = Prissma.colors.brandAccent,
-                        onClick = {
-                            focusedInstance?.let {
-                                bannerMessage = "Iniciando ${it.title} (${it.engine.displayName})..."
-                            }
-                        }
+                        onClick = { focusedInstance?.let { triggerLaunch(it) } }
                     )
                     ActionPill(
                         glyph = "Y",
@@ -408,7 +421,7 @@ fun HubScreen(
                 }
 
                 Text(
-                    text = "PRISSMA v0.4 · Frontends Ready",
+                    text = "PRISSMA v0.5 · Mojang Java Ready",
                     color = Prissma.colors.textMuted,
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace
