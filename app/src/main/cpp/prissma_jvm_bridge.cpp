@@ -412,10 +412,22 @@ Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativeDestroyGraphicsSurf
 }
 
 JNIEXPORT void JNICALL
-Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativePointer(
-    JNIEnv* /* env */, jobject /* thiz */, jdouble x, jdouble y, jint action
+Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativeInput(
+    JNIEnv*, jobject, jint kind, jint code, jint action, jdouble x, jdouble y
 ) {
-    prissmaGlfwPointer(x, y, action);
+    prissmaGlfwInput(kind, code, action, x, y);
+}
+
+JNIEXPORT void JNICALL
+Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativeSetViewportSize(
+    JNIEnv*, jobject, jint width, jint height
+) {
+    prissmaGlfwSetSize(width, height);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativeCursorCaptured(JNIEnv*, jobject) {
+    return prissmaGlfwCursorCaptured() ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL

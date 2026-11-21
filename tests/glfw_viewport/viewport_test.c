@@ -8,6 +8,34 @@ static int framebufferChanges;
 static int windowChanges;
 static int lastWidth;
 static int lastHeight;
+static int cursorChanges;
+static int keyChanges;
+static int buttonChanges;
+static int characterChanges;
+
+static void pointerMoved(GLFWwindow* window, double x, double y)
+{
+    (void) window;
+    ++cursorChanges;
+}
+
+static void keyChanged(GLFWwindow* window, int key, int scancode, int action, int mods)
+{
+    assert(key == GLFW_KEY_W);
+    ++keyChanges;
+}
+
+static void mouseChanged(GLFWwindow* window, int button, int action, int mods)
+{
+    assert(button == GLFW_MOUSE_BUTTON_LEFT);
+    ++buttonChanges;
+}
+
+static void typed(GLFWwindow* window, unsigned int codePoint)
+{
+    assert(codePoint == 'w');
+    ++characterChanges;
+}
 
 void mockFailNextSwap(void);
 
@@ -58,8 +86,8 @@ int main(void)
     glfwGetWindowPos(window, &x, &y);
     assert(x == 0 && y == 0);
 
-    surface.width = 1600;
-    surface.height = 900;
+    // Android provides its new buffer extent before ANativeWindow reports it.
+    prissmaGlfwSetSize(1600, 900);
     glfwPollEvents();
     assertSize(window, 1600, 900);
     assert(framebufferChanges == 1 && windowChanges == 1);
@@ -67,6 +95,34 @@ int main(void)
     glfwSetWindowMonitor(window, glfwGetPrimaryMonitor(), 0, 0, 854, 480, 60);
     assertSize(window, 1600, 900);
     assert(framebufferChanges == 1 && windowChanges == 1);
+
+    glfwSetCursorPosCallback(window, pointerMoved);
+    glfwSetKeyCallback(window, keyChanged);
+    glfwSetMouseButtonCallback(window, mouseChanged);
+    glfwSetCharCallback(window, typed);
+    prissmaGlfwInput(0, 0, 0, 400.0, 225.0);
+    prissmaGlfwInput(2, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0.0, 0.0);
+    prissmaGlfwInput(3, GLFW_KEY_W, GLFW_PRESS, 'w', 0.0);
+    glfwPollEvents();
+    double cursorX, cursorY;
+    glfwGetCursorPos(window, &cursorX, &cursorY);
+    assert(cursorX == 400.0 && cursorY == 225.0 && cursorChanges == 1);
+    assert(keyChanges == 1 && buttonChanges == 1 && characterChanges == 1);
+    assert(glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS);
+    assert(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS);
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    assert(prissmaGlfwCursorCaptured());
+    prissmaGlfwInput(1, 0, 0, 2.0, 1.0);
+    prissmaGlfwInput(1, 0, 0, 3.0, 2.0);
+    prissmaGlfwInput(5, 0, 0, 0.0, 0.0);
+    glfwPollEvents();
+    glfwGetCursorPos(window, &cursorX, &cursorY);
+    assert(cursorX == 405.0 && cursorY == 228.0 && cursorChanges == 2);
+    assert(keyChanges == 2 && buttonChanges == 2);
+    assert(glfwGetKey(window, GLFW_KEY_W) == GLFW_RELEASE);
+    assert(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_RELEASE);
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    assert(!prissmaGlfwCursorCaptured());
 
     glfwMakeContextCurrent(window);
     assert(!prissmaGlfwHasPresentedFrame());

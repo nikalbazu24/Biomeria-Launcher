@@ -15,7 +15,11 @@ object NativeJavaBridge {
 
     external fun nativeDestroyGraphicsSurface()
 
-    external fun nativePointer(x: Double, y: Double, action: Int)
+    external fun nativeInput(kind: Int, code: Int, action: Int, x: Double, y: Double)
+
+    external fun nativeSetViewportSize(width: Int, height: Int)
+
+    external fun nativeCursorCaptured(): Boolean
 
     external fun nativeHasPresentedFrame(): Boolean
 

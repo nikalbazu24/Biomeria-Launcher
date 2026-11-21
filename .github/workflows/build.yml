@@ -87,21 +87,27 @@ jobs:
             fi
           fi
 
+      - name: Verificar nativos ARM64 para Minecraft Java
+        run: python3 scripts/verify_java_apk.py "PRISSMA-Launcher-${RELEASE_TAG}.apk"
+
       - name: Subir Artifact
         uses: actions/upload-artifact@v4
         with:
           name: PRISSMA-APK
           path: PRISSMA-Launcher-*.apk
 
-      - name: Verificar nativos ARM64 para Minecraft Java
-        run: python3 scripts/verify_java_apk.py "PRISSMA-Launcher-${RELEASE_TAG}.apk"
-
       - name: Publicar Release automático
+        if: steps.signing.outputs.persistent == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           name: "PRISSMA Launcher ${{ env.RELEASE_TAG }}"
-          prerelease: ${{ steps.signing.outputs.persistent != 'true' }}
-          make_latest: ${{ steps.signing.outputs.persistent == 'true' }}
+          prerelease: false
+          make_latest: true
           body: "Compilación firmada generada automáticamente (Build #${{ github.run_number }})."
           files: PRISSMA-Launcher-*.apk
+
+
+      - name: Informar cuando falte la firma de publicación
+        if: steps.signing.outputs.persistent != 'true'
+        run: echo "::warning::El APK de depuración queda como artefacto. Configura la llave persistente para publicar."

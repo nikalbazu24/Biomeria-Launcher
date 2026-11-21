@@ -5,21 +5,30 @@
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdio.h>
+#include <string.h>
+
+enum InputKind { Pointer, RelativePointer, MouseButton, Key, Scroll, ResetInput };
 
 typedef struct {
+    int kind;
+    int code;
+    int action;
     double x;
     double y;
-    int buttonAction;
-} PointerEvent;
+} InputEvent;
 
 static pthread_mutex_t eventLock = PTHREAD_MUTEX_INITIALIZER;
 static ANativeWindow* pendingSurface;
+static int pendingWidth;
+static int pendingHeight;
 static ANativeWindow* activeSurface;
 static _GLFWwindow* activeWindow;
-static PointerEvent pointerQueue[64];
-static unsigned int pointerCount;
+static InputEvent inputQueue[256];
+static unsigned int inputCount;
 static PFN_eglSwapBuffers swapBuffersEgl;
 static atomic_int firstFramePresented;
+static atomic_int cursorCaptured;
+static _GLFWwindow* focusedWindow;
 
 void prissmaGlfwSetSurface(ANativeWindow* surface)
 {
@@ -29,20 +38,46 @@ void prissmaGlfwSetSurface(ANativeWindow* surface)
     if (pendingSurface)
         ANativeWindow_release(pendingSurface);
     pendingSurface = surface;
-    pointerCount = 0;
+    pendingWidth = 0;
+    pendingHeight = 0;
+    inputCount = 0;
     pthread_mutex_unlock(&eventLock);
 }
 
-void prissmaGlfwPointer(double x, double y, int buttonAction)
+void prissmaGlfwSetSize(int width, int height)
 {
     pthread_mutex_lock(&eventLock);
-    if (buttonAction < 0 && pointerCount > 0 && pointerQueue[pointerCount - 1].buttonAction < 0)
-        pointerQueue[pointerCount - 1] = (PointerEvent){x, y, buttonAction};
-    else if (pointerCount < sizeof(pointerQueue) / sizeof(pointerQueue[0]))
-        pointerQueue[pointerCount++] = (PointerEvent){x, y, buttonAction};
-    else
-        pointerQueue[pointerCount - 1] = (PointerEvent){x, y, buttonAction};
+    pendingWidth = width;
+    pendingHeight = height;
     pthread_mutex_unlock(&eventLock);
+}
+
+void prissmaGlfwInput(int kind, int code, int action, double x, double y)
+{
+    pthread_mutex_lock(&eventLock);
+    if (inputCount && (kind == Pointer || kind == RelativePointer) &&
+        inputQueue[inputCount - 1].kind == kind)
+    {
+        InputEvent* previous = &inputQueue[inputCount - 1];
+        previous->x = kind == Pointer ? x : previous->x + x;
+        previous->y = kind == Pointer ? y : previous->y + y;
+    }
+    else
+    {
+        if (inputCount == sizeof(inputQueue) / sizeof(inputQueue[0]))
+        {
+            // Reset keys and buttons if a stalled render thread overflows the queue.
+            inputQueue[0] = (InputEvent){ResetInput, 0, 0, 0, 0};
+            inputCount = 1;
+        }
+        inputQueue[inputCount++] = (InputEvent){kind, code, action, x, y};
+    }
+    pthread_mutex_unlock(&eventLock);
+}
+
+int prissmaGlfwCursorCaptured(void)
+{
+    return atomic_load_explicit(&cursorCaptured, memory_order_relaxed);
 }
 
 static EGLBoolean APIENTRY reportSwapBuffers(EGLDisplay display, EGLSurface surface)
@@ -50,7 +85,9 @@ static EGLBoolean APIENTRY reportSwapBuffers(EGLDisplay display, EGLSurface surf
     const EGLBoolean result = swapBuffersEgl(display, surface);
     if (result && !atomic_exchange_explicit(&firstFramePresented, GLFW_TRUE, memory_order_relaxed))
     {
-        puts("[PRISSMA] Primer fotograma EGL presentado.");
+        int width = 0, height = 0;
+        glfwGetFramebufferSize((GLFWwindow*) activeWindow, &width, &height);
+        printf("[PRISSMA] Primer fotograma EGL presentado · framebuffer %dx%d.\n", width, height);
         fflush(stdout);
     }
     return result;
@@ -80,7 +117,17 @@ static void getDrawableSize(_GLFWwindow* window, int* width, int* height)
     int drawableWidth = window->null.width;
     int drawableHeight = window->null.height;
     if (window == activeWindow)
-        readSurfaceExtent(activeSurface, &drawableWidth, &drawableHeight);
+    {
+        pthread_mutex_lock(&eventLock);
+        if (activeSurface == pendingSurface && pendingWidth > 0 && pendingHeight > 0)
+        {
+            drawableWidth = pendingWidth;
+            drawableHeight = pendingHeight;
+        }
+        else
+            readSurfaceExtent(activeSurface, &drawableWidth, &drawableHeight);
+        pthread_mutex_unlock(&eventLock);
+    }
     if (width)
         *width = drawableWidth;
     if (height)
@@ -159,6 +206,8 @@ static GLFWbool createWindow(_GLFWwindow* window, const _GLFWwndconfig* requeste
     }
 
     pthread_mutex_lock(&eventLock);
+    const int width = pendingWidth;
+    const int height = pendingHeight;
     activeSurface = pendingSurface;
     if (activeSurface)
         ANativeWindow_acquire(activeSurface);
@@ -172,6 +221,11 @@ static GLFWbool createWindow(_GLFWwindow* window, const _GLFWwndconfig* requeste
     _GLFWwndconfig windowConfig = *requestedWindow;
     _GLFWctxconfig contextConfig = *requestedContext;
     readSurfaceExtent(activeSurface, &windowConfig.width, &windowConfig.height);
+    if (width > 0 && height > 0)
+    {
+        windowConfig.width = width;
+        windowConfig.height = height;
+    }
     windowConfig.xpos = 0;
     windowConfig.ypos = 0;
     contextConfig.source = GLFW_EGL_CONTEXT_API;
@@ -192,11 +246,69 @@ static GLFWbool createWindow(_GLFWwindow* window, const _GLFWwndconfig* requeste
 static void destroyWindow(_GLFWwindow* window)
 {
     _glfwDestroyWindowNull(window);
+    if (window == focusedWindow)
+        focusedWindow = NULL;
     if (window == activeWindow)
     {
         ANativeWindow_release(activeSurface);
         activeSurface = NULL;
         activeWindow = NULL;
+        atomic_store_explicit(&cursorCaptured, GLFW_FALSE, memory_order_relaxed);
+    }
+}
+
+static void setCursorMode(_GLFWwindow* window, int mode)
+{
+    _glfwSetCursorModeNull(window, mode);
+    atomic_store_explicit(&cursorCaptured, mode == GLFW_CURSOR_DISABLED, memory_order_relaxed);
+}
+
+static void releaseInputs(_GLFWwindow* window)
+{
+    for (int key = GLFW_KEY_SPACE; key <= GLFW_KEY_LAST; ++key)
+    {
+        if (window->keys[key] == GLFW_PRESS)
+            _glfwInputKey(window, key, key, GLFW_RELEASE, 0);
+    }
+    for (int button = 0; button <= GLFW_MOUSE_BUTTON_LAST; ++button)
+    {
+        if (window->mouseButtons[button] == GLFW_PRESS)
+            _glfwInputMouseClick(window, button, GLFW_RELEASE, 0);
+    }
+}
+
+static int modifiers(_GLFWwindow* window)
+{
+    return (window->keys[GLFW_KEY_LEFT_SHIFT] == GLFW_PRESS ? GLFW_MOD_SHIFT : 0) |
+           (window->keys[GLFW_KEY_LEFT_CONTROL] == GLFW_PRESS ? GLFW_MOD_CONTROL : 0) |
+           (window->keys[GLFW_KEY_LEFT_ALT] == GLFW_PRESS ? GLFW_MOD_ALT : 0);
+}
+
+static void dispatchInput(_GLFWwindow* window, const InputEvent* event)
+{
+    switch (event->kind)
+    {
+        case Pointer:
+            _glfwSetCursorPosNull(window, event->x, event->y);
+            _glfwInputCursorPos(window, event->x, event->y);
+            break;
+        case RelativePointer:
+            _glfwInputCursorPos(window, window->virtualCursorPosX + event->x, window->virtualCursorPosY + event->y);
+            break;
+        case MouseButton:
+            _glfwInputMouseClick(window, event->code, event->action, modifiers(window));
+            break;
+        case Key:
+            _glfwInputKey(window, event->code, event->code, event->action, modifiers(window));
+            if (event->action == GLFW_PRESS && event->x >= 32 && !(modifiers(window) & GLFW_MOD_CONTROL))
+                _glfwInputChar(window, (unsigned int) event->x, modifiers(window), GLFW_TRUE);
+            break;
+        case Scroll:
+            _glfwInputScroll(window, event->x, event->y);
+            break;
+        case ResetInput:
+            releaseInputs(window);
+            break;
     }
 }
 
@@ -205,12 +317,11 @@ static void pollEvents(void)
     if (!activeWindow)
         return;
 
-    PointerEvent events[64];
+    InputEvent events[256];
     pthread_mutex_lock(&eventLock);
-    const unsigned int count = pointerCount;
-    for (unsigned int index = 0; index < count; ++index)
-        events[index] = pointerQueue[index];
-    pointerCount = 0;
+    const unsigned int count = inputCount;
+    memcpy(events, inputQueue, count * sizeof(InputEvent));
+    inputCount = 0;
     const GLFWbool surfaceChanged = pendingSurface != activeSurface;
     pthread_mutex_unlock(&eventLock);
 
@@ -222,12 +333,13 @@ static void pollEvents(void)
     }
 
     refreshDrawableSize(activeWindow);
-    for (unsigned int index = 0; index < count; ++index)
+    if (focusedWindow != activeWindow)
     {
-        _glfwInputCursorPos(activeWindow, events[index].x, events[index].y);
-        if (events[index].buttonAction >= 0)
-            _glfwInputMouseClick(activeWindow, GLFW_MOUSE_BUTTON_LEFT, events[index].buttonAction, 0);
+        focusedWindow = activeWindow;
+        _glfwFocusWindowNull(activeWindow);
     }
+    for (unsigned int index = 0; index < count; ++index)
+        dispatchInput(activeWindow, &events[index]);
 }
 
 static GLFWbool getVideoMode(_GLFWmonitor* monitor, GLFWvidmode* mode)
@@ -267,5 +379,6 @@ GLFWbool _glfwConnectNull(int platformID, _GLFWplatform* platform)
     platform->getVideoMode = getVideoMode;
     platform->getVideoModes = getVideoModes;
     platform->pollEvents = pollEvents;
+    platform->setCursorMode = setCursorMode;
     return GLFW_TRUE;
 }

@@ -27,7 +27,8 @@ REQUIRED_NATIVES = {
 GLFW_SYMBOLS = {
     "glfwInit", "glfwCreateWindow", "glfwMakeContextCurrent", "glfwSwapBuffers",
     "glfwPollEvents", "glfwGetProcAddress", "glfwTerminate",
-    "prissmaGlfwSetSurface", "prissmaGlfwPointer", "prissmaGlfwHasPresentedFrame",
+    "prissmaGlfwSetSurface", "prissmaGlfwSetSize", "prissmaGlfwInput",
+    "prissmaGlfwHasPresentedFrame", "prissmaGlfwCursorCaptured",
 }
 RENDERER_SYMBOLS = {"eglBindAPI", "eglCreateContext", "eglCreateWindowSurface", "eglSwapBuffers", "glXGetProcAddress"}
 DESKTOP_DEPENDENCY = re.compile(

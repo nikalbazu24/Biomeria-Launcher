@@ -20,7 +20,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.*
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -38,6 +43,25 @@ import kotlinx.coroutines.delay
 import kotlin.system.exitProcess
 
 class JavaGameActivity : ComponentActivity() {
+    private val gameInput = GameInput()
+    private var controlsActive = false
+    private var togglePanel: (() -> Unit)? = null
+
+    override fun dispatchKeyEvent(event: AndroidKeyEvent): Boolean {
+        if (event.keyCode == AndroidKeyEvent.KEYCODE_BUTTON_SELECT && togglePanel != null) {
+            if (event.action == AndroidKeyEvent.ACTION_UP) togglePanel?.invoke()
+            return true
+        }
+        return (controlsActive && gameInput.keyEvent(event)) || super.dispatchKeyEvent(event)
+    }
+
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean =
+        (controlsActive && gameInput.motion(event)) || super.dispatchGenericMotionEvent(event)
+
+    override fun onPause() {
+        if (controlsActive) gameInput.reset()
+        super.onPause()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,6 +90,9 @@ class JavaGameActivity : ComponentActivity() {
                     libJvmPath = libJvmPath,
                     javaHomePath = javaHomePath,
                     useVulkanZink = useVulkanZink,
+                    input = gameInput,
+                    onControls = { controlsActive = it },
+                    onTogglePanel = { togglePanel = it },
                     onExitGame = { finish() }
                 )
             }
@@ -103,31 +130,46 @@ private fun JavaNativeViewportScreen(
     libJvmPath: String,
     javaHomePath: String,
     useVulkanZink: Boolean,
+    input: GameInput,
+    onControls: (Boolean) -> Unit,
+    onTogglePanel: ((() -> Unit)?) -> Unit,
     onExitGame: () -> Unit
 ) {
     var gpuStatus by remember { mutableStateOf("Inicializando superficie EGL…") }
-    var showConsole by remember { mutableStateOf(true) }
+    var showConsole by remember { mutableStateOf(false) }
     var showOverlay by remember { mutableStateOf(true) }
     var hasPresentedFrame by remember { mutableStateOf(false) }
+    var captured by remember { mutableStateOf(false) }
+    var showTouchControls by remember { mutableStateOf(true) }
     var jvmStarted by remember { mutableStateOf(false) }
     var viewportSize by remember { mutableStateOf("0x0") }
     val logLines = remember { mutableStateListOf<String>() }
     val logListState = rememberLazyListState()
 
     fun handleBack() {
-        if (hasPresentedFrame) showOverlay = !showOverlay else onExitGame()
-    }
-
-    fun toggleConsole() {
-        if (hasPresentedFrame) {
-            showOverlay = !showOverlay
-            if (showOverlay) showConsole = true
-        } else {
-            showConsole = !showConsole
-        }
+        if (libJvmPath.isBlank()) onExitGame() else showOverlay = !showOverlay
     }
 
     BackHandler { handleBack() }
+    val toggle by rememberUpdatedState({ handleBack() })
+    DisposableEffect(Unit) {
+        onTogglePanel { toggle() }
+        onDispose { onTogglePanel(null) }
+    }
+    val canSendInput = jvmStarted && !showOverlay
+    val inputEnabled by rememberUpdatedState(canSendInput)
+    LaunchedEffect(canSendInput) {
+        onControls(canSendInput)
+        input.reset()
+        if (canSendInput) {
+            while (true) {
+                captured = NativeJavaBridge.nativeCursorCaptured()
+                input.setCaptured(captured)
+                input.tick()
+                delay(16L)
+            }
+        }
+    }
 
     // Recoge los registros en tiempo real desde C++ / JVM con auto-scroll
     LaunchedEffect(Unit) {
@@ -154,20 +196,6 @@ private fun JavaNativeViewportScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
-                when (event.key) {
-                    Key.ButtonB, Key.Escape -> {
-                        handleBack()
-                        true
-                    }
-                    Key.ButtonSelect, Key.ButtonY -> {
-                        toggleConsole()
-                        true
-                    }
-                    else -> false
-                }
-            }
     ) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
@@ -177,33 +205,7 @@ private fun JavaNativeViewportScreen(
                     isFocusableInTouchMode = true
                     requestFocus()
 
-                    setOnKeyListener { _, keyCode, event ->
-                        when (keyCode) {
-                            AndroidKeyEvent.KEYCODE_BUTTON_B, AndroidKeyEvent.KEYCODE_ESCAPE -> {
-                                if (event.action == AndroidKeyEvent.ACTION_UP) handleBack()
-                                true
-                            }
-                            AndroidKeyEvent.KEYCODE_BUTTON_SELECT, AndroidKeyEvent.KEYCODE_BUTTON_Y -> {
-                                if (event.action == AndroidKeyEvent.ACTION_UP) toggleConsole()
-                                true
-                            }
-                            else -> false
-                        }
-                    }
-
-                    setOnTouchListener { view, event ->
-                        val action = when (event.actionMasked) {
-                            MotionEvent.ACTION_DOWN -> 1
-                            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> 0
-                            MotionEvent.ACTION_MOVE -> -1
-                            else -> return@setOnTouchListener true
-                        }
-                        val frame = holder.surfaceFrame
-                        val x = event.x.toDouble() * frame.width().coerceAtLeast(1) / view.width.coerceAtLeast(1)
-                        val y = event.y.toDouble() * frame.height().coerceAtLeast(1) / view.height.coerceAtLeast(1)
-                        NativeJavaBridge.nativePointer(x, y, action)
-                        true
-                    }
+                    setOnTouchListener { _, event -> inputEnabled && input.touch(event) }
 
                     holder.addCallback(object : SurfaceHolder.Callback {
                         override fun surfaceCreated(holder: SurfaceHolder) {
@@ -226,6 +228,8 @@ private fun JavaNativeViewportScreen(
                             height: Int
                         ) {
                             viewportSize = "${width}x${height}"
+                            NativeJavaBridge.nativeSetViewportSize(width, height)
+                            input.resize(this@apply.width, this@apply.height, width, height)
                             if (jvmStarted || libJvmPath.isBlank() || gpuStatus.startsWith("Error:") ||
                                 width <= 0 || height <= 0
                             ) return
@@ -252,6 +256,17 @@ private fun JavaNativeViewportScreen(
                 }
             }
         )
+
+        if (canSendInput) {
+            if (captured && showTouchControls && !input.gamepadUsed) {
+                TouchControls(input, Modifier.align(Alignment.BottomCenter).fillMaxWidth())
+            }
+            LauncherButton(
+                "II", { showOverlay = true },
+                modifier = Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.displayCutout).padding(6.dp)
+                    .semantics { contentDescription = "Menú de PRISSMA" }
+            )
+        }
 
         if (showOverlay) Column(
             modifier = Modifier
@@ -289,8 +304,13 @@ private fun JavaNativeViewportScreen(
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (jvmStarted) {
+                        LauncherButton(if (hasPresentedFrame) "Reanudar" else "Ocultar panel",
+                            { showOverlay = false }, primary = true)
+                    }
                     if (hasPresentedFrame) {
-                        LauncherButton("Reanudar", { showOverlay = false }, primary = true)
+                        LauncherButton(if (showTouchControls) "Ocultar táctil" else "Mostrar táctil",
+                            { showTouchControls = !showTouchControls })
                     }
                     LauncherButton(
                         if (showConsole) "Ocultar registro" else "Ver registro",
@@ -334,5 +354,58 @@ private fun JavaNativeViewportScreen(
                 }
             }
         }
+    }
+}
+
+
+@Composable
+private fun TouchControls(input: GameInput, modifier: Modifier) {
+    Row(
+        modifier.windowInsetsPadding(WindowInsets.displayCutout).padding(14.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Bottom
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            TouchButton("↑", "Avanzar") { input.key(87, it) }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TouchButton("←", "Izquierda") { input.key(65, it) }
+                TouchButton("↓", "Retroceder") { input.key(83, it) }
+                TouchButton("→", "Derecha") { input.key(68, it) }
+            }
+        }
+        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TouchButton("E", "Inventario") { input.key(69, it) }
+                TouchButton("↑", "Saltar") { input.key(32, it) }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TouchButton("Usar", "Usar objeto") { input.mouseButton(1, it) }
+                TouchButton("Golpe", "Atacar") { input.mouseButton(0, it) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TouchButton(label: String, description: String, onHold: (Boolean) -> Unit) {
+    val action by rememberUpdatedState(onHold)
+    Box(
+        Modifier.size(51.dp, 39.dp).background(Color.Black.copy(alpha = .48f), PanelShape)
+            .border(1.dp, Color.White.copy(alpha = .35f), PanelShape)
+            .semantics { contentDescription = description }
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown().consume()
+                    action(true)
+                    try {
+                        waitForUpOrCancellation()?.consume()
+                    } finally {
+                        action(false)
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(label, color = Color.White, fontSize = 11.sp)
     }
 }
