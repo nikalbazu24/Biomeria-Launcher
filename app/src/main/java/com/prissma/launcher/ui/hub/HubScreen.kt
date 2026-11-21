@@ -1,6 +1,5 @@
 package com.prissma.launcher.ui.hub
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -16,6 +15,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,8 +27,10 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -40,6 +42,13 @@ import com.prissma.launcher.ui.theme.Prissma
 import com.prissma.launcher.ui.workshop.ContentWorkshopScreen
 import java.util.Locale
 import java.util.UUID
+
+private val PrismGradientColors = listOf(
+    Color(0xFF00F0FF), // Cian
+    Color(0xFF8A2BE2), // Púrpura
+    Color(0xFFFF007F), // Magenta
+    Color(0xFFFF8C00)  // Naranja
+)
 
 enum class EngineType(val displayName: String, val defaultLoader: String) {
     JAVA("JAVA", "Fabric 0.16.9"),
@@ -78,6 +87,7 @@ fun HubScreen(
     var accountType by remember { mutableStateOf(initialProfile.accountType) }
 
     var selectedFilter by remember { mutableStateOf(EngineFilter.ALL) }
+    var searchQuery by remember { mutableStateOf("") }
     var focusedIndex by remember { mutableIntStateOf(0) }
     var bannerMessage by remember { mutableStateOf<String?>(null) }
 
@@ -89,23 +99,24 @@ fun HubScreen(
 
     var instances by remember { mutableStateOf(storage.loadInstances()) }
 
+    val prismBrush = remember { Brush.linearGradient(PrismGradientColors) }
+
     fun triggerLaunch(target: GameInstance) {
         if (target.engine == EngineType.JAVA) {
             launchingJavaInstance = target
         } else {
-            bannerMessage = "Motor ${target.engine.displayName} seleccionado. Prueba una instancia JAVA para descargar Minecraft oficial."
+            bannerMessage = "Motor ${target.engine.displayName} seleccionado. Usa una instancia JAVA para iniciar Minecraft oficial."
         }
     }
 
-    // Detecta si Cocoon, iiSU o Díptico ordenó arrancar una instancia específica
     LaunchedEffect(externalLaunchInstanceId) {
         val targetId = externalLaunchInstanceId ?: return@LaunchedEffect
         selectedFilter = EngineFilter.ALL
+        searchQuery = ""
         val foundIndex = instances.indexOfFirst { it.id == targetId }
         if (foundIndex >= 0) {
             focusedIndex = foundIndex
-            val target = instances[foundIndex]
-            triggerLaunch(target)
+            triggerLaunch(instances[foundIndex])
         } else {
             bannerMessage = "Instancia solicitada no encontrada ($targetId)"
         }
@@ -130,12 +141,20 @@ fun HubScreen(
         return
     }
 
-    val visibleInstances = remember(instances, selectedFilter) {
+    val visibleInstances = remember(instances, selectedFilter, searchQuery) {
         val target = selectedFilter.type
-        if (target == null) instances else instances.filter { it.engine == target }
+        val q = searchQuery.trim()
+        instances.filter { inst ->
+            val matchesEngine = target == null || inst.engine == target
+            val matchesQuery = q.isEmpty() ||
+                inst.title.contains(q, ignoreCase = true) ||
+                inst.version.contains(q, ignoreCase = true) ||
+                inst.loader.contains(q, ignoreCase = true)
+            matchesEngine && matchesQuery
+        }
     }
 
-    LaunchedEffect(selectedFilter) {
+    LaunchedEffect(selectedFilter, searchQuery) {
         if (focusedIndex > visibleInstances.lastIndex) {
             focusedIndex = 0
         }
@@ -201,7 +220,7 @@ fun HubScreen(
                     }
                     Key.ButtonY -> {
                         focusedInstance?.let {
-                            bannerMessage = "Sala P2P lista para ${it.title}"
+                            bannerMessage = "Sala P2P lista para ${it.title} (${it.engine.displayName})"
                         }
                         true
                     }
@@ -213,13 +232,14 @@ fun HubScreen(
                 }
             }
     ) {
+        // Resplandor ambiental prismático sutil
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
                         0.0f to Prissma.colors.surfaceVoid,
-                        0.5f to activeAccent.copy(alpha = 0.10f),
+                        0.5f to activeAccent.copy(alpha = 0.11f),
                         1.0f to Prissma.colors.surfaceVoid
                     )
                 )
@@ -228,14 +248,14 @@ fun HubScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(vertical = 16.dp),
+                .padding(vertical = 14.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Barra Superior
+            // Barra Superior: Perfil + Filtros + Buscador PRISSMA + Botón Nueva
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 28.dp),
+                    .padding(horizontal = 24.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -243,16 +263,16 @@ fun HubScreen(
                     modifier = Modifier
                         .clip(CircleShape)
                         .background(Prissma.colors.surfaceCard)
-                        .border(1.dp, Prissma.colors.borderSubtle, CircleShape)
+                        .border(1.dp, prismBrush, CircleShape)
                         .clickable { showAccountDialog = true }
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                        .padding(horizontal = 14.dp, vertical = 7.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(10.dp)
-                            .background(Prissma.colors.brandAccent, CircleShape)
+                            .size(9.dp)
+                            .background(prismBrush, CircleShape)
                     )
                     Text(
                         text = playerName,
@@ -268,6 +288,7 @@ fun HubScreen(
                     )
                 }
 
+                // Filtros por motor [L1 / R1]
                 Row(
                     modifier = Modifier
                         .clip(CircleShape)
@@ -279,7 +300,7 @@ fun HubScreen(
                     EngineFilter.entries.forEach { filter ->
                         val isSelected = filter == selectedFilter
                         val color = filter.type?.let { Prissma.colors.engineColor(it.name) }
-                            ?: Prissma.colors.brandAccent
+                            ?: Color(0xFF00F0FF)
                         Box(
                             modifier = Modifier
                                 .clip(CircleShape)
@@ -290,30 +311,72 @@ fun HubScreen(
                                     selectedFilter = filter
                                     focusedIndex = 0
                                 }
-                                .padding(horizontal = 14.dp, vertical = 6.dp)
+                                .padding(horizontal = 12.dp, vertical = 5.dp)
                         ) {
                             Text(
                                 text = filter.label,
                                 color = if (isSelected) color else Prissma.colors.textMuted,
-                                fontSize = 13.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
                     }
                 }
 
+                // Barra de búsqueda retro-moderna: PRISSMA > Buscar...
+                Row(
+                    modifier = Modifier
+                        .width(210.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Prissma.colors.surfaceCard)
+                        .border(1.dp, Prissma.colors.borderSubtle, RoundedCornerShape(10.dp))
+                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "PRISSMA >",
+                        color = Color(0xFF00F0FF),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Box(modifier = Modifier.weight(1f)) {
+                        if (searchQuery.isEmpty()) {
+                            Text(
+                                text = "Buscar...",
+                                color = Prissma.colors.textMuted,
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                        BasicTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            singleLine = true,
+                            textStyle = TextStyle(
+                                color = Prissma.colors.textPrimary,
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace
+                            ),
+                            cursorBrush = SolidColor(Color(0xFF00F0FF)),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+
                 Box(
                     modifier = Modifier
                         .clip(CircleShape)
-                        .background(Prissma.colors.brandAccent)
+                        .background(prismBrush)
                         .clickable { showNewInstanceDialog = true }
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .padding(horizontal = 15.dp, vertical = 8.dp)
                 ) {
                     Text(
                         text = "+ Nueva",
                         color = Prissma.colors.surfaceVoid,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.ExtraBold
                     )
                 }
             }
@@ -324,14 +387,14 @@ fun HubScreen(
                         .align(Alignment.CenterHorizontally)
                         .clip(RoundedCornerShape(10.dp))
                         .background(Prissma.colors.surfaceElevated)
-                        .border(1.dp, activeAccent, RoundedCornerShape(10.dp))
+                        .border(1.dp, prismBrush, RoundedCornerShape(10.dp))
                         .clickable { bannerMessage = null }
-                        .padding(horizontal = 18.dp, vertical = 8.dp)
+                        .padding(horizontal = 18.dp, vertical = 7.dp)
                 ) {
                     Text(
                         text = msg,
                         color = Prissma.colors.textPrimary,
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
                     )
                 }
@@ -345,9 +408,9 @@ fun HubScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "No hay instancias en esta categoría. Toca '+ Nueva' para crear una.",
+                        text = "Sin resultados. Borra el filtro o toca '+ Nueva' para crear una instancia.",
                         color = Prissma.colors.textMuted,
-                        fontSize = 15.sp
+                        fontSize = 14.sp
                     )
                 }
             } else {
@@ -365,6 +428,7 @@ fun HubScreen(
                         InstanceCard(
                             instance = item,
                             isFocused = isFocused,
+                            prismBrush = prismBrush,
                             focusRequester = focusRequesters[index],
                             onFocus = { focusedIndex = index },
                             onClick = {
@@ -379,11 +443,11 @@ fun HubScreen(
                 }
             }
 
-            // Guía inferior de controles
+            // Barra inferior de controles + sello Beta oficial
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 28.dp),
+                    .padding(horizontal = 24.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -391,7 +455,7 @@ fun HubScreen(
                     ActionPill(
                         glyph = "A",
                         label = "Jugar",
-                        color = Prissma.colors.brandAccent,
+                        color = Color(0xFF00F0FF),
                         onClick = { focusedInstance?.let { triggerLaunch(it) } }
                     )
                     ActionPill(
@@ -400,7 +464,7 @@ fun HubScreen(
                         color = Prissma.colors.netP2P,
                         onClick = {
                             focusedInstance?.let {
-                                bannerMessage = "Sala P2P lista para ${it.title}"
+                                bannerMessage = "Sala P2P lista para ${it.title} (${it.engine.displayName})"
                             }
                         }
                     )
@@ -421,10 +485,11 @@ fun HubScreen(
                 }
 
                 Text(
-                    text = "PRISSMA v0.5 · Mojang Java Ready",
+                    text = "PRISSMA v1.0.0-beta.1 · ARM64",
                     color = Prissma.colors.textMuted,
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.SemiBold
                 )
             }
         }
@@ -443,6 +508,7 @@ fun HubScreen(
                     instances = updated
                     storage.saveInstances(updated)
                     selectedFilter = EngineFilter.ALL
+                    searchQuery = ""
                     focusedIndex = 0
                     showNewInstanceDialog = false
                     bannerMessage = "Instancia '$title' guardada y exportada (.mcinst)"
@@ -488,6 +554,7 @@ fun HubScreen(
 private fun InstanceCard(
     instance: GameInstance,
     isFocused: Boolean,
+    prismBrush: Brush,
     focusRequester: FocusRequester,
     onFocus: () -> Unit,
     onClick: () -> Unit
@@ -503,11 +570,12 @@ private fun InstanceCard(
         animationSpec = tween(150),
         label = "border"
     )
-    val borderColor by animateColorAsState(
-        targetValue = if (isFocused) engineColor else Prissma.colors.borderSubtle,
-        animationSpec = tween(150),
-        label = "color"
-    )
+
+    val borderModifier = if (isFocused) {
+        Modifier.border(borderWidth, prismBrush, RoundedCornerShape(16.dp))
+    } else {
+        Modifier.border(borderWidth, Prissma.colors.borderSubtle, RoundedCornerShape(16.dp))
+    }
 
     Column(
         modifier = Modifier
@@ -516,7 +584,7 @@ private fun InstanceCard(
             .scale(scale)
             .clip(RoundedCornerShape(16.dp))
             .background(Prissma.colors.surfaceCard)
-            .border(borderWidth, borderColor, RoundedCornerShape(16.dp))
+            .then(borderModifier)
             .focusRequester(focusRequester)
             .onFocusChanged { if (it.isFocused) onFocus() }
             .focusable()
@@ -529,7 +597,7 @@ private fun InstanceCard(
                 .background(
                     Brush.linearGradient(
                         listOf(
-                            engineColor.copy(alpha = 0.28f),
+                            engineColor.copy(alpha = if (isFocused) 0.36f else 0.22f),
                             Prissma.colors.surfaceElevated
                         )
                     )
