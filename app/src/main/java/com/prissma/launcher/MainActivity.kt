@@ -6,9 +6,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.prissma.launcher.data.InstanceStorage
 import com.prissma.launcher.ui.hub.HubScreen
+import com.prissma.launcher.ui.splash.PrissmaSplashScreen
 import com.prissma.launcher.ui.theme.PrissmaTheme
 
 class MainActivity : ComponentActivity() {
@@ -22,11 +24,19 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             PrissmaTheme {
-                HubScreen(
-                    externalLaunchInstanceId = externalLaunchInstanceId,
-                    sourceFrontendPackage = sourceFrontendPackage,
-                    onConsumeExternalLaunch = { externalLaunchInstanceId = null }
-                )
+                var showSplash by remember { mutableStateOf(externalLaunchInstanceId == null) }
+
+                if (showSplash && externalLaunchInstanceId == null) {
+                    PrissmaSplashScreen(
+                        onSplashFinished = { showSplash = false }
+                    )
+                } else {
+                    HubScreen(
+                        externalLaunchInstanceId = externalLaunchInstanceId,
+                        sourceFrontendPackage = sourceFrontendPackage,
+                        onConsumeExternalLaunch = { externalLaunchInstanceId = null }
+                    )
+                }
             }
         }
     }
