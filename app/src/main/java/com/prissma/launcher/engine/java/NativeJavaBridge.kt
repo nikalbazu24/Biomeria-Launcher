@@ -17,6 +17,8 @@ object NativeJavaBridge {
 
     external fun nativePointer(x: Double, y: Double, action: Int)
 
+    external fun nativeHasPresentedFrame(): Boolean
+
     external fun nativeLaunchJvm(
         libJvmPath: String,
         javaHomePath: String,

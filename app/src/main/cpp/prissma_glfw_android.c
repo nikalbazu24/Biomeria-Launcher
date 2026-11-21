@@ -3,6 +3,7 @@
 
 #include <android/native_window.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 
 typedef struct {
@@ -18,7 +19,7 @@ static _GLFWwindow* activeWindow;
 static PointerEvent pointerQueue[64];
 static unsigned int pointerCount;
 static PFN_eglSwapBuffers swapBuffersEgl;
-static GLFWbool firstFramePresented;
+static atomic_int firstFramePresented;
 
 void prissmaGlfwSetSurface(ANativeWindow* surface)
 {
@@ -47,13 +48,99 @@ void prissmaGlfwPointer(double x, double y, int buttonAction)
 static EGLBoolean APIENTRY reportSwapBuffers(EGLDisplay display, EGLSurface surface)
 {
     const EGLBoolean result = swapBuffersEgl(display, surface);
-    if (result && !firstFramePresented)
+    if (result && !atomic_exchange_explicit(&firstFramePresented, GLFW_TRUE, memory_order_relaxed))
     {
-        firstFramePresented = GLFW_TRUE;
         puts("[PRISSMA] Primer fotograma EGL presentado.");
         fflush(stdout);
     }
     return result;
+}
+
+int prissmaGlfwHasPresentedFrame(void)
+{
+    return atomic_load_explicit(&firstFramePresented, memory_order_relaxed);
+}
+
+static void readSurfaceExtent(ANativeWindow* surface, int* width, int* height)
+{
+    if (!surface)
+        return;
+
+    const int surfaceWidth = ANativeWindow_getWidth(surface);
+    const int surfaceHeight = ANativeWindow_getHeight(surface);
+    if (surfaceWidth > 0 && surfaceHeight > 0)
+    {
+        *width = surfaceWidth;
+        *height = surfaceHeight;
+    }
+}
+
+static void getDrawableSize(_GLFWwindow* window, int* width, int* height)
+{
+    int drawableWidth = window->null.width;
+    int drawableHeight = window->null.height;
+    if (window == activeWindow)
+        readSurfaceExtent(activeSurface, &drawableWidth, &drawableHeight);
+    if (width)
+        *width = drawableWidth;
+    if (height)
+        *height = drawableHeight;
+}
+
+static void refreshDrawableSize(_GLFWwindow* window)
+{
+    int width, height;
+    getDrawableSize(window, &width, &height);
+    if (width == window->null.width && height == window->null.height)
+        return;
+
+    window->null.width = width;
+    window->null.height = height;
+    _glfwInputFramebufferSize(window, width, height);
+    _glfwInputWindowDamage(window);
+    _glfwInputWindowSize(window, width, height);
+}
+
+// Android owns the size and origin of the surface. Desktop hints cannot resize it.
+static void setWindowSize(_GLFWwindow* window, int width, int height)
+{
+    (void) width;
+    (void) height;
+    refreshDrawableSize(window);
+}
+
+static void setWindowLimits(_GLFWwindow* window, int minWidth, int minHeight, int maxWidth, int maxHeight)
+{
+    (void) minWidth;
+    (void) minHeight;
+    (void) maxWidth;
+    (void) maxHeight;
+    refreshDrawableSize(window);
+}
+
+static void setWindowPos(_GLFWwindow* window, int x, int y)
+{
+    (void) x;
+    (void) y;
+    _glfwSetWindowPosNull(window, 0, 0);
+}
+
+static void setWindowMonitor(_GLFWwindow* window, _GLFWmonitor* monitor,
+                             int x, int y, int width, int height, int refreshRate)
+{
+    (void) x;
+    (void) y;
+    const int oldWidth = window->null.width;
+    const int oldHeight = window->null.height;
+    getDrawableSize(window, &width, &height);
+    _glfwSetWindowMonitorNull(window, monitor, 0, 0, width, height, refreshRate);
+    if (monitor)
+    {
+        // The null platform silently assigns its synthetic monitor size here.
+        window->null.width = oldWidth;
+        window->null.height = oldHeight;
+    }
+    refreshDrawableSize(window);
 }
 
 static EGLNativeWindowType getNativeWindow(_GLFWwindow* window)
@@ -84,18 +171,18 @@ static GLFWbool createWindow(_GLFWwindow* window, const _GLFWwndconfig* requeste
 
     _GLFWwndconfig windowConfig = *requestedWindow;
     _GLFWctxconfig contextConfig = *requestedContext;
-    windowConfig.width = ANativeWindow_getWidth(activeSurface);
-    windowConfig.height = ANativeWindow_getHeight(activeSurface);
+    readSurfaceExtent(activeSurface, &windowConfig.width, &windowConfig.height);
     windowConfig.xpos = 0;
     windowConfig.ypos = 0;
     contextConfig.source = GLFW_EGL_CONTEXT_API;
 
     activeWindow = window;
+    atomic_store_explicit(&firstFramePresented, GLFW_FALSE, memory_order_relaxed);
     if (!_glfwCreateWindowNull(window, &windowConfig, &contextConfig, fbconfig))
         return GLFW_FALSE;
+    refreshDrawableSize(window);
     if (contextConfig.client != GLFW_NO_API && _glfw.egl.SwapBuffers != reportSwapBuffers)
     {
-        firstFramePresented = GLFW_FALSE;
         swapBuffersEgl = _glfw.egl.SwapBuffers;
         _glfw.egl.SwapBuffers = reportSwapBuffers;
     }
@@ -134,6 +221,7 @@ static void pollEvents(void)
         return;
     }
 
+    refreshDrawableSize(activeWindow);
     for (unsigned int index = 0; index < count; ++index)
     {
         _glfwInputCursorPos(activeWindow, events[index].x, events[index].y);
@@ -146,11 +234,7 @@ static GLFWbool getVideoMode(_GLFWmonitor* monitor, GLFWvidmode* mode)
 {
     _glfwGetVideoModeNull(monitor, mode);
     pthread_mutex_lock(&eventLock);
-    if (pendingSurface)
-    {
-        mode->width = ANativeWindow_getWidth(pendingSurface);
-        mode->height = ANativeWindow_getHeight(pendingSurface);
-    }
+    readSurfaceExtent(pendingSurface, &mode->width, &mode->height);
     pthread_mutex_unlock(&eventLock);
     return GLFW_TRUE;
 }
@@ -173,6 +257,13 @@ GLFWbool _glfwConnectNull(int platformID, _GLFWplatform* platform)
     platform->getEGLNativeWindow = getNativeWindow;
     platform->createWindow = createWindow;
     platform->destroyWindow = destroyWindow;
+    platform->getWindowSize = getDrawableSize;
+    platform->getFramebufferSize = getDrawableSize;
+    platform->setWindowSize = setWindowSize;
+    platform->setWindowSizeLimits = setWindowLimits;
+    platform->setWindowAspectRatio = setWindowSize;
+    platform->setWindowPos = setWindowPos;
+    platform->setWindowMonitor = setWindowMonitor;
     platform->getVideoMode = getVideoMode;
     platform->getVideoModes = getVideoModes;
     platform->pollEvents = pollEvents;

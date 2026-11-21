@@ -1,6 +1,7 @@
 package com.prissma.launcher.engine.java
 
 import android.os.Bundle
+import android.view.KeyEvent as AndroidKeyEvent
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -104,25 +105,44 @@ private fun JavaNativeViewportScreen(
     useVulkanZink: Boolean,
     onExitGame: () -> Unit
 ) {
-    BackHandler(onBack = onExitGame)
-
     var gpuStatus by remember { mutableStateOf("Inicializando superficie EGL…") }
     var showConsole by remember { mutableStateOf(true) }
+    var showOverlay by remember { mutableStateOf(true) }
+    var hasPresentedFrame by remember { mutableStateOf(false) }
     var jvmStarted by remember { mutableStateOf(false) }
     var viewportSize by remember { mutableStateOf("0x0") }
     val logLines = remember { mutableStateListOf<String>() }
     val logListState = rememberLazyListState()
 
+    fun handleBack() {
+        if (hasPresentedFrame) showOverlay = !showOverlay else onExitGame()
+    }
+
+    fun toggleConsole() {
+        if (hasPresentedFrame) {
+            showOverlay = !showOverlay
+            if (showOverlay) showConsole = true
+        } else {
+            showConsole = !showConsole
+        }
+    }
+
+    BackHandler { handleBack() }
+
     // Recoge los registros en tiempo real desde C++ / JVM con auto-scroll
     LaunchedEffect(Unit) {
         while (true) {
             val freshLogs = NativeJavaBridge.nativePollLogs()
+            if (!hasPresentedFrame && NativeJavaBridge.nativeHasPresentedFrame()) {
+                hasPresentedFrame = true
+                showOverlay = false
+            }
             if (freshLogs.isNotEmpty()) {
                 logLines.addAll(freshLogs)
                 if (logLines.size > 150) {
                     logLines.removeRange(0, logLines.size - 150)
                 }
-                if (showConsole && logLines.isNotEmpty()) {
+                if (showOverlay && showConsole) {
                     logListState.scrollToItem(logLines.lastIndex)
                 }
             }
@@ -135,14 +155,14 @@ private fun JavaNativeViewportScreen(
             .fillMaxSize()
             .background(Color.Black)
             .onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
                 when (event.key) {
                     Key.ButtonB, Key.Escape -> {
-                        onExitGame()
+                        handleBack()
                         true
                     }
                     Key.ButtonSelect, Key.ButtonY -> {
-                        showConsole = !showConsole
+                        toggleConsole()
                         true
                     }
                     else -> false
@@ -157,14 +177,31 @@ private fun JavaNativeViewportScreen(
                     isFocusableInTouchMode = true
                     requestFocus()
 
-                    setOnTouchListener { _, event ->
+                    setOnKeyListener { _, keyCode, event ->
+                        when (keyCode) {
+                            AndroidKeyEvent.KEYCODE_BUTTON_B, AndroidKeyEvent.KEYCODE_ESCAPE -> {
+                                if (event.action == AndroidKeyEvent.ACTION_UP) handleBack()
+                                true
+                            }
+                            AndroidKeyEvent.KEYCODE_BUTTON_SELECT, AndroidKeyEvent.KEYCODE_BUTTON_Y -> {
+                                if (event.action == AndroidKeyEvent.ACTION_UP) toggleConsole()
+                                true
+                            }
+                            else -> false
+                        }
+                    }
+
+                    setOnTouchListener { view, event ->
                         val action = when (event.actionMasked) {
                             MotionEvent.ACTION_DOWN -> 1
                             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> 0
                             MotionEvent.ACTION_MOVE -> -1
                             else -> return@setOnTouchListener true
                         }
-                        NativeJavaBridge.nativePointer(event.x.toDouble(), event.y.toDouble(), action)
+                        val frame = holder.surfaceFrame
+                        val x = event.x.toDouble() * frame.width().coerceAtLeast(1) / view.width.coerceAtLeast(1)
+                        val y = event.y.toDouble() * frame.height().coerceAtLeast(1) / view.height.coerceAtLeast(1)
+                        NativeJavaBridge.nativePointer(x, y, action)
                         true
                     }
 
@@ -177,20 +214,6 @@ private fun JavaNativeViewportScreen(
 
                             if (gpuStatus.startsWith("Error:")) {
                                 logLines.add("[ERROR] " + gpuStatus)
-                            } else if (!jvmStarted && libJvmPath.isNotBlank()) {
-                                val status = NativeJavaBridge.nativeLaunchJvm(
-                                    libJvmPath = libJvmPath,
-                                    javaHomePath = javaHomePath,
-                                    gameDirPath = gameDirPath,
-                                    cacheDirPath = ctx.cacheDir.absolutePath,
-                                    nativeLibraryDir = ctx.applicationInfo.nativeLibraryDir,
-                                    classpath = classpath,
-                                    mainClass = mainClass,
-                                    gameArgs = gameArgs,
-                                    useVulkanZink = useVulkanZink
-                                )
-                                jvmStarted = status == 0 || status == 1
-                                if (!jvmStarted) logLines.add("[ERROR] No se pudo iniciar el hilo de Java ($status).")
                             } else if (libJvmPath.isBlank()) {
                                 logLines.add("[AVISO] Instala Java 21 ARM64 para iniciar Minecraft.")
                             }
@@ -203,6 +226,23 @@ private fun JavaNativeViewportScreen(
                             height: Int
                         ) {
                             viewportSize = "${width}x${height}"
+                            if (jvmStarted || libJvmPath.isBlank() || gpuStatus.startsWith("Error:") ||
+                                width <= 0 || height <= 0
+                            ) return
+
+                            val status = NativeJavaBridge.nativeLaunchJvm(
+                                libJvmPath = libJvmPath,
+                                javaHomePath = javaHomePath,
+                                gameDirPath = gameDirPath,
+                                cacheDirPath = ctx.cacheDir.absolutePath,
+                                nativeLibraryDir = ctx.applicationInfo.nativeLibraryDir,
+                                classpath = classpath,
+                                mainClass = mainClass,
+                                gameArgs = gameArgs + arrayOf("--width", width.toString(), "--height", height.toString()),
+                                useVulkanZink = useVulkanZink
+                            )
+                            jvmStarted = status == 0 || status == 1
+                            if (!jvmStarted) logLines.add("[ERROR] No se pudo iniciar el hilo de Java ($status).")
                         }
 
                         override fun surfaceDestroyed(holder: SurfaceHolder) {
@@ -213,7 +253,7 @@ private fun JavaNativeViewportScreen(
             }
         )
 
-        Column(
+        if (showOverlay) Column(
             modifier = Modifier
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.displayCutout)
@@ -249,6 +289,9 @@ private fun JavaNativeViewportScreen(
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (hasPresentedFrame) {
+                        LauncherButton("Reanudar", { showOverlay = false }, primary = true)
+                    }
                     LauncherButton(
                         if (showConsole) "Ocultar registro" else "Ver registro",
                         { showConsole = !showConsole }

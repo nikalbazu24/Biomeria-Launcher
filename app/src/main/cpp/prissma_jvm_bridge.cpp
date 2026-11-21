@@ -418,6 +418,13 @@ Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativePointer(
     prissmaGlfwPointer(x, y, action);
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativeHasPresentedFrame(
+    JNIEnv* /* env */, jobject /* thiz */
+) {
+    return prissmaGlfwHasPresentedFrame() ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT jint JNICALL
 Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativeLaunchJvm(
     JNIEnv* env,
