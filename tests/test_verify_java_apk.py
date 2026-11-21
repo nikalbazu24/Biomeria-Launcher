@@ -13,6 +13,7 @@ from scripts.verify_java_apk import (
     NATIVE_ROOT,
     PAIRS,
     REQUIRED_NATIVES,
+    RENDERER_SYMBOLS,
     check_jar_pair,
     is_arm64_shared_elf,
     validate_apk,
@@ -26,13 +27,15 @@ def elf(machine=183, file_type=3):
     return bytes(header)
 
 
-def jar(library, package, native):
+def jar(library, package, native, loader=b"loader"):
     data = io.BytesIO()
     with ZipFile(data, "w") as archive:
         archive.writestr(
             f"META-INF/linux/arm64/{package}/{library}.sha1",
             hashlib.sha1(native).hexdigest(),
         )
+        if library == "liblwjgl.so":
+            archive.writestr("org/lwjgl/system/Library.class", loader)
     return data.getvalue()
 
 
@@ -61,6 +64,17 @@ class VerifyJavaApkTest(unittest.TestCase):
                 pass
             self.assertIn(f"Falta {NATIVE_ROOT}/libglfw.so.", validate_apk(path))
 
+    def test_rejects_the_amethyst_bootstrap_without_its_launcher(self):
+        data = io.BytesIO()
+        with ZipFile(data, "w") as apk:
+            apk.writestr(
+                f"{ASSETS}/lwjgl-3.3.3.jar",
+                jar("liblwjgl.so", "org/lwjgl", elf(), loader=b"pojavexec"),
+            )
+        with ZipFile(data) as apk:
+            error = check_jar_pair(apk, "lwjgl", "liblwjgl.so", "org/lwjgl", elf())
+        self.assertIn("todavía intenta cargar pojavexec", error)
+
     def test_reports_desktop_dependencies_and_missing_glfw_exports(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "desktop-glfw.apk"
@@ -84,7 +98,7 @@ class VerifyJavaApkTest(unittest.TestCase):
                     apk.writestr(f"{ASSETS}/{module}-3.3.3.jar", jar(library, package, elf()))
             with patch(
                 "scripts.verify_java_apk.native_details",
-                return_value=(["libc.so", "libEGL.so"], GLFW_SYMBOLS),
+                return_value=(["libc.so", "libEGL.so"], GLFW_SYMBOLS | RENDERER_SYMBOLS),
             ):
                 self.assertEqual([], validate_apk(path))
 

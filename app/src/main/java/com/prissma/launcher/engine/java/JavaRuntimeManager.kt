@@ -325,7 +325,7 @@ class JavaRuntimeManager(private val context: Context) {
 
         if (librariesDir.exists()) {
             val lwjglDir = File(librariesDir, "org/lwjgl")
-            val androidModules = setOf("lwjgl", "lwjgl-opengl", "lwjgl-stb")
+            val androidModules = setOf("lwjgl", "lwjgl-opengl", "lwjgl-stb", "lwjgl-freetype", "lwjgl-tinyfd")
                 .map { "$it-$ANDROID_LWJGL_VERSION.jar" }.toSet()
             librariesDir.walkTopDown()
                 .filter { it.isFile && it.extension == "jar" }

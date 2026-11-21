@@ -16,17 +16,20 @@ PAIRS = {
     "lwjgl": ("liblwjgl.so", "org/lwjgl"),
     "lwjgl-opengl": ("liblwjgl_opengl.so", "org/lwjgl/opengl"),
     "lwjgl-stb": ("liblwjgl_stb.so", "org/lwjgl/stb"),
+    "lwjgl-tinyfd": ("liblwjgl_tinyfd.so", "org/lwjgl/tinyfd"),
 }
 # The JVM uses the system allocator in place of jemalloc.
 REQUIRED_NATIVES = {
     "libprissma_jvm_bridge.so", "libjnidispatch.so", "libglfw.so",
-    "libopenal.so", "libfreetype.so", "liblwjgl_tinyfd.so",
+    "libopenal.so", "libfreetype.so", "libmobileglues.so",
     *(library for library, _ in PAIRS.values()),
 }
 GLFW_SYMBOLS = {
     "glfwInit", "glfwCreateWindow", "glfwMakeContextCurrent", "glfwSwapBuffers",
     "glfwPollEvents", "glfwGetProcAddress", "glfwTerminate",
+    "prissmaGlfwSetSurface", "prissmaGlfwPointer",
 }
+RENDERER_SYMBOLS = {"eglBindAPI", "eglCreateContext", "eglCreateWindowSurface", "eglSwapBuffers", "glXGetProcAddress"}
 DESKTOP_DEPENDENCY = re.compile(
     r"^(?:ld-linux[^/]*|lib(?:X11|Xrandr|Xcursor|Xi|Xinerama|wayland[^/]*|xkbcommon)"
     r"\.so.*|.+\.so\.\d+(?:\.\d+)*)$"
@@ -47,8 +50,10 @@ def check_jar_pair(apk, module, library, package, binary):
     try:
         with ZipFile(io.BytesIO(apk.read(asset))) as jar:
             expected = jar.read(resource).decode("ascii").strip().lower()
+            if module == "lwjgl" and b"pojavexec" in jar.read("org/lwjgl/system/Library.class"):
+                return f"{asset}: Library.class todavía intenta cargar pojavexec."
     except (KeyError, BadZipFile, UnicodeError) as error:
-        return f"{asset}: falta el JAR o el SHA-1 de su nativo ({error})."
+        return f"{asset}: faltan componentes del JAR o el SHA-1 de su nativo ({error})."
     if expected != hashlib.sha1(binary).hexdigest():
         return f"{module}: el SHA-1 de {library} no coincide con el JAR del APK."
     return None
@@ -100,6 +105,10 @@ def validate_apk(apk_path):
                 missing = sorted(GLFW_SYMBOLS - exports)
                 if missing:
                     problems.append(f"{name}: símbolos GLFW ausentes: {', '.join(missing)}.")
+            if library == "libmobileglues.so":
+                missing = sorted(RENDERER_SYMBOLS - exports)
+                if missing:
+                    problems.append(f"{name}: símbolos EGL/GL ausentes: {', '.join(missing)}.")
 
         for module, (library, package) in PAIRS.items():
             name = f"{NATIVE_ROOT}/{library}"

@@ -169,7 +169,7 @@ fun JavaLaunchScreen(instance: GameInstance, playerName: String, accountType: St
                         FilterChip(zink == value, choose, { Text(label) }, modifier = Modifier.gamepadClick(onClick = choose))
                     }
                 }
-                Text("Renderizado Java en pruebas", color = Prissma.colors.textMuted,
+                Text("Esta beta arranca con MobileGlues (OpenGL ES).", color = Prissma.colors.textMuted,
                     style = MaterialTheme.typography.bodySmall)
                 if (session != null) LauncherButton(
                     if (runtime != null) "Iniciar Minecraft" else "Probar pantalla GPU",

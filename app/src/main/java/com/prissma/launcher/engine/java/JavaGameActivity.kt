@@ -1,6 +1,7 @@
 package com.prissma.launcher.engine.java
 
 import android.os.Bundle
+import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.WindowManager
@@ -156,11 +157,22 @@ private fun JavaNativeViewportScreen(
                     isFocusableInTouchMode = true
                     requestFocus()
 
+                    setOnTouchListener { _, event ->
+                        val action = when (event.actionMasked) {
+                            MotionEvent.ACTION_DOWN -> 1
+                            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> 0
+                            MotionEvent.ACTION_MOVE -> -1
+                            else -> return@setOnTouchListener true
+                        }
+                        NativeJavaBridge.nativePointer(event.x.toDouble(), event.y.toDouble(), action)
+                        true
+                    }
+
                     holder.addCallback(object : SurfaceHolder.Callback {
                         override fun surfaceCreated(holder: SurfaceHolder) {
                             gpuStatus = NativeJavaBridge.nativeInitGraphicsSurface(
                                 surface = holder.surface,
-                                useVulkanZink = useVulkanZink
+                                previewOnly = libJvmPath.isBlank()
                             )
 
                             if (gpuStatus.startsWith("Error:")) {

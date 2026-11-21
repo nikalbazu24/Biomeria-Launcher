@@ -4,9 +4,13 @@
 #include <android/native_window_jni.h>
 #include <EGL/egl.h>
 #include <GLES3/gl3.h>
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
+#include "prissma_glfw_android.h"
 #include <dlfcn.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -156,19 +160,12 @@ namespace {
         setenv("JAVA_HOME", cfg->javaHome.c_str(), 1);
         std::string ldPath = cfg->javaHome + "/lib:" + cfg->javaHome + "/lib/server";
         setenv("LD_LIBRARY_PATH", ldPath.c_str(), 1);
-        setenv("LIBGL_ES", "3", 1);
-
-        if (cfg->useVulkanZink) {
-            setenv("POJAV_RENDERER", "vulkan_zink", 1);
-            setenv("MESA_LOADER_DRIVER_OVERRIDE", "zink", 1);
-            setenv("GALLIUM_DRIVER", "zink", 1);
-            pushLogLine("[PRISSMA] Backend gráfico solicitado: Vulkan (Zink / Mesa)");
-        } else {
-            setenv("POJAV_RENDERER", "opengles3", 1);
-            unsetenv("MESA_LOADER_DRIVER_OVERRIDE");
-            unsetenv("GALLIUM_DRIVER");
-            pushLogLine("[PRISSMA] Backend gráfico solicitado: OpenGL ES 3.2");
-        }
+        const std::string mobileGluesDir = cfg->cacheDir + "/mobileglues";
+        mkdir(mobileGluesDir.c_str(), 0700);
+        setenv("MG_DIR_PATH", mobileGluesDir.c_str(), 1);
+        glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_NULL);
+        if (cfg->useVulkanZink) pushLogLine("[PRISSMA] Preferencia: Vulkan/Zink. Esta sesión usa MobileGlues.");
+        pushLogLine("[PRISSMA] Backend de esta sesión: GLFW Android + MobileGlues (OpenGL ES).");
 
         chdir(cfg->gameDir.c_str());
 
@@ -206,7 +203,7 @@ namespace {
         std::vector<std::string> optionStrings;
         optionStrings.push_back("-Djava.class.path=" + cfg->classpath);
         optionStrings.push_back("-Djava.home=" + cfg->javaHome);
-        optionStrings.push_back("-Djava.library.path=" + ldPath);
+        optionStrings.push_back("-Djava.library.path=" + cfg->nativeLibraryDir + ":" + ldPath);
         optionStrings.push_back("-Duser.dir=" + cfg->gameDir);
         optionStrings.push_back("-Djava.io.tmpdir=" + cfg->cacheDir);
         optionStrings.push_back("-Djna.tmpdir=" + cfg->cacheDir);
@@ -225,8 +222,9 @@ namespace {
             optionStrings.push_back("-Dorg.lwjgl.system.allocator=system");
             pushLogLine("[PRISSMA] LWJGL 3.3.3 buscará nativos Android en " + cfg->nativeLibraryDir);
         }
-        optionStrings.push_back("-Dorg.lwjgl.opengl.libname=libGLESv2.so");
-        optionStrings.push_back("-Dglfwstub.initEgl=false");
+        optionStrings.push_back("-Dorg.lwjgl.glfw.libname=" + cfg->nativeLibraryDir + "/libglfw.so");
+        optionStrings.push_back("-Dorg.lwjgl.openal.libname=" + cfg->nativeLibraryDir + "/libopenal.so");
+        optionStrings.push_back("-Dorg.lwjgl.opengl.libname=" + cfg->nativeLibraryDir + "/libmobileglues.so");
         optionStrings.push_back("-Xmx1536M");
         optionStrings.push_back("-Xms512M");
 
@@ -313,7 +311,7 @@ Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativeInitGraphicsSurface
     JNIEnv* env,
     jobject /* thiz */,
     jobject surface,
-    jboolean useVulkanZink
+    jboolean previewOnly
 ) {
     if (gWindow) {
         ANativeWindow_release(gWindow);
@@ -327,6 +325,12 @@ Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativeInitGraphicsSurface
 
     int width = ANativeWindow_getWidth(gWindow);
     int height = ANativeWindow_getHeight(gWindow);
+
+    if (!previewOnly) {
+        prissmaGlfwSetSurface(gWindow);
+        const std::string status = "Superficie Android · " + std::to_string(width) + "x" + std::to_string(height);
+        return env->NewStringUTF(status.c_str());
+    }
 
     gDisplay = eglGetDisplay(EGL_DEFAULT_DISPLAY);
     if (gDisplay == EGL_NO_DISPLAY || !eglInitialize(gDisplay, nullptr, nullptr)) {
@@ -387,6 +391,7 @@ Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativeDestroyGraphicsSurf
     JNIEnv* /* env */,
     jobject /* thiz */
 ) {
+    prissmaGlfwSetSurface(nullptr);
     if (gDisplay != EGL_NO_DISPLAY) {
         eglMakeCurrent(gDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         if (gContext != EGL_NO_CONTEXT) {
@@ -404,6 +409,13 @@ Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativeDestroyGraphicsSurf
         ANativeWindow_release(gWindow);
         gWindow = nullptr;
     }
+}
+
+JNIEXPORT void JNICALL
+Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativePointer(
+    JNIEnv* /* env */, jobject /* thiz */, jdouble x, jdouble y, jint action
+) {
+    prissmaGlfwPointer(x, y, action);
 }
 
 JNIEXPORT jint JNICALL

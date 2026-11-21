@@ -1,0 +1,15 @@
+GLFW 3.4 (zlib), with an Android surface adapter in app/src/main/cpp
+https://github.com/glfw/glfw/tree/7b6aead9fb88b3623e3b3725ebb42670cbe4c579
+
+OpenAL Soft 1.24.3 (LGPL)
+https://github.com/kcat/openal-soft/tree/dc7d7054a5b4f3bec1dc23a42fd616a0847af948
+
+MobileGlues 2.0.0 (LGPL), packaged as an unmodified shared library
+https://github.com/MobileGL-Dev/MobileGlues
+https://github.com/MobileGL-Dev/MobileGlues-release/releases/tag/V2.0.0
+
+LWJGL Android natives, including FreeType and tinyfiledialogs
+https://github.com/AngelAuraMC/lwjgl3/tree/6a564a8b4b1438699e9d7ccb42548e4ba454fd30
+https://github.com/AngelAuraMC/Amethyst-Android/tree/166af615dbdca1a507b8c2d379822cca02795132/app_pojavlauncher/libs
+
+The LWJGL core rebuild removes the original launcher bootstrap from Library.java.

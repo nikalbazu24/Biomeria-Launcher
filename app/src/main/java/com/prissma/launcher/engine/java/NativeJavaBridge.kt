@@ -10,10 +10,12 @@ object NativeJavaBridge {
 
     external fun nativeInitGraphicsSurface(
         surface: Surface,
-        useVulkanZink: Boolean
+        previewOnly: Boolean
     ): String
 
     external fun nativeDestroyGraphicsSurface()
+
+    external fun nativePointer(x: Double, y: Double, action: Int)
 
     external fun nativeLaunchJvm(
         libJvmPath: String,
