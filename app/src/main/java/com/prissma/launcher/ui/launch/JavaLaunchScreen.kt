@@ -2,10 +2,7 @@ package com.prissma.launcher.ui.launch
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -16,114 +13,108 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.work.WorkInfo
 import com.prissma.launcher.data.GameInstance
+import com.prissma.launcher.engine.java.DOWNLOAD_MESSAGE
+import com.prissma.launcher.engine.java.DOWNLOAD_PERCENT
+import com.prissma.launcher.engine.java.GameDownloads
 import com.prissma.launcher.engine.java.JavaGameActivity
 import com.prissma.launcher.engine.java.JavaRuntimeManager
 import com.prissma.launcher.engine.java.MojangDownloader
-import com.prissma.launcher.engine.java.PreparedJavaSession
+import com.prissma.launcher.engine.java.PreparedJavaGame
+import com.prissma.launcher.engine.java.RUNTIME_WORK
+import com.prissma.launcher.engine.java.applyMinecraftOptions
+import com.prissma.launcher.engine.java.gameLanguages
+import com.prissma.launcher.engine.java.supportedVersions
 import com.prissma.launcher.ui.components.LauncherButton
 import com.prissma.launcher.ui.components.PageHeader
 import com.prissma.launcher.ui.components.PanelShape
 import com.prissma.launcher.ui.components.gamepadClick
 import com.prissma.launcher.ui.theme.Prissma
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.IOException
+import java.util.UUID
 
 @Composable
 fun JavaLaunchScreen(instance: GameInstance, playerName: String, accountType: String, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val downloader = remember(context) { MojangDownloader(context) }
-    val runtimeManager = remember(context) { JavaRuntimeManager(context) }
     val settings = remember(context) { context.getSharedPreferences("prissma_java", Context.MODE_PRIVATE) }
-
-    var session by remember(instance.id) { mutableStateOf<PreparedJavaSession?>(null) }
+    val downloads = remember(context) { GameDownloads(context) }
+    val runtimeManager = remember(context) { JavaRuntimeManager(context) }
+    val downloader = remember(context) { MojangDownloader(context) }
+    val runtimeWork by remember(downloads) { downloads.observe(RUNTIME_WORK) }.collectAsState(emptyList())
+    val gameWork by remember(downloads, instance) { downloads.observe(downloads.key(instance)) }.collectAsState(emptyList())
+    val runtimeTask = runtimeWork.firstOrNull { !it.state.isFinished } ?: runtimeWork.lastOrNull()
+    val gameTask = gameWork.firstOrNull { !it.state.isFinished } ?: gameWork.lastOrNull()
     var runtime by remember(runtimeManager) { mutableStateOf(runtimeManager.getInstalledRuntime()) }
-    var zink by rememberSaveable(instance.id) { mutableStateOf(settings.getBoolean(instance.id, true)) }
-    var gameProgress by remember(instance.id) { mutableFloatStateOf(0f) }
-    var gameStatus by remember(instance.id) { mutableStateOf("Consultando versiones de Mojang…") }
-    var gameError by remember { mutableStateOf<String?>(null) }
-    var runtimeStatus by remember { mutableStateOf<String?>(null) }
-    var runtimeProgress by remember { mutableStateOf<Float?>(null) }
+    var game by remember(instance) { mutableStateOf<PreparedJavaGame?>(null) }
+    var language by remember(instance.id) { mutableStateOf(settings.getString("language-" + instance.id, "").orEmpty()) }
+    var launchError by remember { mutableStateOf<String?>(null) }
     var opening by remember { mutableStateOf(false) }
-    var retry by remember { mutableIntStateOf(0) }
+    val supported = instance.version in supportedVersions &&
+        (instance.loader == "Vanilla" || instance.configuredModLoader == "fabric")
 
-    fun installRuntime(uri: Uri? = null) {
-        if (runtimeProgress != null) return
-        runtimeProgress = 0f
-        runtimeStatus = null
-        scope.launch {
-            val report: (Float, String) -> Unit = { pct, status ->
-                runtimeProgress = pct
-                runtimeStatus = status
-            }
-            val result = if (uri == null) {
-                runtimeManager.installFromUrl(JavaRuntimeManager.DEFAULT_JRE21_URL, report)
-            } else {
-                runtimeManager.installFromLocalUri(uri, report)
-            }
-            result.onSuccess {
-                runtime = it
-                runtimeStatus = "Java 21 listo."
-            }.onFailure { runtimeStatus = it.message ?: "No se pudo instalar Java 21." }
-            runtimeProgress = null
+    LaunchedEffect(instance) {
+        game = withContext(Dispatchers.IO) { downloader.prepared(instance.id, instance.version, instance.loader) }
+        if (game == null && supported) downloads.game(instance)
+        if (runtime == null) downloads.runtime()
+    }
+    LaunchedEffect(runtimeTask?.state) {
+        if (runtimeTask?.state == WorkInfo.State.SUCCEEDED) {
+            runtime = withContext(Dispatchers.IO) { runtimeManager.getInstalledRuntime() }
+        }
+    }
+    LaunchedEffect(instance, gameTask?.state) {
+        if (gameTask?.state == WorkInfo.State.SUCCEEDED) {
+            game = withContext(Dispatchers.IO) { downloader.prepared(instance.id, instance.version, instance.loader) }
         }
     }
 
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let { installRuntime(it) }
-    }
-
     fun start() {
-        val ready = session ?: return
+        val ready = game ?: return
+        val installed = runtime ?: return
         if (opening) return
         opening = true
-        gameError = null
+        launchError = null
         scope.launch {
             try {
-                val classpath = runtimeManager.buildClasspath(ready.instanceId, ready.clientJarFile)
+                val gameDir = File(context.filesDir, "instances/" + instance.id)
+                withContext(Dispatchers.IO) { applyMinecraftOptions(gameDir, language) }
+                val classpath = runtimeManager.buildClasspath(ready)
+                val playerUuid = UUID.nameUUIDFromBytes("OfflinePlayer:$playerName".toByteArray(Charsets.UTF_8))
                 val gameArgs = runtimeManager.buildMinecraftArgs(
-                    ready.instanceId, ready.resolvedVersion, ready.playerName, ready.playerUuid,
-                    ready.assetsDir, ready.assetIndexId
+                    instance.id, instance.version, playerName, playerUuid.toString(), ready.assetsDir,
+                    ready.assetIndexId, accountType
                 )
                 context.startActivity(Intent(context, JavaGameActivity::class.java).apply {
-                    putExtra("INSTANCE_TITLE", ready.instanceTitle)
-                    putExtra("RESOLVED_VERSION", ready.resolvedVersion)
+                    putExtra("INSTANCE_TITLE", instance.title)
+                    putExtra("RESOLVED_VERSION", instance.version)
                     putExtra("MAIN_CLASS", ready.mainClass)
-                    putExtra("GAME_DIR_PATH", File(context.filesDir, "instances/" + ready.instanceId).absolutePath)
+                    putExtra("GAME_DIR_PATH", gameDir.absolutePath)
                     putExtra("CLASSPATH", classpath)
                     putExtra("GAME_ARGS", gameArgs)
-                    putExtra("LIBJVM_PATH", runtime?.libJvmFile?.absolutePath.orEmpty())
-                    putExtra("JAVA_HOME_PATH", runtime?.javaHomeDir?.absolutePath.orEmpty())
-                    putExtra("USE_VULKAN_ZINK", zink)
+                    putExtra("LIBJVM_PATH", installed.libJvmFile.absolutePath)
+                    putExtra("JAVA_HOME_PATH", installed.javaHomeDir.absolutePath)
+                    putExtra("USE_VULKAN_ZINK", false)
                 })
-            } catch (error: IOException) {
-                gameError = error.message ?: "No se pudo preparar la biblioteca Java."
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                launchError = error.message ?: "No se pudo preparar Minecraft."
             } finally {
                 opening = false
             }
         }
-    }
-
-    LaunchedEffect(instance.id, retry) {
-        gameError = null
-        gameProgress = 0f
-        session = null
-        downloader.prepareJavaInstance(
-            instance.id, instance.title, instance.version, playerName, accountType,
-            onProgress = { pct, status -> gameProgress = pct; gameStatus = status }
-        ).onSuccess {
-            session = it
-            gameStatus = "Minecraft " + it.resolvedVersion + " · Archivos listos"
-        }.onFailure { gameError = it.message ?: "No se pudieron preparar los archivos de Mojang." }
     }
 
     Column(
@@ -136,62 +127,69 @@ fun JavaLaunchScreen(instance: GameInstance, playerName: String, accountType: St
             }.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        PageHeader("Preparar juego", instance.title + " · Minecraft " + instance.version, onBack)
-        val runtimePanel: @Composable (Modifier) -> Unit = { modifier ->
-            LaunchPanel("Java 21 · ARM64", modifier) {
-                Text(if (runtime != null) "Runtime instalado" else "Instala Java para iniciar Minecraft.",
-                    color = if (runtime != null) Prissma.colors.brandAccent else Prissma.colors.textMuted)
-                runtimeStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-                runtimeProgress?.let { LinearProgressIndicator(progress = { it }, modifier = Modifier.fillMaxWidth()) }
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    LauncherButton(if (runtime != null) "Reinstalar" else "Descargar", { installRuntime() },
-                        enabled = runtimeProgress == null && !opening)
-                    LauncherButton("Importar ZIP", { picker.launch(arrayOf("application/zip", "application/octet-stream")) },
-                        enabled = runtimeProgress == null && !opening)
-                }
+        PageHeader(instance.title, "Minecraft " + instance.version + " · " + instance.loader, onBack)
+        val gamePanel: @Composable (Modifier) -> Unit = { modifier ->
+            LaunchPanel("Archivos para jugar", modifier) {
+                DownloadRow("Java 21 · ARM64", runtime != null, runtimeTask) { downloads.runtime() }
+                HorizontalDivider(color = Prissma.colors.borderSubtle)
+                if (supported) DownloadRow("Minecraft " + instance.version, game != null, gameTask) { downloads.game(instance) }
+                else Text("La versión o el cargador de esta instancia requiere otro runtime.", color = Prissma.colors.error)
+                launchError?.let { Text(it, color = Prissma.colors.error) }
+                LauncherButton(if (opening) "Abriendo…" else "Jugar", ::start,
+                    primary = true, icon = Icons.Default.PlayArrow, enabled = runtime != null && game != null && !opening)
             }
         }
-        val gamePanel: @Composable (Modifier) -> Unit = { modifier ->
-            LaunchPanel("Archivos del juego", modifier) {
-                Text(gameStatus, color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodyMedium)
-                LinearProgressIndicator(progress = { gameProgress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
-                gameError?.let {
-                    Text(it, color = Prissma.colors.error, style = MaterialTheme.typography.bodySmall)
-                    LauncherButton("Reintentar", { retry += 1 })
-                }
-                Spacer(Modifier.height(2.dp))
-                Text("Backend gráfico", style = MaterialTheme.typography.titleSmall)
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(true to "Vulkan / Zink", false to "OpenGL ES").forEach { (value, label) ->
-                        val choose = {
-                            zink = value
-                            settings.edit().putBoolean(instance.id, value).apply()
+        val optionsPanel: @Composable (Modifier) -> Unit = { modifier ->
+            LaunchPanel("Idioma de Minecraft", modifier) {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    gameLanguages.forEach { (code, title) ->
+                        val select = {
+                            language = code
+                            settings.edit().putString("language-" + instance.id, code).apply()
                         }
-                        FilterChip(zink == value, choose, { Text(label) }, modifier = Modifier.gamepadClick(onClick = choose))
+                        FilterChip(language == code, select, { Text(title) }, modifier = Modifier.gamepadClick(onClick = select))
                     }
                 }
-                Text("Esta beta arranca con MobileGlues (OpenGL ES).", color = Prissma.colors.textMuted,
-                    style = MaterialTheme.typography.bodySmall)
-                if (session != null) LauncherButton(
-                    if (runtime != null) "Iniciar Minecraft" else "Probar pantalla GPU",
-                    ::start, primary = true, icon = Icons.Default.PlayArrow,
-                    enabled = !opening && runtimeProgress == null
-                )
+                if (runtime == null || game == null) {
+                    Text("Puedes volver a la biblioteca mientras se descargan los archivos.",
+                        style = MaterialTheme.typography.bodySmall, color = Prissma.colors.textMuted)
+                }
             }
         }
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             if (maxWidth >= 535.dp) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     gamePanel(Modifier.weight(1.2f))
-                    runtimePanel(Modifier.weight(1f))
+                    optionsPanel(Modifier.weight(1f))
                 }
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     gamePanel(Modifier.fillMaxWidth())
-                    runtimePanel(Modifier.fillMaxWidth())
+                    optionsPanel(Modifier.fillMaxWidth())
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun DownloadRow(title: String, ready: Boolean, task: WorkInfo?, retry: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(title, fontWeight = FontWeight.SemiBold)
+        if (ready) Text("Listo", color = Prissma.colors.brandAccent)
+    }
+    if (ready) return
+    val failed = task?.state in listOf(WorkInfo.State.FAILED, WorkInfo.State.CANCELLED)
+    if (failed) {
+        Text(task?.outputData?.getString(DOWNLOAD_MESSAGE) ?: "Descarga interrumpida.", color = Prissma.colors.error)
+        LauncherButton("Reintentar", retry)
+    } else {
+        val percent = task?.progress?.getInt(DOWNLOAD_PERCENT, 0) ?: 0
+        val message = task?.progress?.getString(DOWNLOAD_MESSAGE)
+            ?: if (task?.state == WorkInfo.State.RUNNING) "Preparando…" else "En cola · esperando conexión"
+        Text(message, color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
+        if (percent > 0) LinearProgressIndicator({ percent / 100f }, modifier = Modifier.fillMaxWidth())
+        else LinearProgressIndicator(Modifier.fillMaxWidth())
     }
 }
 

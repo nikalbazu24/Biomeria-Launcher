@@ -2,223 +2,233 @@ package com.prissma.launcher.engine.java
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.UUID
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
 
-data class PreparedJavaSession(
-    val instanceId: String,
-    val instanceTitle: String,
-    val resolvedVersion: String,
-    val playerName: String,
-    val playerUuid: String,
-    val accountType: String,
+internal val supportedVersions = (4..8).reversed().map { "1.21.$it" }
+internal const val DEFAULT_GAME_VERSION = "1.21.4"
+private val safeId = Regex("[A-Za-z0-9_-]{1,100}")
+private val safeCoordinate = Regex("[A-Za-z0-9._+-]+")
+
+internal data class PreparedJavaGame(
     val mainClass: String,
-    val clientJarFile: File,
+    val clientJar: File,
+    val libraries: List<File>,
     val assetsDir: File,
-    val assetIndexId: String,
-    val librariesDownloaded: Int,
-    val installedModsCount: Int
+    val assetIndexId: String
 )
 
-class MojangDownloader(private val context: Context) {
+internal class MojangDownloader(context: Context) {
+    private val filesDir = context.filesDir
+    private val shared = File(filesDir, "minecraft")
+    private val assetsDir = File(shared, "assets")
+    private val mojangManifest = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
+    private val fabricMeta = "https://meta.fabricmc.net/v2/versions/loader"
 
-    private val manifestUrl = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
+    fun prepared(instanceId: String, version: String, loader: String): PreparedJavaGame? = runCatching {
+        val ready = JSONObject(descriptor(instanceId, version, loader).readText())
+        val client = File(ready.getString("client"))
+        val librariesJson = ready.getJSONArray("libraries")
+        val libraries = (0 until librariesJson.length()).map { File(librariesJson.getString(it)) }
+        val assetIndexId = ready.getString("assetIndexId")
+        check(client.isFile && libraries.isNotEmpty() && libraries.all { it.isFile })
+        check(File(assetsDir, "indexes/$assetIndexId.json").isFile)
+        PreparedJavaGame(ready.getString("mainClass"), client, libraries, assetsDir, assetIndexId)
+    }.getOrNull()
 
-    suspend fun prepareJavaInstance(
+    suspend fun prepare(
         instanceId: String,
-        instanceTitle: String,
-        requestedVersion: String,
-        playerName: String,
-        accountType: String,
-        onProgress: (Float, String) -> Unit
-    ): Result<PreparedJavaSession> = withContext(Dispatchers.IO) {
-        runCatching {
-            val instanceRoot = File(context.filesDir, "instances/$instanceId").apply { mkdirs() }
-            val versionsDir = File(instanceRoot, "versions").apply { mkdirs() }
-            val librariesDir = File(instanceRoot, "libraries").apply { mkdirs() }
-            val assetsDir = File(context.filesDir, "minecraft/assets")
-            val modsDir = File(instanceRoot, "mods").apply { mkdirs() }
+        version: String,
+        loader: String,
+        progress: (Float, String) -> Unit
+    ): PreparedJavaGame = withContext(Dispatchers.IO) {
+        prepared(instanceId, version, loader)?.let { return@withContext it }
+        val marker = descriptor(instanceId, version, loader)
+        progress(.04f, "Consultando la versión")
+        val entry = JSONObject(httpText(mojangManifest)).getJSONArray("versions").objects()
+            .first { it.getString("id") == version && it.getString("type") == "release" }
+        val base = File(shared, "versions/$version")
+        val metadata = File(base, "$version.json")
+        verifiedDownload(entry.getString("url"), metadata, entry.getString("sha1"))
+        val versionMeta = JSONObject(metadata.readText())
 
-            onProgress(0.05f, "Conectando con servidores oficiales de Mojang...")
-            val manifestJson = JSONObject(httpGetText(manifestUrl))
-            val latestRelease = manifestJson.getJSONObject("latest").getString("release")
-            val versionsArray = manifestJson.getJSONArray("versions")
-
-            // Busca la versión pedida; si no existe en Mojang (ej. 26.3), usa la última estable
-            var matchedVersionObj: JSONObject? = null
-            var fallbackLatestObj: JSONObject? = null
-
-            for (i in 0 until versionsArray.length()) {
-                val entry = versionsArray.getJSONObject(i)
-                val id = entry.getString("id")
-                if (id.equals(requestedVersion.trim(), ignoreCase = true)) {
-                    matchedVersionObj = entry
-                    break
-                }
-                if (id == latestRelease) {
-                    fallbackLatestObj = entry
-                }
-            }
-
-            val targetEntry = matchedVersionObj ?: fallbackLatestObj
-                ?: error("No se encontró ninguna versión disponible en Mojang.")
-
-            val resolvedVersion = targetEntry.getString("id")
-            val versionMetaUrl = targetEntry.getString("url")
-
-            onProgress(0.12f, "Descargando ficha técnica de Minecraft $resolvedVersion...")
-            val versionFolder = File(versionsDir, resolvedVersion).apply { mkdirs() }
-            val versionJsonFile = File(versionFolder, "$resolvedVersion.json")
-            val versionJsonText = httpGetText(versionMetaUrl)
-            versionJsonFile.writeText(versionJsonText, Charsets.UTF_8)
-
-            val versionMeta = JSONObject(versionJsonText)
-            val mainClass = versionMeta.optString("mainClass", "net.minecraft.client.main.Main")
-
-            // 1. Descargar el archivo principal del juego (client.jar)
-            val clientInfo = versionMeta.getJSONObject("downloads").getJSONObject("client")
-            val clientUrl = clientInfo.getString("url")
-            val clientExpectedSize = clientInfo.optLong("size", 0L)
-            val clientJarFile = File(versionFolder, "$resolvedVersion.jar")
-
-            if (!clientJarFile.exists() || (clientExpectedSize > 0 && clientJarFile.length() != clientExpectedSize)) {
-                onProgress(0.20f, "Descargando Minecraft $resolvedVersion (client.jar)...")
-                downloadBinary(clientUrl, clientJarFile)
-            }
-
-            // Descargar librerías Java necesarias
-            val librariesArray = versionMeta.getJSONArray("libraries")
-            val artifactsToDownload = mutableListOf<Pair<String, File>>()
-
-            for (i in 0 until librariesArray.length()) {
-                val lib = librariesArray.getJSONObject(i)
-                if (!isLibraryAllowedOnLinuxArm(lib)) continue
-                val coordinates = lib.optString("name")
-                if (coordinates.startsWith("org.lwjgl:") &&
-                    coordinates.contains(":$ANDROID_LWJGL_VERSION:natives-")
-                ) continue
-
-                val downloads = lib.optJSONObject("downloads") ?: continue
-                val artifact = downloads.optJSONObject("artifact") ?: continue
-                val libUrl = artifact.getString("url")
-                val libPath = artifact.getString("path")
-                val libSize = artifact.optLong("size", 0L)
-                val destFile = File(librariesDir, libPath)
-
-                if (!destFile.exists() || (libSize > 0 && destFile.length() != libSize)) {
-                    artifactsToDownload.add(libUrl to destFile)
-                }
-            }
-
-            val totalLibs = artifactsToDownload.size
-            artifactsToDownload.forEachIndexed { index, (url, dest) ->
-                val fraction = 0.25f + (0.25f * ((index + 1).toFloat() / totalLibs.coerceAtLeast(1)))
-                onProgress(fraction, "Descargando librería ${index + 1}/$totalLibs: ${dest.name}")
-                dest.parentFile?.mkdirs()
-                downloadBinary(url, dest)
-            }
-
-            onProgress(0.50f, "Preparando el índice de recursos de Minecraft...")
-            val assetIndexId = MojangAssets(assetsDir, ::downloadBinary).prepare(versionMeta.getJSONObject("assetIndex")) { done, total ->
-                val fraction = 0.50f + 0.49f * done / total.coerceAtLeast(1)
-                onProgress(fraction, "Recursos verificados: $done/$total")
-            }
-
-            // Generar UUID estándar de Mojang para modo Offline / No Premium
-            val offlineUuid = UUID.nameUUIDFromBytes(
-                "OfflinePlayer:$playerName".toByteArray(Charsets.UTF_8)
-            ).toString()
-
-            val modsCount = modsDir.listFiles()?.count { it.isFile && it.extension == "jar" } ?: 0
-
-            onProgress(1.0f, "¡Archivos listos! Preparando ventana de juego...")
-
-            PreparedJavaSession(
-                instanceId = instanceId,
-                instanceTitle = instanceTitle,
-                resolvedVersion = resolvedVersion,
-                playerName = playerName,
-                playerUuid = offlineUuid,
-                accountType = accountType,
-                mainClass = mainClass,
-                clientJarFile = clientJarFile,
-                assetsDir = assetsDir,
-                assetIndexId = assetIndexId,
-                librariesDownloaded = totalLibs,
-                installedModsCount = modsCount
+        val instanceRoot = File(filesDir, "instances/$instanceId")
+        val clientInfo = versionMeta.getJSONObject("downloads").getJSONObject("client")
+        val client = File(base, "$version.jar")
+        val artifacts = versionMeta.getJSONArray("libraries").objects().mapNotNull { library ->
+            if (!isLibraryAllowedOnLinux(library) || library.optString("name").contains(":natives-")) return@mapNotNull null
+            val artifact = library.optJSONObject("downloads")?.optJSONObject("artifact") ?: return@mapNotNull null
+            val path = artifact.getString("path")
+            Artifact(
+                artifact.getString("url"), File(shared, "libraries/$path"), artifact.getString("sha1"),
+                File(instanceRoot, "libraries/$path")
             )
+        }.toMutableList()
+        val mainClass = if (loader.startsWith("Fabric")) {
+            val pinned = loader.substringAfter(' ', "").takeIf { it.isNotBlank() }
+            val fabricVersion = pinned ?: JSONArray(httpText("$fabricMeta/$version")).objects()
+                .map { it.getJSONObject("loader") }.first { it.optBoolean("stable") }.getString("version")
+            require(safeCoordinate.matches(fabricVersion) && !fabricVersion.startsWith('.'))
+            val profile = JSONObject(httpText("$fabricMeta/$version/$fabricVersion/profile/json"))
+            check(profile.getString("inheritsFrom") == version)
+            val fabricLibraries = profile.getJSONArray("libraries").objects().map { library ->
+                val path = mavenPath(library.getString("name"))
+                val repository = library.getString("url")
+                require(repository in setOf("https://maven.fabricmc.net/", "https://libraries.minecraft.net/"))
+                val url = repository + path
+                val sha1 = library.optString("sha1").ifEmpty { httpText("$url.sha1").trim().substringBefore(' ') }
+                Artifact(url, File(shared, "fabric/$path"), sha1)
+            }
+            // Fabric's ASM and Mixin must precede the game libraries.
+            artifacts.addAll(0, fabricLibraries)
+            check(profile.getString("mainClass") == "net.fabricmc.loader.impl.launch.knot.KnotClient")
+            profile.getString("mainClass")
+        } else versionMeta.getString("mainClass")
+
+        val downloads = artifacts + Artifact(clientInfo.getString("url"), client, clientInfo.getString("sha1"),
+            File(instanceRoot, "versions/$version/$version.jar"))
+        progress(.10f, "Descargando cliente y bibliotecas")
+        var completed = 0
+        for (batch in downloads.chunked(8)) {
+            coroutineScope {
+                batch.map { artifact ->
+                    async { verifiedDownload(artifact.url, artifact.file, artifact.sha1, artifact.previous) }
+                }.awaitAll()
+            }
+            completed += batch.size
+            progress(.10f + .42f * completed / downloads.size, "Cliente y bibliotecas · $completed/" + downloads.size)
+        }
+
+        val index = MojangAssets(assetsDir, ::download).prepare(versionMeta.getJSONObject("assetIndex")) { done, total ->
+            progress(.52f + .47f * done / total.coerceAtLeast(1), "Recursos · $done/$total")
+        }
+        val libraries = artifacts.map { it.file }
+        val ready = JSONObject()
+            .put("mainClass", mainClass)
+            .put("client", client.absolutePath)
+            .put("libraries", JSONArray(libraries.map { it.absolutePath }))
+            .put("assetIndexId", index)
+        val temporary = File.createTempFile("ready-", ".json", checkNotNull(marker.parentFile).apply { mkdirs() })
+        try {
+            temporary.writeText(ready.toString())
+            Files.move(temporary.toPath(), marker.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        } finally {
+            temporary.delete()
+        }
+        progress(1f, "Minecraft listo")
+        PreparedJavaGame(mainClass, client, libraries, assetsDir, index)
+    }
+
+    private fun descriptor(instanceId: String, version: String, loader: String): File {
+        require(safeId.matches(instanceId))
+        require(version in supportedVersions) { "Elige una versión compatible con el runtime de Android." }
+        require(loader == "Vanilla" || loader.matches(Regex("Fabric(?: [0-9][A-Za-z0-9._+-]{0,49})?"))) {
+            "PRISSMA admite Vanilla y Fabric para estas versiones."
+        }
+        // Key the cache by both launcher settings, even for older instances with a pinned loader.
+        return File(shared, "prepared/$instanceId/$version-" + loader.replace(' ', '-') + ".json")
+    }
+
+    private suspend fun verifiedDownload(url: String, file: File, sha1: String, previous: File? = null) {
+        require(sha1.matches(Regex("(?i)[a-f0-9]{40}"))) { "La fuente devolvió una suma inválida." }
+        if (sameSha1(file, sha1)) return
+        val parent = checkNotNull(file.parentFile).apply { mkdirs() }
+        repeat(3) { attempt ->
+            val partial = File.createTempFile("download-", ".part", parent)
+            try {
+                if (previous != null && sameSha1(previous, sha1)) previous.copyTo(partial, overwrite = true)
+                else download(url, partial)
+                if (!sameSha1(partial, sha1)) throw IOException("La descarga de " + file.name + " está dañada.")
+                Files.move(partial.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+                return
+            } catch (failure: IOException) {
+                if (attempt == 2) throw failure
+                delay(400L * (attempt + 1))
+            } finally {
+                partial.delete()
+            }
         }
     }
 
-    private fun isLibraryAllowedOnLinuxArm(libObj: JSONObject): Boolean {
-        val rules = libObj.optJSONArray("rules") ?: return true
-        var allowed = false
-        for (i in 0 until rules.length()) {
-            val rule = rules.getJSONObject(i)
-            val action = rule.getString("action")
-            val osObj = rule.optJSONObject("os")
-            if (osObj == null) {
-                allowed = (action == "allow")
-            } else {
-                val osName = osObj.optString("name", "")
-                if (osName == "linux") {
-                    allowed = (action == "allow")
+    private fun httpText(url: String): String = connect(url) { it.bufferedReader().readText() }
+
+    private suspend fun download(url: String, file: File) {
+        val current = currentCoroutineContext()
+        connect(url) { input ->
+            file.outputStream().buffered().use { output ->
+                val buffer = ByteArray(32 * 1024)
+                while (true) {
+                    current.ensureActive()
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    output.write(buffer, 0, count)
                 }
             }
         }
-        return allowed
     }
 
-    private fun httpGetText(urlString: String): String {
-        val conn = (URL(urlString).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
+    private fun <T> connect(url: String, read: (java.io.InputStream) -> T): T {
+        require(url.startsWith("https://"))
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 12_000
-            readTimeout = 15_000
-            setRequestProperty("User-Agent", "PRISSMA-Launcher/0.5")
-        }
-        return try {
-            if (conn.responseCode !in 200..299) {
-                error("Error conectando con Mojang (HTTP ${conn.responseCode})")
-            }
-            conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-        } finally {
-            conn.disconnect()
-        }
-    }
-
-    private suspend fun downloadBinary(urlString: String, destination: File) {
-        val conn = (URL(urlString).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 15_000
             readTimeout = 25_000
-            setRequestProperty("User-Agent", "PRISSMA-Launcher/0.5")
+            setRequestProperty("User-Agent", "PRISSMA-Launcher")
         }
         try {
-            if (conn.responseCode !in 200..299) {
-                throw IOException("Error descargando ${destination.name} (HTTP ${conn.responseCode})")
+            if (connection.responseCode !in 200..299) {
+                throw IOException("HTTP " + connection.responseCode + " al descargar " + URL(url).host)
             }
-            conn.inputStream.use { input ->
-                FileOutputStream(destination).use { output ->
-                    val context = currentCoroutineContext()
-                    val buffer = ByteArray(32 * 1024)
-                    while (true) {
-                        context.ensureActive()
-                        val count = input.read(buffer)
-                        if (count == -1) break
-                        output.write(buffer, 0, count)
-                    }
-                }
-            }
+            return connection.inputStream.use(read)
         } finally {
-            conn.disconnect()
+            connection.disconnect()
         }
     }
 }
+
+private data class Artifact(val url: String, val file: File, val sha1: String, val previous: File? = null)
+
+internal fun mavenPath(coordinate: String): String {
+    val parts = coordinate.split(':')
+    require(parts.size == 3 && parts.all { safeCoordinate.matches(it) && !it.startsWith('.') })
+    val (group, artifact, version) = parts
+    require(group.split('.').all { it.isNotEmpty() })
+    return group.replace('.', '/') + "/$artifact/$version/$artifact-$version.jar"
+}
+
+private fun isLibraryAllowedOnLinux(library: JSONObject): Boolean {
+    val rules = library.optJSONArray("rules") ?: return true
+    return rules.objects().lastOrNull { rule ->
+        val os = rule.optJSONObject("os")
+        (os == null || os.optString("name") == "linux") && rule.optJSONObject("features") == null
+    }?.getString("action") == "allow"
+}
+
+internal fun sameSha1(file: File, sha1: String): Boolean {
+    if (!file.isFile) return false
+    val digest = MessageDigest.getInstance("SHA-1")
+    file.inputStream().buffered().use { input ->
+        val buffer = ByteArray(32 * 1024)
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            digest.update(buffer, 0, count)
+        }
+    }
+    return digest.digest().joinToString("") { "%02x".format(it) }.equals(sha1, ignoreCase = true)
+}
+
+private fun JSONArray.objects() = (0 until length()).map(::getJSONObject)

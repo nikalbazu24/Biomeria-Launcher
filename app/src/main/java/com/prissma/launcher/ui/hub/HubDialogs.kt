@@ -12,6 +12,8 @@ import androidx.compose.ui.unit.dp
 import com.prissma.launcher.data.EngineType
 import com.prissma.launcher.data.GameInstance
 import com.prissma.launcher.data.SavedProfile
+import com.prissma.launcher.engine.java.DEFAULT_GAME_VERSION
+import com.prissma.launcher.engine.java.supportedVersions
 import com.prissma.launcher.ui.components.LauncherButton
 import com.prissma.launcher.ui.components.gamepadClick
 import com.prissma.launcher.ui.theme.Prissma
@@ -21,12 +23,14 @@ internal fun InstanceEditor(
     instance: GameInstance? = null,
     onDismiss: () -> Unit,
     onRemove: (() -> Unit)? = null,
-    onSave: (String, EngineType, String) -> Unit
+    onSave: (String, EngineType, String, String) -> Unit
 ) {
     var name by rememberSaveable(instance?.id) { mutableStateOf(instance?.title.orEmpty()) }
     var engine by rememberSaveable(instance?.id) { mutableStateOf(instance?.engine ?: EngineType.JAVA) }
-    var version by rememberSaveable(instance?.id) { mutableStateOf(instance?.version ?: "1.21.4") }
-    val validVersion = version.trim().matches(Regex("[A-Za-z0-9._+-]{1,64}"))
+    var version by rememberSaveable(instance?.id) { mutableStateOf(instance?.version ?: DEFAULT_GAME_VERSION) }
+    var loader by rememberSaveable(instance?.id) { mutableStateOf(instance?.loader ?: "Vanilla") }
+    val validVersion = if (engine.canLaunch) version in supportedVersions
+        else version.trim().matches(Regex("[A-Za-z0-9._+-]{1,64}"))
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (instance == null) "Nueva instancia" else "Gestionar instancia") },
@@ -46,7 +50,16 @@ internal fun InstanceEditor(
                         Text("Puedes organizar y exportar esta instancia. Su motor está en preparación.",
                             color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
                     }
-                    OutlinedTextField(version, { version = it.take(64) }, modifier = Modifier.fillMaxWidth(),
+                    if (engine.canLaunch) {
+                        Text("Versión de Minecraft", style = MaterialTheme.typography.titleSmall)
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            supportedVersions.forEach { game ->
+                                val choose = { version = game }
+                                FilterChip(version == game, choose, { Text(game) },
+                                    modifier = Modifier.gamepadClick(onClick = choose))
+                            }
+                        }
+                    } else OutlinedTextField(version, { version = it.take(64) }, modifier = Modifier.fillMaxWidth(),
                         label = { Text("Versión del juego") }, singleLine = true)
                 } else {
                     Text(instance.engine.displayName + " · " + instance.version, color = Prissma.colors.textMuted)
@@ -54,11 +67,23 @@ internal fun InstanceEditor(
                         Text("Quitar de la biblioteca", color = Prissma.colors.error)
                     }
                 }
+                if (engine.canLaunch) {
+                    Text("Cargador", style = MaterialTheme.typography.titleSmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        listOf("Vanilla", "Fabric").forEach { choice ->
+                            val select = { loader = choice }
+                            FilterChip(loader.substringBefore(' ') == choice, select, { Text(choice) },
+                                modifier = Modifier.gamepadClick(onClick = select))
+                        }
+                    }
+                    if (loader.startsWith("Fabric")) Text("Descarga mods compatibles desde el Taller.",
+                        color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
+                }
             }
         },
         confirmButton = {
             LauncherButton(if (instance == null) "Crear" else "Guardar",
-                { onSave(name.trim(), engine, version.trim()) },
+                { onSave(name.trim(), engine, version.trim(), if (engine.canLaunch) loader else engine.defaultLoader) },
                 enabled = name.isNotBlank() && (instance != null || validVersion), primary = true)
         },
         dismissButton = { LauncherButton("Cancelar", onDismiss) }

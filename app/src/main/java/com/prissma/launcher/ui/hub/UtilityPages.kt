@@ -1,8 +1,12 @@
 package com.prissma.launcher.ui.hub
 
+import android.Manifest
+import android.content.Intent
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -18,7 +22,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -29,6 +32,7 @@ import com.prissma.launcher.data.InstanceStorage
 import com.prissma.launcher.data.LaunchReport
 import com.prissma.launcher.data.LaunchReports
 import com.prissma.launcher.data.UpdateInfo
+import com.prissma.launcher.data.UpdateNotifications
 import com.prissma.launcher.ui.components.ControlShape
 import com.prissma.launcher.ui.components.LauncherButton
 import com.prissma.launcher.ui.components.PanelShape
@@ -116,7 +120,6 @@ internal fun SettingsPage(
     onNotice: (String) -> Unit
 ) {
     val context = LocalContext.current
-    val uriHandler = LocalUriHandler.current
     val reports = remember(context) { LaunchReports(context) }
     val scope = rememberCoroutineScope()
     var updateStatus by remember { mutableStateOf<String?>(null) }
@@ -131,6 +134,48 @@ internal fun SettingsPage(
     var link by remember { mutableStateOf<String?>(null) }
     var refresh by remember { mutableIntStateOf(0) }
     var publishing by remember { mutableStateOf(false) }
+
+    var notificationsEnabled by remember { mutableStateOf(UpdateNotifications.enabled(context)) }
+    var pendingInstallUrl by rememberSaveable { mutableStateOf<String?>(null) }
+
+    fun install(url: String) {
+        progress = 0f
+        updateStatus = null
+        scope.launch {
+            updater.downloadAndInstall(url) { progress = it }
+                .onSuccess { updateStatus = "Confirma la instalación en Android." }
+                .onFailure { updateStatus = it.message ?: "No se pudo actualizar." }
+            progress = null
+        }
+    }
+
+    val installPermission = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        val url = pendingInstallUrl
+        pendingInstallUrl = null
+        if (url != null && updater.canInstall()) install(url)
+        else updateStatus = "Permite instalar apps de PRISSMA para continuar."
+    }
+
+    val notificationSettings = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        notificationsEnabled = UpdateNotifications.enabled(context)
+        if (notificationsEnabled) UpdateNotifications.schedule(context)
+    }
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        notificationsEnabled = UpdateNotifications.enabled(context)
+        if (granted) UpdateNotifications.schedule(context)
+        else onNotice("Puedes habilitar los avisos en los ajustes de Android.")
+    }
+
+    fun requestInstall(url: String) {
+        if (updater.canInstall()) install(url)
+        else {
+            pendingInstallUrl = url
+            runCatching { installPermission.launch(updater.installPermissionIntent()) }.onFailure {
+                pendingInstallUrl = null
+                updateStatus = "Abre los ajustes de Android y permite instalar apps de PRISSMA."
+            }
+        }
+    }
 
     LaunchedEffect(updater, previewRefresh) {
         checkingPreview = true
@@ -169,17 +214,19 @@ internal fun SettingsPage(
                 }
             }, icon = Icons.Default.Refresh, enabled = !checking && !checkingPreview && progress == null)
             update?.let { found ->
-                LauncherButton("Descargar " + found.versionTag, {
-                    progress = 0f
-                    scope.launch {
-                        updater.downloadAndInstall(found.apkDownloadUrl) { progress = it }
-                            .onFailure { updateStatus = it.message ?: "No se pudo actualizar." }
-                        progress = null
-                    }
-                }, primary = true, enabled = !checking && progress == null)
+                LauncherButton("Instalar " + found.versionTag, { requestInstall(found.apkDownloadUrl) },
+                    primary = true, enabled = !checking && progress == null)
                 Text(found.changelog.take(240), color = Prissma.colors.textMuted,
                     style = MaterialTheme.typography.bodySmall, maxLines = 5, overflow = TextOverflow.Ellipsis)
             }
+            LauncherButton(if (notificationsEnabled) "Gestionar avisos de Android" else "Activar avisos de actualización", {
+                if (!notificationsEnabled && Build.VERSION.SDK_INT >= 33) {
+                    notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                } else {
+                    notificationSettings.launch(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
+                }
+            })
             HorizontalDivider(color = Prissma.colors.borderSubtle)
             Text("Betas de prueba", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
             val availablePreview = preview
@@ -192,10 +239,8 @@ internal fun SettingsPage(
                 else -> {
                     Text("Las betas de prueba pueden requerir una instalación limpia si cambia la firma.",
                         color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
-                    LauncherButton("Abrir " + availablePreview.versionTag, {
-                        runCatching { uriHandler.openUri(availablePreview.apkDownloadUrl) }
-                            .onFailure { onNotice("No se pudo abrir la descarga de GitHub.") }
-                    })
+                    LauncherButton("Instalar " + availablePreview.versionTag,
+                        { requestInstall(availablePreview.apkDownloadUrl) }, enabled = progress == null)
                 }
             }
         }

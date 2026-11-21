@@ -5,6 +5,9 @@ import android.net.Uri
 import android.util.AtomicFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.CancellationException
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
 import org.json.JSONArray
@@ -28,6 +31,7 @@ class JavaRuntimeManager(private val context: Context) {
 
     companion object {
         const val DEFAULT_JRE21_URL = "AUTO"
+        private val installLock = Mutex()
 
         // Enlace directo verificado de OpenJDK 21 ARM64 para Android (39.4 MB)
         private const val DIRECT_JRE21_ARM64_URL =
@@ -118,28 +122,32 @@ class JavaRuntimeManager(private val context: Context) {
         downloadUrl: String,
         onProgress: (Float, String) -> Unit
     ): Result<InstalledJavaRuntime> = withContext(Dispatchers.IO) {
-        runCatching {
-            val (fileName, finalUrl) = if (downloadUrl == DEFAULT_JRE21_URL) {
-                onProgress(0.05f, "Conectando para descargar JRE 21 ARM64...")
-                "JRE-21.zip" to DIRECT_JRE21_ARM64_URL
-            } else {
-                downloadUrl.substringAfterLast('/') to downloadUrl.trim()
-            }
-
-            try {
-                downloadAndExtract(fileName, finalUrl, onProgress)
-            } catch (e: Exception) {
-                if (downloadUrl == DEFAULT_JRE21_URL) {
-                    onProgress(0.08f, "Buscando espejo alternativo de JRE 21 en GitHub...")
-                    val (fbName, fbUrl) = resolveFallbackJre21AssetUrl()
-                    downloadAndExtract(fbName, fbUrl, onProgress)
+        installLock.withLock {
+            runCatching {
+                getInstalledRuntime()?.let { return@runCatching it }
+                val (fileName, finalUrl) = if (downloadUrl == DEFAULT_JRE21_URL) {
+                    onProgress(0.05f, "Conectando para descargar JRE 21 ARM64...")
+                    "JRE-21.zip" to DIRECT_JRE21_ARM64_URL
                 } else {
-                    throw e
+                    downloadUrl.substringAfterLast('/') to downloadUrl.trim()
                 }
-            }
 
-            getInstalledRuntime()
-                ?: error("El paquete descargado no contiene libjvm.so para ARM64.")
+                try {
+                    downloadAndExtract(fileName, finalUrl, onProgress)
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    if (downloadUrl == DEFAULT_JRE21_URL) {
+                        onProgress(0.08f, "Buscando espejo alternativo de JRE 21 en GitHub...")
+                        val (fbName, fbUrl) = resolveFallbackJre21AssetUrl()
+                        downloadAndExtract(fbName, fbUrl, onProgress)
+                    } else {
+                        throw e
+                    }
+                }
+
+                getInstalledRuntime()
+                    ?: error("El paquete descargado no contiene libjvm.so para ARM64.")
+            }
         }
     }
 
@@ -174,17 +182,19 @@ class JavaRuntimeManager(private val context: Context) {
         uri: Uri,
         onProgress: (Float, String) -> Unit
     ): Result<InstalledJavaRuntime> = withContext(Dispatchers.IO) {
-        runCatching {
-            onProgress(0.05f, "Abriendo paquete JRE 21 seleccionado...")
-            val fileName = uri.lastPathSegment ?: "jre21.zip"
-            val stream = context.contentResolver.openInputStream(uri)
-                ?: error("No se pudo leer el archivo seleccionado.")
-            stream.use { rawIn ->
-                extractArchiveSafely(rawIn, fileName, -1L, onProgress)
-            }
+        installLock.withLock {
+            runCatching {
+                onProgress(0.05f, "Abriendo paquete JRE 21 seleccionado...")
+                val fileName = uri.lastPathSegment ?: "jre21.zip"
+                val stream = context.contentResolver.openInputStream(uri)
+                    ?: error("No se pudo leer el archivo seleccionado.")
+                stream.use { rawIn ->
+                    extractArchiveSafely(rawIn, fileName, -1L, onProgress)
+                }
 
-            getInstalledRuntime()
-                ?: error("El archivo seleccionado no contiene libjvm.so.")
+                getInstalledRuntime()
+                    ?: error("El archivo seleccionado no contiene libjvm.so.")
+            }
         }
     }
 
@@ -225,7 +235,7 @@ class JavaRuntimeManager(private val context: Context) {
                         var entry = zis.nextEntry
                         while (entry != null) {
                             val outFile = File(staging, entry.name)
-                            if (!outFile.canonicalPath.startsWith(canonicalStaging)) {
+                            if (!outFile.canonicalPath.startsWith(canonicalStaging + File.separator)) {
                                 error("Entrada inválida dentro del archivo ZIP.")
                             }
                             if (entry.isDirectory) {
@@ -279,7 +289,7 @@ class JavaRuntimeManager(private val context: Context) {
         var entry = tarIn.nextEntry
         while (entry != null) {
             val outFile = File(staging, entry.name)
-            if (!outFile.canonicalPath.startsWith(canonicalStaging)) {
+            if (!outFile.canonicalPath.startsWith(canonicalStaging + File.separator)) {
                 error("Entrada inválida dentro del archivo TAR.")
             }
             if (entry.isDirectory) {
@@ -318,29 +328,13 @@ class JavaRuntimeManager(private val context: Context) {
         return target
     }
 
-    suspend fun buildClasspath(instanceId: String, clientJarFile: File): String = withContext(Dispatchers.IO) {
-        val instanceRoot = File(context.filesDir, "instances/$instanceId")
-        val librariesDir = File(instanceRoot, "libraries")
-        val jars = mutableListOf<String>()
-
-        if (librariesDir.exists()) {
-            val lwjglDir = File(librariesDir, "org/lwjgl")
-            val androidModules = setOf("lwjgl", "lwjgl-opengl", "lwjgl-stb", "lwjgl-freetype", "lwjgl-tinyfd")
-                .map { "$it-$ANDROID_LWJGL_VERSION.jar" }.toSet()
-            librariesDir.walkTopDown()
-                .filter { it.isFile && it.extension == "jar" }
-                .filterNot { it.startsWith(lwjglDir) && it.name.contains("-$ANDROID_LWJGL_VERSION-natives-") }
-                .sortedBy { it.absolutePath }
-                .map { if (it.startsWith(lwjglDir) && it.name in androidModules) bundledLwjglJar(it.name) else it }
-                .forEach { jars.add(it.absolutePath) }
-        }
-        if (clientJarFile.exists()) {
-            jars.add(clientJarFile.absolutePath)
-        }
-
-        jars
-            .distinctBy { File(it).name }
-            .joinToString(File.pathSeparator)
+    internal suspend fun buildClasspath(game: PreparedJavaGame): String = withContext(Dispatchers.IO) {
+        val bundled = setOf("lwjgl", "lwjgl-opengl", "lwjgl-stb", "lwjgl-freetype", "lwjgl-tinyfd")
+            .map { "$it-$ANDROID_LWJGL_VERSION.jar" }.toSet()
+        val jars = game.libraries.map { file ->
+            if (file.name in bundled) bundledLwjglJar(file.name) else file
+        } + game.clientJar
+        jars.distinctBy { it.name }.joinToString(File.pathSeparator) { it.absolutePath }
     }
 
     fun buildMinecraftArgs(

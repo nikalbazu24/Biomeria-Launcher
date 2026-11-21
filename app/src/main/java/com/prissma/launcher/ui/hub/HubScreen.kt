@@ -37,6 +37,8 @@ import com.prissma.launcher.data.GameInstance
 import com.prissma.launcher.data.InstanceStorage
 import com.prissma.launcher.data.LibraryPreferences
 import com.prissma.launcher.data.UpdateInfo
+import com.prissma.launcher.engine.java.GameDownloads
+import com.prissma.launcher.engine.java.MojangDownloader
 import com.prissma.launcher.ui.components.ControlShape
 import com.prissma.launcher.ui.components.LauncherButton
 import com.prissma.launcher.ui.components.PrissmaMark
@@ -45,6 +47,8 @@ import com.prissma.launcher.ui.launch.JavaLaunchScreen
 import com.prissma.launcher.ui.theme.Prissma
 import com.prissma.launcher.ui.workshop.ContentWorkshopScreen
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private enum class HubPage(val label: String, val icon: ImageVector) {
     LIBRARY("Biblioteca", Icons.Default.Home),
@@ -56,11 +60,13 @@ private enum class HubPage(val label: String, val icon: ImageVector) {
 @Composable
 fun HubScreen(
     externalLaunchInstanceId: String? = null,
+    updateSettingsRequest: Int = 0,
     sourceFrontendPackage: String? = null,
     onConsumeExternalLaunch: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val storage = remember(context) { InstanceStorage(context) }
+    val downloads = remember(context) { GameDownloads(context) }
     val preferences = remember(context) { LibraryPreferences(context) }
     val updater = remember(context) { AppUpdater(context) }
     val version = remember(updater) { updater.getCurrentVersionName() }
@@ -116,6 +122,18 @@ fun HubScreen(
         launchingId = instance.id
     }
 
+    LaunchedEffect(updateSettingsRequest) {
+        if (updateSettingsRequest != 0) {
+            launchingId = null
+            page = HubPage.SETTINGS
+        }
+    }
+    LaunchedEffect(downloads) {
+        val sample = instances.firstOrNull { it.id == "survival-mods-java" }
+        if (sample != null && withContext(Dispatchers.IO) {
+            MojangDownloader(context).prepared(sample.id, sample.version, sample.loader) == null
+        }) downloads.game(sample)
+    }
     LaunchedEffect(updater) { update = updater.checkForUpdate().getOrNull() }
     LaunchedEffect(externalLaunchInstanceId) {
         val id = externalLaunchInstanceId ?: return@LaunchedEffect
@@ -216,9 +234,10 @@ fun HubScreen(
             .onFailure { notify("No se pudo guardar el perfil.") }
     }
 
-    if (showNew) InstanceEditor(onDismiss = { showNew = false }) { title, engine, gameVersion ->
-        val item = GameInstance(title = title, engine = engine, version = gameVersion, loader = engine.defaultLoader)
+    if (showNew) InstanceEditor(onDismiss = { showNew = false }) { title, engine, gameVersion, loader ->
+        val item = GameInstance(title = title, engine = engine, version = gameVersion, loader = loader)
         if (saveCatalog(listOf(item) + instances)) {
+            if (item.engine.canLaunch) downloads.game(item)
             selectedId = item.id
             filter = null
             query = ""
@@ -233,8 +252,10 @@ fun HubScreen(
             instance = item,
             onDismiss = { editingId = null },
             onRemove = { deleteId = item.id; editingId = null }
-        ) { title, _, _ ->
-            if (saveCatalog(instances.map { if (it.id == item.id) it.copy(title = title) else it })) {
+        ) { title, _, _, loader ->
+            val edited = item.copy(title = title, loader = loader)
+            if (saveCatalog(instances.map { if (it.id == item.id) edited else it })) {
+                if (edited.engine.canLaunch && edited.loader != item.loader) downloads.game(edited)
                 editingId = null
                 query = ""
             }

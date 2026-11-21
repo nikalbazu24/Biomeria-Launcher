@@ -5,9 +5,15 @@ import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Build
+import android.net.Uri
+import android.provider.Settings
 import androidx.core.content.pm.PackageInfoCompat
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -34,6 +40,8 @@ class AppUpdater(private val context: Context) {
 
     companion object {
         private const val REPO = "nikalbazu24/Prissma-Launcher"
+        private val installerLock = Mutex()
+        private const val DOWNLOAD_PREFIX = "https://github.com/$REPO/releases/download/"
         private const val RELEASES_API = "https://api.github.com/repos/$REPO/releases"
     }
 
@@ -94,18 +102,35 @@ class AppUpdater(private val context: Context) {
             .map(assets::getJSONObject)
             .filter { it.optString("name").endsWith(".apk", ignoreCase = true) }
             .map { it.optString("browser_download_url") }
-            .firstOrNull { it.startsWith("https://github.com/$REPO/releases/download/") }
+            .firstOrNull { it.startsWith(DOWNLOAD_PREFIX) }
             ?: return null
         return UpdateInfo(tag, json.optString("body", "Nueva actualización disponible."), apkUrl)
     }
+
+    fun canInstall() = context.packageManager.canRequestPackageInstalls()
+
+    fun installPermissionIntent() = Intent(
+        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + context.packageName)
+    )
 
     suspend fun downloadAndInstall(
         apkUrl: String,
         onProgress: (Float) -> Unit
     ): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
-            val apkFile = File(context.cacheDir, "prissma_update.apk")
-            if (apkFile.exists()) apkFile.delete()
+        installerLock.withLock {
+            runCatching { download(apkUrl, onProgress) }
+        }
+    }
+
+    private suspend fun download(apkUrl: String, onProgress: (Float) -> Unit) {
+        require(apkUrl.startsWith(DOWNLOAD_PREFIX)) { "Origen de actualización inválido." }
+        check(canInstall()) { "Permite instalar apps de PRISSMA para continuar." }
+        val directory = File(context.cacheDir, "updates").apply { mkdirs() }
+        directory.listFiles()?.filter { it.lastModified() < System.currentTimeMillis() - 86_400_000 }
+            ?.forEach { it.delete() }
+        val apkFile = File.createTempFile("prissma-", ".apk", directory)
+        var installOpened = false
+        try {
 
             val conn = (URL(apkUrl).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
@@ -121,15 +146,22 @@ class AppUpdater(private val context: Context) {
                 }
                 val totalBytes = conn.contentLengthLong.coerceAtLeast(1L)
                 var downloaded = 0L
+                var lastPercentage = -1
+                val current = currentCoroutineContext()
                 val buffer = ByteArray(8192)
 
                 conn.inputStream.use { input ->
                     FileOutputStream(apkFile).use { output ->
                         var read = input.read(buffer)
                         while (read != -1) {
+                            current.ensureActive()
                             output.write(buffer, 0, read)
                             downloaded += read
-                            onProgress((downloaded.toFloat() / totalBytes).coerceIn(0f, 1f))
+                            val percentage = (downloaded * 100L / totalBytes).coerceIn(0, 100).toInt()
+                            if (percentage != lastPercentage) {
+                                lastPercentage = percentage
+                                onProgress(percentage / 100f)
+                            }
                             read = input.read(buffer)
                         }
                     }
@@ -138,12 +170,7 @@ class AppUpdater(private val context: Context) {
                 conn.disconnect()
             }
 
-            try {
-                verifyUpdate(apkFile)
-            } catch (error: Exception) {
-                apkFile.delete()
-                throw error
-            }
+            verifyUpdate(apkFile)
 
             withContext(Dispatchers.Main) {
                 val uri = FileProvider.getUriForFile(
@@ -156,7 +183,10 @@ class AppUpdater(private val context: Context) {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
                 }
                 context.startActivity(installIntent)
+                installOpened = true
             }
+        } finally {
+            if (!installOpened) apkFile.delete()
         }
     }
 
@@ -179,7 +209,7 @@ class AppUpdater(private val context: Context) {
         }
         val installedSigners = signingCertificates(installed)
         check(installedSigners.isNotEmpty() && installedSigners == signingCertificates(candidate)) {
-            "El certificado del APK es distinto al de esta instalación. Se requiere una versión con la misma firma."
+            "Esta instalación tiene otra firma. Respalda tus mundos antes de migrar a la APK con firma persistente."
         }
     }
 

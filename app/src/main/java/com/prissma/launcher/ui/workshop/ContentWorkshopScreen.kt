@@ -27,12 +27,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.work.WorkInfo
 import coil.compose.AsyncImage
 import com.prissma.launcher.data.GameInstance
 import com.prissma.launcher.data.InstalledFileItem
 import com.prissma.launcher.data.ModrinthItem
 import com.prissma.launcher.data.ModrinthRepository
 import com.prissma.launcher.data.WorkshopCategory
+import com.prissma.launcher.engine.java.DOWNLOAD_MESSAGE
+import com.prissma.launcher.engine.java.GameDownloads
 import com.prissma.launcher.ui.components.ControlShape
 import com.prissma.launcher.ui.components.LauncherButton
 import com.prissma.launcher.ui.components.PageHeader
@@ -56,6 +59,10 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
     val context = LocalContext.current
     val repository = remember(context) { ModrinthRepository(context) }
     val scope = rememberCoroutineScope()
+    val downloads = remember(context) { GameDownloads(context) }
+    val jobs by remember(downloads, instance.id) { downloads.mods(instance) }.collectAsState(emptyList())
+    val queued = jobs.filter { !it.state.isFinished }.flatMap { it.tags }.toSet()
+    val finished = jobs.filter { it.state.isFinished }.map { it.id }
     val focus = LocalFocusManager.current
     val loader = instance.configuredModLoader
 
@@ -68,7 +75,7 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
     var results by remember { mutableStateOf<List<ModrinthItem>>(emptyList()) }
     var installed by remember { mutableStateOf<List<InstalledFileItem>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
-    var savingId by remember { mutableStateOf<String?>(null) }
+    var showTutorial by rememberSaveable { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     var confirmRemoval by remember { mutableStateOf<InstalledFileItem?>(null) }
 
@@ -78,11 +85,11 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
         reload += 1
     }
 
-    LaunchedEffect(tab, submitted, reload, instance.id) {
+    LaunchedEffect(tab, submitted, reload, instance) {
         status = null
         val category = tab.category
         if (category == null) {
-            installed = withContext(Dispatchers.IO) { repository.getInstalledFiles(instance.id) }
+            installed = withContext(Dispatchers.IO) { repository.getInstalledFiles(instance.id, instance.version, loader) }
             loading = false
         } else {
             results = emptyList()
@@ -91,6 +98,12 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
                 .onSuccess { results = it }
                 .onFailure { status = it.message ?: "No se pudo consultar Modrinth." }
             loading = false
+        }
+    }
+
+    LaunchedEffect(finished, tab) {
+        if (tab == WorkshopTab.INSTALLED) {
+            installed = withContext(Dispatchers.IO) { repository.getInstalledFiles(instance.id, instance.version, loader) }
         }
     }
 
@@ -117,6 +130,7 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
                 val choose = { tab = it }
                 FilterChip(tab == it, choose, { Text(it.label) }, modifier = Modifier.gamepadClick(onClick = choose))
             }
+            LauncherButton("Cómo agregar mods", { showTutorial = true })
         }
         if (tab.category != null) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -129,13 +143,18 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
             }
             if (tab == WorkshopTab.MODS) {
                 Text(
-                    if (loader == null) "Los mods requieren un cargador configurado."
-                    else "Archivos para " + loader + ". El arranque integrado aún usa Minecraft vanilla.",
+                    if (loader != "fabric") "Elige Fabric al crear o gestionar la instancia para instalar mods."
+                    else "Los resultados se filtran por Minecraft " + instance.version + " y Fabric.",
                     style = MaterialTheme.typography.bodySmall, color = Prissma.colors.textMuted
                 )
             }
         }
         status?.let { Text(it, color = Prissma.colors.netP2P, style = MaterialTheme.typography.bodySmall) }
+        jobs.lastOrNull { it.state == WorkInfo.State.FAILED }?.outputData?.let { failure ->
+            Text(listOfNotNull(failure.getString("title"), failure.getString(DOWNLOAD_MESSAGE)).joinToString(" · "),
+                color = Prissma.colors.error, style = MaterialTheme.typography.bodySmall,
+                maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
 
         when {
             loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -153,7 +172,10 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
                         Text(it.fileName, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
                         Text(it.categoryLabel + " · " + it.sizeKb + " KB", color = Prissma.colors.textMuted,
                             style = MaterialTheme.typography.bodySmall)
-                        LauncherButton("Quitar archivo", { confirmRemoval = it })
+                        it.compatibility?.let { note ->
+                            Text(note, style = MaterialTheme.typography.bodySmall, color = Prissma.colors.textMuted)
+                        }
+                        LauncherButton("Quitar archivo", { confirmRemoval = it }, enabled = queued.isEmpty())
                     }
                 }
             }
@@ -164,23 +186,31 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
             ) {
                 items(results, key = { it.projectId }) { item ->
                     ProjectCard(
-                        item, downloading = savingId == item.projectId,
-                        enabled = savingId == null && (item.category != WorkshopCategory.MODS || loader != null)
+                        item, downloading = item.projectId in queued,
+                        enabled = item.projectId !in queued && (item.category != WorkshopCategory.MODS || loader == "fabric")
                     ) {
-                        savingId = item.projectId
-                        scope.launch {
-                            repository.downloadAndInstall(item, instance.id, instance.version, loader)
-                                .onSuccess { status = "Guardado: " + it.name }
-                                .onFailure { status = it.message ?: "No se pudo guardar el archivo." }
-                            savingId = null
-                            if (tab == WorkshopTab.INSTALLED) {
-                                installed = withContext(Dispatchers.IO) { repository.getInstalledFiles(instance.id) }
-                            }
-                        }
+                        downloads.mod(instance, item.projectId, item.title, item.category)
+                        status = "Descarga en segundo plano · " + item.title
                     }
                 }
             }
         }
+    }
+
+    if (showTutorial) {
+        AlertDialog(
+            onDismissRequest = { showTutorial = false },
+            title = { Text("Agregar mods") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("1. Crea una instancia Java, elige la versión de Minecraft y selecciona Fabric.")
+                    Text("2. Abre el Taller de esa instancia, entra en Mods y busca lo que quieres instalar.")
+                    Text("3. Pulsa Descargar. PRISSMA comprueba la versión, el cargador y las dependencias obligatorias.")
+                    Text("4. Revisa los archivos en Guardados. Cuando termine la descarga, vuelve a la instancia y pulsa Jugar.")
+                }
+            },
+            confirmButton = { LauncherButton("Entendido", { showTutorial = false }, primary = true) }
+        )
     }
 
     confirmRemoval?.let { target ->
@@ -193,7 +223,7 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
                 confirmRemoval = null
                 scope.launch {
                     val removed = withContext(Dispatchers.IO) { repository.deleteInstalledFile(target) }
-                    installed = withContext(Dispatchers.IO) { repository.getInstalledFiles(instance.id) }
+                    installed = withContext(Dispatchers.IO) { repository.getInstalledFiles(instance.id, instance.version, loader) }
                     status = if (removed) "Archivo quitado." else "No se pudo quitar el archivo."
                 }
             }) }
@@ -218,7 +248,7 @@ private fun ProjectCard(item: ModrinthItem, downloading: Boolean, enabled: Boole
         }
         Text(item.description, minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis,
             style = MaterialTheme.typography.bodySmall, color = Prissma.colors.textMuted)
-        LauncherButton(if (downloading) "Guardando…" else "Guardar", onSave, enabled = enabled)
+        LauncherButton(if (downloading) "En cola o descargando…" else "Descargar", onSave, enabled = enabled)
     }
 }
 
