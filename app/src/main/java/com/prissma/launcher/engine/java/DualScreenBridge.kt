@@ -8,7 +8,7 @@ import java.nio.file.StandardCopyOption
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
 
-internal const val DUAL_SNAPSHOT_MAGIC = 0x50525333
+internal const val DUAL_SNAPSHOT_MAGIC = 0x50525334
 internal const val DUAL_INVENTORY_SLOTS = 46
 internal const val DUAL_MAP_SIZE = 128
 internal const val DUAL_SCREEN_MOD = "DUAL_SCREEN_MOD"
@@ -39,6 +39,7 @@ internal enum class PanelLayout(val craftSize: Int, val inventoryStart: Int, val
         PanelCommand.SELECT_HOTBAR -> this == PERSONAL && slot in 0..8
         PanelCommand.CLOSE_TABLE -> this == CRAFTING_TABLE && slot == 0
         PanelCommand.OPEN_XAERO -> this == PERSONAL && slot == 0
+        PanelCommand.INSPECT_RECIPE, PanelCommand.PLACE_RECIPE -> this == CRAFTING_TABLE && slot >= 0
     }
 }
 
@@ -57,12 +58,13 @@ internal data class PanelInventory(
     val mapRevision: Int,
     val xaeroWorldMap: Boolean,
     val xaeroMinimap: Boolean,
-    val waypoints: List<PanelWaypoint>
+    val waypoints: List<PanelWaypoint>,
+    val recipeBookAvailable: Boolean
 )
 
 internal enum class PanelCommand(val wireName: String) {
     PICK("pick"), SPLIT("split"), QUICK_MOVE("quick"), SELECT_HOTBAR("hotbar"),
-    CLOSE_TABLE("close"), OPEN_XAERO("xaero")
+    CLOSE_TABLE("close"), OPEN_XAERO("xaero"), INSPECT_RECIPE("inspect"), PLACE_RECIPE("recipe")
 }
 
 internal class DualScreenBridge(val directory: File) {
@@ -95,6 +97,8 @@ internal class DualScreenBridge(val directory: File) {
         val now = readInventory() ?: return false
         if (!now.interactive || now.generation != inventory.generation || now.layout != inventory.layout) return false
         if (command == PanelCommand.OPEN_XAERO && !now.xaeroWorldMap) return false
+        if (command == PanelCommand.INSPECT_RECIPE && !now.recipeBookAvailable) return false
+        if (command == PanelCommand.PLACE_RECIPE && (!now.recipeBookAvailable || now.held.count != 0)) return false
         if (inventory.layout == PanelLayout.CRAFTING_TABLE && !File(directory, "crafting").isFile) return false
         val target = File(directory, String.format(Locale.ROOT, "command-%012d", sequence.incrementAndGet()))
         val staged = File(directory, target.name + ".part")
@@ -109,13 +113,17 @@ internal class DualScreenBridge(val directory: File) {
         }
     }
 
-    fun routeCrafting(generation: Long?) {
-        val marker = File(directory, "crafting")
+    fun routeCrafting(generation: Long?) = setGenerationMarker("crafting", generation)
+
+    fun viewRecipes(generation: Long?) = setGenerationMarker("recipes-open", generation)
+
+    private fun setGenerationMarker(name: String, generation: Long?) {
+        val marker = File(directory, name)
         if (generation == null) {
             marker.delete()
             return
         }
-        val staged = File(directory, "crafting.part")
+        val staged = File(directory, "$name.part")
         try {
             staged.writeText(generation.toString(), Charsets.US_ASCII)
             Files.move(staged.toPath(), marker.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
@@ -137,6 +145,7 @@ internal class DualScreenBridge(val directory: File) {
         } else {
             marker.delete()
             routeCrafting(null)
+            viewRecipes(null)
             directory.listFiles()?.filter { it.name.startsWith("command-") }?.forEach { it.delete() }
         }
     }
@@ -177,6 +186,7 @@ internal fun decodePanelInventory(input: DataInputStream): PanelInventory? {
     val waypointCount = input.readUnsignedByte()
     if (waypointCount > 24 || !xaeroMinimap && waypointCount > 0) return null
     val waypoints = List(waypointCount) { PanelWaypoint(label(), input.readInt(), input.readInt(), input.readInt()) }
+    val recipeBookAvailable = input.readBoolean() && layout == PanelLayout.CRAFTING_TABLE
     return PanelInventory(generation, interactive, layout, selected, kotlin.math.floor(x).toInt(), kotlin.math.floor(y).toInt(),
-        kotlin.math.floor(z).toInt(), held, slots, mapRevision, xaeroWorldMap, xaeroMinimap, waypoints)
+        kotlin.math.floor(z).toInt(), held, slots, mapRevision, xaeroWorldMap, xaeroMinimap, waypoints, recipeBookAvailable)
 }

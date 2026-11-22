@@ -39,8 +39,36 @@ class DualScreenBridgeTest {
         assertNull(bridge.readInventory(writeSnapshot(bridge.directory, ready = false)))
         assertNull(bridge.readInventory(writeSnapshot(bridge.directory, magic = 0)))
         val snapshot = File(bridge.directory, "snapshot")
-        snapshot.writeBytes(byteArrayOf(0x50, 0x52, 0x53, 0x33))
+        snapshot.writeBytes(byteArrayOf(0x50, 0x52, 0x53, 0x34))
         assertNull(bridge.readInventory(snapshot.lastModified()))
+    }
+
+    @Test
+    fun recipeCommandsRequireTheLiveCraftingTableAndAnEmptyCursorForPlacement() {
+        val bridge = DualScreenBridge.create(temporary.root)
+        bridge.visibility(true)
+        val personal = requireNotNull(bridge.readInventory(writeSnapshot(bridge.directory, recipeBookAvailable = true)))
+        assertFalse(personal.recipeBookAvailable)
+        assertFalse(bridge.send(personal, PanelCommand.PLACE_RECIPE, 501))
+
+        val table = requireNotNull(bridge.readInventory(writeSnapshot(
+            bridge.directory, generation = 8, layout = PanelLayout.CRAFTING_TABLE, recipeBookAvailable = true
+        )))
+        assertTrue(table.recipeBookAvailable)
+        assertFalse(bridge.send(table, PanelCommand.INSPECT_RECIPE, 501))
+        bridge.routeCrafting(8)
+        bridge.viewRecipes(8)
+        assertEquals("8", File(bridge.directory, "recipes-open").readText())
+        assertTrue(bridge.send(table, PanelCommand.INSPECT_RECIPE, 501))
+        assertFalse(bridge.send(table, PanelCommand.PLACE_RECIPE, 501))
+        assertFalse(bridge.send(table, PanelCommand.INSPECT_RECIPE, -1))
+        writeSnapshot(bridge.directory, generation = 8, layout = PanelLayout.CRAFTING_TABLE,
+            recipeBookAvailable = true, heldCount = 0)
+        assertTrue(bridge.send(table, PanelCommand.PLACE_RECIPE, 501))
+        assertEquals("8 recipe 501", File(bridge.directory, "command-000000000002").readText())
+
+        bridge.visibility(false)
+        assertFalse(File(bridge.directory, "recipes-open").exists())
     }
 
     @Test
@@ -151,7 +179,9 @@ class DualScreenBridgeTest {
         layout: PanelLayout = PanelLayout.PERSONAL,
         xaeroWorldMap: Boolean = false,
         xaeroMinimap: Boolean = false,
-        waypoints: List<PanelWaypoint> = emptyList()
+        waypoints: List<PanelWaypoint> = emptyList(),
+        recipeBookAvailable: Boolean = false,
+        heldCount: Int = 8
     ): Long {
         val file = File(dir, "snapshot")
         DataOutputStream(file.outputStream()).use { out ->
@@ -165,7 +195,7 @@ class DualScreenBridgeTest {
             out.writeDouble(64.1)
             out.writeDouble(91.0)
             out.writeUTF("Roble")
-            out.writeInt(8)
+            out.writeInt(heldCount)
             out.writeUTF("Tablones")
             out.writeInt(4)
             repeat(45) {
@@ -182,6 +212,7 @@ class DualScreenBridgeTest {
                 out.writeInt(mark.y)
                 out.writeInt(mark.z)
             }
+            out.writeBoolean(recipeBookAvailable)
         }
         return file.lastModified()
     }

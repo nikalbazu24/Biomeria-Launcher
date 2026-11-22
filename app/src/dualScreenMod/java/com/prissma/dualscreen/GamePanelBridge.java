@@ -15,7 +15,7 @@ import java.util.stream.Stream;
 
 /** Runs at the tail of the Fabric client tick so inventory changes follow Minecraft's own protocol. */
 public final class GamePanelBridge {
-    private static final int MAGIC = 0x50525333;
+    private static final int MAGIC = 0x50525334;
     private static final int SLOTS = 46;
     private static final int MAP_PIXELS = 128 * 128;
     private static final String SESSION = System.getProperty("prissma.dualscreen.session", "");
@@ -30,6 +30,7 @@ public final class GamePanelBridge {
     private static Object clientInstance;
     private static Object routedCraftingScreen;
     private static XaeroPanel xaero;
+    private static RecipeBookPanel recipeBook;
     private static byte[] previousMap;
     private static int mapRevision;
     private static int writtenMapRevision = -1;
@@ -50,6 +51,11 @@ public final class GamePanelBridge {
                 ClassLoader loader = client.getClass().getClassLoader();
                 game = new Access(loader);
                 xaero = new XaeroPanel(loader);
+                try {
+                    recipeBook = new RecipeBookPanel(loader);
+                } catch (ReflectiveOperationException | LinkageError error) {
+                    disableRecipeBook(error);
+                }
                 clientInstance = client;
             }
             Object player = game.player.get(client);
@@ -76,12 +82,21 @@ public final class GamePanelBridge {
             boolean canUse = world != null && handler != null && interactions != null
                     && (table || (screen == null && active == personal))
                     && !(boolean) game.spectator.invoke(player);
-            routedCraftingScreen = canUse && table && requestedCrafting(root) ? screen : null;
-            if (consumeRequests(root, player, handler, interactions, canUse, table, screen)) {
+            routedCraftingScreen = canUse && table && hasGenerationMarker(root.resolve("crafting")) ? screen : null;
+            if (consumeRequests(root, player, world, handler, interactions, canUse, table, screen)) {
                 routedCraftingScreen = null;
                 return;
             }
-            if (ticks % SNAPSHOT_TICKS == 0) publishSnapshot(root, player, world, handler, canUse, table);
+            if (ticks % SNAPSHOT_TICKS == 0) {
+                if (recipeBook != null && routedCraftingScreen != null && hasGenerationMarker(root.resolve("recipes-open"))) {
+                    try {
+                        recipeBook.publish(root.resolve("recipes"), generation, player, world, handler);
+                    } catch (ReflectiveOperationException | LinkageError error) {
+                        disableRecipeBook(error);
+                    }
+                }
+                publishSnapshot(root, player, world, handler, canUse, table);
+            }
         } catch (ReflectiveOperationException | LinkageError error) {
             disabled = true;
             routedCraftingScreen = null;
@@ -91,14 +106,18 @@ public final class GamePanelBridge {
         }
     }
 
-    private static boolean requestedCrafting(Path root) {
-        Path marker = root.resolve("crafting");
+    private static boolean hasGenerationMarker(Path marker) {
         try {
             return Files.isRegularFile(marker) && Files.size(marker) <= 20
                     && Files.readString(marker, StandardCharsets.US_ASCII).equals(Long.toString(generation));
         } catch (IOException ignored) {
             return false;
         }
+    }
+
+    private static void disableRecipeBook(Throwable error) {
+        recipeBook = null;
+        System.err.println("[PRISSMA] Libro de recetas no disponible: " + error.getClass().getSimpleName() + ": " + error.getMessage());
     }
 
     public static boolean hidesCrafting(Object screen) {
@@ -114,7 +133,7 @@ public final class GamePanelBridge {
         }
     }
 
-    private static boolean consumeRequests(Path root, Object player, Object handler, Object interactions,
+    private static boolean consumeRequests(Path root, Object player, Object world, Object handler, Object interactions,
                                            boolean canUse, boolean table, Object screen)
             throws IOException, ReflectiveOperationException {
         List<Path> requests;
@@ -146,6 +165,18 @@ public final class GamePanelBridge {
                     }
                     case "xaero" -> {
                         if (!table && slot == 0 && xaero.openWorldMap()) return true;
+                    }
+                    case "inspect", "recipe" -> {
+                        if (!table || recipeBook == null || slot < 0) continue;
+                        if (parts[1].equals("inspect")) {
+                            recipeBook.inspect(slot);
+                        } else if ((boolean) game.empty.invoke(game.cursorStack.invoke(handler))) {
+                            try {
+                                recipeBook.place(generation, slot, player, world, handler, interactions, game.syncId.getInt(handler));
+                            } catch (ReflectiveOperationException | LinkageError error) {
+                                disableRecipeBook(error);
+                            }
+                        }
                     }
                     default -> { }
                 }
@@ -185,6 +216,7 @@ public final class GamePanelBridge {
                 for (int i = 0; i < SLOTS; i++) writeStack(data, i < slots.size() ? game.slotStack.invoke(slots.get(i)) : null);
                 data.writeInt(publishHeldMap(root, player, world));
                 xaero.write(data);
+                data.writeBoolean(table && recipeBook != null);
             }
         }
         byte[] snapshot = bytes.toByteArray();
@@ -234,7 +266,7 @@ public final class GamePanelBridge {
         return mapId == null ? null : game.mapState.invoke(null, mapId, world);
     }
 
-    private static void writeAtomically(Path target, byte[] data) throws IOException {
+    static void writeAtomically(Path target, byte[] data) throws IOException {
         Path part = target.resolveSibling(target.getFileName() + ".part");
         Files.write(part, data);
         Files.move(part, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);

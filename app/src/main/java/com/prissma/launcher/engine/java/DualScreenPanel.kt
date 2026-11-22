@@ -152,6 +152,7 @@ private fun DualScreenPanel(
     val live = inventory
     val table = live?.layout == PanelLayout.CRAFTING_TABLE
     val tableSession = live?.generation?.takeIf { hud.routeCrafting && table }
+    var showRecipes by remember(tableSession) { mutableStateOf(false) }
     LaunchedEffect(tableSession) {
         if (tableSession != null) {
             if (page != PanelPage.CRAFT) returnPage = page
@@ -194,6 +195,10 @@ private fun DualScreenPanel(
             }
         }
         HorizontalDivider(color = Prissma.colors.borderSubtle)
+        if (showRecipes && routed != null && bridge != null && live?.recipeBookAvailable == true) {
+            RecipeBookPane(bridge, live, onBack = { showRecipes = false }, modifier = Modifier.weight(1f).fillMaxWidth())
+            return@Column
+        }
         Column(
             Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -248,10 +253,13 @@ private fun DualScreenPanel(
                         if (live.held.count > 0) Text("En cursor · ${live.held.name} ×${live.held.count}")
                     }
                     if (page == PanelPage.CRAFT) {
-                        if (table) OutlinedButton(
-                            onClick = { bridge.send(live, PanelCommand.CLOSE_TABLE) },
-                            enabled = interactive
-                        ) { Text("Cerrar mesa") }
+                        if (table) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { bridge.send(live, PanelCommand.CLOSE_TABLE) },
+                                enabled = interactive) { Text("Cerrar mesa") }
+                            if (live.recipeBookAvailable) OutlinedButton(
+                                onClick = { showRecipes = true }, enabled = interactive
+                            ) { Text("Recetas") }
+                        }
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column {
                                 val side = live.layout.craftSize

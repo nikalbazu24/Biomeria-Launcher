@@ -140,7 +140,8 @@ jobs:
               bridge_path = "com/prissma/dualscreen/GamePanelBridge"
               assert not bridge_path.startswith(mixin_package + "/")
               for entry in [mixin_package + "/" + name for name in expected_mixins] + [
-                  bridge_path, bridge_path + "$Access", "com/prissma/dualscreen/XaeroPanel"
+                  bridge_path, bridge_path + "$Access", "com/prissma/dualscreen/XaeroPanel",
+                  "com/prissma/dualscreen/RecipeBookPanel"
               ]:
                   assert mod.read(entry + ".class").startswith(bytes.fromhex("CAFEBABE"))
           PY
