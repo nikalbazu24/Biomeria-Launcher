@@ -22,6 +22,7 @@ import com.prissma.launcher.data.EngineType
 import com.prissma.launcher.data.GameInstance
 import com.prissma.launcher.data.InstanceStorage
 import com.prissma.launcher.data.ModrinthRepository
+import com.prissma.launcher.data.ModpackImports
 import com.prissma.launcher.data.WorkshopCategory
 import com.prissma.launcher.data.WorkshopInstallStage
 import com.prissma.launcher.data.shouldRetryWorkshopDownload
@@ -44,6 +45,7 @@ internal const val WORKSHOP_INSTANCE_TAG = "workshop-"
 internal const val WORKSHOP_CATEGORY_TAG = "workshop-category:"
 internal const val WORKSHOP_PLAN_TAG = "workshop-plan:"
 internal const val WORKSHOP_REQUEST_TAG = "workshop-request:"
+internal const val MODPACK_IMPORT_TAG = "modpack-import"
 private const val ALL_WORKSHOP_DOWNLOADS = "workshop-content-downloads"
 
 internal class GameDownloads(private val context: Context) {
@@ -58,6 +60,20 @@ internal class GameDownloads(private val context: Context) {
 
     fun game(instance: GameInstance) {
         enqueue(key(instance), "Minecraft " + instance.version, "game", instance.id, instance.version, instance.loader)
+    }
+
+    fun importModpack(instance: GameInstance) {
+        work.enqueueUniqueWork("$MODPACK_IMPORT_TAG-${instance.id}", ExistingWorkPolicy.KEEP,
+            OneTimeWorkRequestBuilder<GameDownloadWorker>()
+                .setInputData(workDataOf(
+                    "kind" to MODPACK_IMPORT_TAG, "id" to instance.id, "title" to instance.title,
+                    "version" to instance.version, "loader" to instance.loader
+                ))
+                .setConstraints(network)
+                .addTag(ALL_WORKSHOP_DOWNLOADS)
+                .addTag(MODPACK_IMPORT_TAG)
+                .addTag(WORKSHOP_TITLE_TAG + instance.title)
+                .build())
     }
 
     fun mod(instance: GameInstance, projectId: String, title: String, category: WorkshopCategory, pins: String = "") {
@@ -103,7 +119,11 @@ class GameDownloadWorker(context: Context, parameters: WorkerParameters) : Corou
     override suspend fun doWork(): Result = coroutineScope {
         val updates = Channel<DownloadUpdate>(Channel.CONFLATED)
         val title = inputData.getString("title").orEmpty()
-        val isWorkshop = inputData.getString("kind") == "content"
+        val kind = inputData.getString("kind")
+        val isWorkshop = kind == "content"
+        val id = inputData.getString("id").orEmpty()
+        val version = inputData.getString("version").orEmpty()
+        val loader = inputData.getString("loader").orEmpty()
         val background = try {
             setForeground(foreground(title, DownloadUpdate(-1,
                 if (isWorkshop) "Esperando turno de instalación" else "Preparando descarga")))
@@ -127,10 +147,7 @@ class GameDownloadWorker(context: Context, parameters: WorkerParameters) : Corou
         }
         val context = applicationContext
         try {
-            val id = inputData.getString("id").orEmpty()
-            val version = inputData.getString("version").orEmpty()
-            val loader = inputData.getString("loader").orEmpty()
-            val message = when (inputData.getString("kind")) {
+            val message = when (kind) {
                 "runtime" -> {
                     val runtimes = JavaRuntimeManager(context)
                     runtimes.installFromUrl(JavaRuntimeManager.DEFAULT_JRE21_URL, progress).getOrThrow()
@@ -139,6 +156,12 @@ class GameDownloadWorker(context: Context, parameters: WorkerParameters) : Corou
                 "game" -> {
                     MojangDownloader(context).prepare(id, version, loader, progress)
                     "Minecraft $version listo"
+                }
+                MODPACK_IMPORT_TAG -> {
+                    val imports = ModpackImports(context)
+                    imports.install(GameInstance(id, title, EngineType.JAVA, version, loader), progress)
+                    imports.removeArchive(id)
+                    "Modpack listo en la biblioteca"
                 }
                 "content" -> {
                     val project = inputData.getString("projectId").orEmpty()
@@ -171,14 +194,18 @@ class GameDownloadWorker(context: Context, parameters: WorkerParameters) : Corou
                 }
                 else -> error("Tarea de descarga inválida.")
             }
-            Result.success(workDataOf(DOWNLOAD_MESSAGE to message, "title" to title))
+            Result.success(workDataOf(DOWNLOAD_MESSAGE to message, "title" to title, "id" to id,
+                "version" to version, "loader" to loader))
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
             val retry = if (isWorkshop) shouldRetryWorkshopDownload(error, runAttemptCount)
                 else error is IOException && runAttemptCount < 2
             if (retry) Result.retry()
-            else Result.failure(workDataOf(DOWNLOAD_MESSAGE to (error.message ?: "Falló la descarga.").take(500), "title" to title))
+            else {
+                if (kind == MODPACK_IMPORT_TAG) runCatching { ModpackImports(context).removeArchive(id) }
+                Result.failure(workDataOf(DOWNLOAD_MESSAGE to (error.message ?: "Falló la descarga.").take(500), "title" to title))
+            }
         } finally {
             updates.close()
             observer.join()

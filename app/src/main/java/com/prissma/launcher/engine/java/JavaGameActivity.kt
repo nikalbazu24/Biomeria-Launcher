@@ -370,6 +370,7 @@ private fun JavaNativeViewportScreen(
     var showHudDialog by remember { mutableStateOf(false) }
     var showKeyboard by remember { mutableStateOf(false) }
     var showQuickMenu by remember { mutableStateOf(false) }
+    var showLanDialog by remember { mutableStateOf(false) }
     var pendingGameKey by remember { mutableStateOf<Int?>(null) }
     var fps by remember { mutableStateOf<Int?>(null) }
     var jvmStarted by remember { mutableStateOf(false) }
@@ -381,6 +382,7 @@ private fun JavaNativeViewportScreen(
         when {
             showKeyboard -> showKeyboard = false
             showQuickMenu -> showQuickMenu = false
+            showLanDialog -> showLanDialog = false
             libJvmPath.isBlank() -> onExitGame()
             else -> showOverlay = !showOverlay
         }
@@ -389,7 +391,7 @@ private fun JavaNativeViewportScreen(
     BackHandler { handleBack() }
     val toggle by rememberUpdatedState({ handleBack() })
     val quickToggle by rememberUpdatedState {
-        if (!showOverlay && !showKeyboard && !showHudDialog && hasPresentedFrame) showQuickMenu = !showQuickMenu
+        if (!showOverlay && !showKeyboard && !showHudDialog && !showLanDialog && hasPresentedFrame) showQuickMenu = !showQuickMenu
     }
     DisposableEffect(Unit) {
         onTogglePanel { toggle() }
@@ -399,7 +401,7 @@ private fun JavaNativeViewportScreen(
             onToggleQuickMenu(null)
         }
     }
-    val canSendInput = jvmStarted && !showOverlay && !showKeyboard && !showQuickMenu && !showHudDialog
+    val canSendInput = jvmStarted && !showOverlay && !showKeyboard && !showQuickMenu && !showHudDialog && !showLanDialog
     val collectTerrain = hud.showMinimap || (hud.dualScreen && hud.panelMap == PanelMapSource.PRISSMA)
     LaunchedEffect(panelBridge, collectTerrain, hud.showCoordinates) {
         withContext(Dispatchers.IO) { panelBridge?.collectTerrain(collectTerrain, hud.showCoordinates) }
@@ -714,8 +716,12 @@ private fun JavaNativeViewportScreen(
                 showQuickMenu = false
             },
             onHud = { showQuickMenu = false; showHudDialog = true },
-            onPause = { showQuickMenu = false; showOverlay = true }
+            onPause = { showQuickMenu = false; showOverlay = true },
+            onLan = { showQuickMenu = false; showLanDialog = true }
         )
+    }
+    if (showLanDialog && panelBridge != null) {
+        LocalWorldShareDialog(activity, panelBridge) { showLanDialog = false }
     }
 }
 

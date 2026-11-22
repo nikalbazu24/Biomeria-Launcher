@@ -54,7 +54,14 @@ private enum class WorkshopTab(val label: String, val category: WorkshopCategory
 }
 
 @Composable
-fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
+fun ContentWorkshopScreen(
+    instance: GameInstance,
+    importingPack: Boolean,
+    packError: String?,
+    onImportPack: () -> Unit,
+    onPackDownloads: () -> Unit,
+    onBack: () -> Unit
+) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
     val repository = remember(context) { ModrinthRepository(context) }
@@ -137,7 +144,10 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
                 FilterChip(tab == it, choose, { Text(it.label) }, modifier = Modifier.gamepadClick(onClick = choose))
             }
             LauncherButton("Cómo agregar mods", { showTutorial = true })
+            LauncherButton(if (importingPack) "Leyendo modpack…" else "Importar .mrpack", onImportPack, enabled = !importingPack)
+            LauncherButton("Descargas de modpacks", onPackDownloads)
         }
+        packError?.let { Text(it, color = Prissma.colors.error, style = MaterialTheme.typography.bodySmall) }
         if (tab.category != null) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically) {

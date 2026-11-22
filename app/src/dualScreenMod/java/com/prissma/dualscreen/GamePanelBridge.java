@@ -52,13 +52,15 @@ public final class GamePanelBridge {
     public static void tick(Object client) {
         if (SESSION.isEmpty() || disabled || ++ticks % 2 != 0) return;
         Path root = Path.of(SESSION);
+        Path lanRequest = root.resolve("lan-open");
+        boolean shareRequested = Files.isRegularFile(lanRequest);
         boolean panelVisible = Files.isRegularFile(root.resolve("visible"));
         boolean mapVisible = !TERRAIN.isEmpty() && !terrainFailed && Files.isRegularFile(root.resolve("terrain-enabled"));
         boolean trackPosition = !TERRAIN.isEmpty() && !terrainFailed &&
                 (mapVisible || Files.isRegularFile(root.resolve("terrain-position")));
         if (!panelVisible) {
             clearRoute();
-            if (!trackPosition) return;
+            if (!trackPosition && !shareRequested) return;
         }
         try {
             if (game == null) {
@@ -73,6 +75,16 @@ public final class GamePanelBridge {
             }
             Object player = game.player.get(client);
             Object world = game.world.get(client);
+            if (shareRequested && Files.deleteIfExists(lanRequest)) {
+                int port;
+                try {
+                    port = player == null || world == null ? 0 : LocalWorldShare.open(client);
+                } catch (ReflectiveOperationException | LinkageError error) {
+                    port = -1;
+                    System.err.println("[PRISSMA] No se pudo abrir la sala LAN: " + error);
+                }
+                writeAtomically(root.resolve("lan-result"), Integer.toString(port).getBytes(StandardCharsets.US_ASCII));
+            }
             if (trackPosition && ticks % SNAPSHOT_TICKS == 0) updateTerrain(root, client, world, player, mapVisible);
             if (!panelVisible) return;
             Object screen = game.currentScreen.get(client);

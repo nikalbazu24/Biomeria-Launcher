@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalContext
@@ -37,6 +38,8 @@ import com.prissma.launcher.engine.java.JavaRenderer
 import com.prissma.launcher.engine.java.RenderScale
 import com.prissma.launcher.engine.java.selectedHeapSize
 import com.prissma.launcher.engine.java.normalizeFpsLimit
+import com.prissma.launcher.engine.java.javaQuickPlayArguments
+import com.prissma.launcher.engine.java.parseJavaServerAddress
 import com.prissma.launcher.engine.java.decodeGamepadActions
 import com.prissma.launcher.engine.java.encodeGamepadActions
 import com.prissma.launcher.engine.java.JavaGameActivity
@@ -65,7 +68,8 @@ import java.util.UUID
 
 @Composable
 fun JavaLaunchScreen(
-    instance: GameInstance, playerName: String, accountType: String, preferredLanguage: String = "", onBack: () -> Unit
+    instance: GameInstance, playerName: String, accountType: String, preferredLanguage: String = "",
+    requestedServer: String? = null, onBack: () -> Unit
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -84,6 +88,8 @@ fun JavaLaunchScreen(
     var language by remember(instance.id) { mutableStateOf(settings.getString("language-" + instance.id, preferredLanguage).orEmpty()) }
     var launchError by remember { mutableStateOf<String?>(null) }
     var opening by remember { mutableStateOf(false) }
+    val server = remember(requestedServer) { requestedServer?.let(::parseJavaServerAddress) }
+    var requestedConnectionStarted by rememberSaveable(instance.id, requestedServer) { mutableStateOf(false) }
     var showControls by remember { mutableStateOf(false) }
     var showPerformance by remember { mutableStateOf(false) }
     val deviceRam = remember(context) { totalDeviceRam(context) }
@@ -193,7 +199,7 @@ fun JavaLaunchScreen(
                     putExtra("MAIN_CLASS", ready.mainClass)
                     putExtra("GAME_DIR_PATH", gameDir.absolutePath)
                     putExtra("CLASSPATH", classpath)
-                    putExtra("GAME_ARGS", gameArgs + ready.additionalGameArguments)
+                    putExtra("GAME_ARGS", gameArgs + ready.additionalGameArguments + javaQuickPlayArguments(instance.version, server))
                     when (mode) {
                         JavaAccountMode.MICROSOFT -> putExtra(MICROSOFT_PROFILE_ID, checkNotNull(identity).profileId)
                         JavaAccountMode.ELY_BY -> putExtra(ELY_PROFILE_ID, checkNotNull(identity).profileId)
@@ -220,6 +226,13 @@ fun JavaLaunchScreen(
         }
     }
 
+    LaunchedEffect(server, runtime, game) {
+        if (server != null && runtime != null && game != null && !requestedConnectionStarted) {
+            requestedConnectionStarted = true
+            start()
+        }
+    }
+
     Column(
         Modifier.fillMaxSize().background(Prissma.colors.surfaceVoid).safeDrawingPadding().padding(14.dp)
             .onPreviewKeyEvent {
@@ -242,7 +255,8 @@ fun JavaLaunchScreen(
                 if (supported) DownloadRow("Minecraft " + instance.version, game != null, gameTask) { downloads.game(instance) }
                 else Text("La versión o el cargador de esta instancia requiere otro runtime.", color = Prissma.colors.error)
                 launchError?.let { Text(it, color = Prissma.colors.error) }
-                LauncherButton(if (opening) "Abriendo…" else "Jugar", ::start,
+                server?.let { Text("Servidor · ${it.text}", style = MaterialTheme.typography.bodySmall) }
+                LauncherButton(if (opening) "Abriendo…" else if (server == null) "Jugar" else "Conectar", ::start,
                     primary = true, icon = Icons.Default.PlayArrow, enabled = runtime != null && game != null && !opening)
             }
         }

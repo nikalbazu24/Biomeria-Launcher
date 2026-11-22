@@ -30,7 +30,7 @@ final class TerrainMap {
     private final Method chunkManager, chunk, surface, state, mapColor, position;
     private final Method worldKey, keyValue, localServer, savePath, serverInfo, yaw;
     private final Field color, address;
-    private final Object full, worldSurface, mutablePosition, clear, rootPath;
+    private final Object full, worldSurface, oceanFloor, mutablePosition, clear, water, rootPath;
     private final Map<Long, Integer> sampled = new LinkedHashMap<>(768, .75f, true) {
         @Override
         protected boolean removeEldestEntry(Map.Entry<Long, Integer> entry) { return size() > 768; }
@@ -54,12 +54,14 @@ final class TerrainMap {
         chunk = type(loader, "631").getMethod("method_2857", int.class, int.class, chunkStatus, boolean.class);
         full = chunkStatus.getField("field_12803").get(null);
         worldSurface = heightmapType.getField("field_13202").get(null);
+        oceanFloor = heightmapType.getField("field_13200").get(null);
         surface = type(loader, "2791").getMethod("method_12005", heightmapType, int.class, int.class);
         state = type(loader, "2818").getMethod("method_8320", pos);
         mutablePosition = mutable.getConstructor().newInstance();
         position = mutable.getMethod("method_10103", int.class, int.class, int.class);
         mapColor = type(loader, "2680").getMethod("method_26205", type(loader, "1922"), pos);
         clear = map.getField("field_16008").get(null);
+        water = map.getField("field_16019").get(null);
         color = map.getField("field_16011");
         worldKey = world.getMethod("method_27983");
         keyValue = type(loader, "5321").getMethod("method_29177");
@@ -149,7 +151,12 @@ final class TerrainMap {
                     int slope = elevation - heights[z * SIZE + Math.max(0, x - 1)]
                             + elevation - heights[Math.max(0, z - 1) * SIZE + x];
                     int brightness = 244 + Math.max(-45, Math.min(21, slope * 6));
-                    out.writeInt(material == clear ? 0 : shade(color.getInt(material), brightness));
+                    if (material == water) {
+                        int depth = Math.max(0, Math.min(14, elevation - (int) surface.invoke(loaded, oceanFloor, x, z)));
+                        out.writeInt(shade(0x3e9ba8, 222 - depth * 7));
+                    } else {
+                        out.writeInt(material == clear ? 0 : shade(color.getInt(material), brightness));
+                    }
                 }
             }
         }

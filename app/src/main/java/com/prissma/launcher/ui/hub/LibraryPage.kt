@@ -76,6 +76,7 @@ internal fun LibraryPage(
     onSelect: (GameInstance) -> Unit,
     onNew: () -> Unit,
     onPlay: () -> Unit,
+    onServers: () -> Unit,
     onBedrockApps: () -> Unit,
     onStarlingDiagnostics: () -> Unit,
     onWorkshop: () -> Unit,
@@ -87,7 +88,7 @@ internal fun LibraryPage(
         val wide = maxWidth >= 487.dp && maxHeight >= 250.dp
         val hero: @Composable (Modifier) -> Unit = {
             InstanceHero(selected, bedrock, starling, selected?.id?.let(favorites::contains) == true,
-                onPlay, onBedrockApps, onStarlingDiagnostics, onWorkshop, onEdit, onFavorite, it)
+                onPlay, onServers, onBedrockApps, onStarlingDiagnostics, onWorkshop, onEdit, onFavorite, it)
         }
         val list: @Composable (Modifier) -> Unit = {
             LibraryList(instances, selected, favorites, filter, favoritesOnly, order, query, bedrock, starling,
@@ -117,6 +118,7 @@ private fun InstanceHero(
     starling: StarlingInstallation?,
     favorite: Boolean,
     onPlay: () -> Unit,
+    onServers: () -> Unit,
     onBedrockApps: () -> Unit,
     onStarlingDiagnostics: () -> Unit,
     onWorkshop: () -> Unit,
@@ -176,6 +178,7 @@ private fun InstanceHero(
                     when (instance.engine) {
                         EngineType.JAVA -> {
                             LauncherButton("Preparar juego", onPlay, icon = Icons.Default.PlayArrow, primary = true)
+                            LauncherButton("Servidores", onServers)
                             LauncherButton("Taller", onWorkshop)
                         }
                         EngineType.BEDROCK -> {

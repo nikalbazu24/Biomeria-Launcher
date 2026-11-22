@@ -2,6 +2,8 @@ package com.prissma.launcher.ui.hub
 
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -31,15 +33,18 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.work.WorkInfo
 import com.prissma.launcher.data.AppUpdater
 import com.prissma.launcher.data.EngineType
 import com.prissma.launcher.data.GameInstance
 import com.prissma.launcher.data.InstanceStorage
 import com.prissma.launcher.data.LibraryPreferences
+import com.prissma.launcher.data.ModpackImports
 import com.prissma.launcher.data.UpdateInfo
 import com.prissma.launcher.engine.bedrock.BedrockInstallation
 import com.prissma.launcher.engine.bedrock.BedrockLauncher
 import com.prissma.launcher.engine.java.GameDownloads
+import com.prissma.launcher.engine.java.MODPACK_IMPORT_TAG
 import com.prissma.launcher.engine.java.MojangDownloader
 import com.prissma.launcher.engine.java.supportsJavaLoader
 import com.prissma.launcher.engine.rust.StarlingInstallation
@@ -50,6 +55,7 @@ import com.prissma.launcher.ui.components.PrissmaMark
 import com.prissma.launcher.ui.components.ReleaseNotesDialog
 import com.prissma.launcher.ui.components.gamepadClick
 import com.prissma.launcher.ui.launch.JavaLaunchScreen
+import com.prissma.launcher.ui.launch.JavaServersDialog
 import com.prissma.launcher.ui.theme.Prissma
 import com.prissma.launcher.ui.workshop.BedrockWorkshopScreen
 import com.prissma.launcher.ui.workshop.ContentWorkshopScreen
@@ -57,6 +63,7 @@ import com.prissma.launcher.ui.workshop.StarlingWorkshopScreen
 import com.prissma.launcher.ui.workshop.WorkshopDownloadsDialog
 import com.prissma.launcher.ui.workshop.workshopDownloadsLabel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -96,6 +103,9 @@ internal fun HubScreen(
     var instances by remember(storage) { mutableStateOf(storage.loadInstances()) }
     val workshopJobs by remember(downloads, instances) { downloads.workshopDownloads(instances) }.collectAsState(emptyList())
     var showWorkshopDownloads by rememberSaveable { mutableStateOf(false) }
+    var importingPack by remember { mutableStateOf(false) }
+    var packError by remember { mutableStateOf<String?>(null) }
+    val consumedPacks = remember(context) { context.getSharedPreferences("imported_modpacks", android.content.Context.MODE_PRIVATE) }
     var profile by remember(storage) { mutableStateOf(storage.loadProfile()) }
     var favorites by remember(preferences) { mutableStateOf(preferences.favorites()) }
     var recent by remember(preferences) { mutableStateOf(preferences.recent()) }
@@ -114,6 +124,8 @@ internal fun HubScreen(
     var editingId by rememberSaveable { mutableStateOf<String?>(null) }
     var deleteId by rememberSaveable { mutableStateOf<String?>(null) }
     var launchingId by rememberSaveable { mutableStateOf<String?>(null) }
+    var launchingServer by rememberSaveable { mutableStateOf<String?>(null) }
+    var serversId by rememberSaveable { mutableStateOf<String?>(null) }
     var update by remember { mutableStateOf<UpdateInfo?>(null) }
     var installedNotes by remember(updater, version) { mutableStateOf<String?>(null) }
     var releaseNotesSeen by remember(updater, version) { mutableStateOf(updater.hasSeenReleaseNotes(version)) }
@@ -143,9 +155,48 @@ internal fun HubScreen(
             .isSuccess
     }
 
-    fun launchInstance(instance: GameInstance) {
+    val importPack = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null && !importingPack) {
+            packError = null
+            importingPack = true
+            scope.launch {
+                try {
+                    val instance = ModpackImports(context).stage(uri)
+                    downloads.importModpack(instance)
+                    showWorkshopDownloads = true
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    packError = error.message ?: "No se pudo preparar el modpack."
+                    if (page != HubPage.WORKSHOP) notify(checkNotNull(packError))
+                } finally {
+                    importingPack = false
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(workshopJobs) {
+        val ready = workshopJobs.mapNotNull { job ->
+            if (job.state != WorkInfo.State.SUCCEEDED || MODPACK_IMPORT_TAG !in job.tags) return@mapNotNull null
+            val id = job.outputData.getString("id") ?: return@mapNotNull null
+            if (consumedPacks.getBoolean(id, false)) return@mapNotNull null
+            val title = job.outputData.getString("title") ?: return@mapNotNull null
+            val version = job.outputData.getString("version") ?: return@mapNotNull null
+            val loader = job.outputData.getString("loader") ?: return@mapNotNull null
+            GameInstance(id, title, EngineType.JAVA, version, loader)
+        }
+        if (ready.isNotEmpty() && saveCatalog((instances + ready).distinctBy(GameInstance::id))) {
+            consumedPacks.edit().also { edit -> ready.forEach { edit.putBoolean(it.id, true) } }.apply()
+        }
+    }
+
+    fun launchInstance(instance: GameInstance, server: String? = null) {
         when (instance.engine) {
-            EngineType.JAVA -> launchingId = instance.id
+            EngineType.JAVA -> {
+                launchingServer = server
+                launchingId = instance.id
+            }
             EngineType.BEDROCK -> {
                 launchingId = null
                 val problem = onOpenBedrock()
@@ -205,7 +256,7 @@ internal fun HubScreen(
     }
 
     instances.firstOrNull { it.id == launchingId && it.engine == EngineType.JAVA }?.let {
-        JavaLaunchScreen(it, profile.playerName, profile.accountType, profile.language, onBack = { launchingId = null })
+        JavaLaunchScreen(it, profile.playerName, profile.accountType, profile.language, launchingServer, onBack = { launchingId = null })
         return
     }
 
@@ -214,7 +265,11 @@ internal fun HubScreen(
     if (showWorkshop) {
         val back = { page = HubPage.LIBRARY }
         when (workshopInstance.engine) {
-            EngineType.JAVA -> ContentWorkshopScreen(instance = workshopInstance, onBack = back)
+            EngineType.JAVA -> ContentWorkshopScreen(
+                instance = workshopInstance, importingPack = importingPack, packError = packError,
+                onImportPack = { importPack.launch(arrayOf("*/*")) },
+                onPackDownloads = { showWorkshopDownloads = true }, onBack = back
+            )
             EngineType.BEDROCK -> key(workshopInstance.id) {
                 BedrockWorkshopScreen(workshopInstance, bedrock, bedrockLauncher, onRefreshBedrock, back)
             }
@@ -222,6 +277,7 @@ internal fun HubScreen(
                 StarlingWorkshopScreen(workshopInstance, starling, starlingLauncher, back)
             }
         }
+        if (showWorkshopDownloads) WorkshopDownloadsDialog(workshopJobs, instances, downloads) { showWorkshopDownloads = false }
         return
     }
 
@@ -273,7 +329,8 @@ internal fun HubScreen(
                     onOrder = { order = if (order == LibraryOrder.RECENT) LibraryOrder.NAME else LibraryOrder.RECENT },
                     onSelect = { selectedId = it.id },
                     onNew = { showNew = true },
-                    onPlay = { selected?.let(::launchInstance) },
+                    onPlay = { selected?.let { launchInstance(it) } },
+                    onServers = { serversId = selected?.id },
                     onBedrockApps = { showBedrockApps = true },
                     onStarlingDiagnostics = { showStarlingDiagnostics = true },
                     onWorkshop = { page = HubPage.WORKSHOP },
@@ -299,6 +356,12 @@ internal fun HubScreen(
     }
 
     if (showWorkshopDownloads) WorkshopDownloadsDialog(workshopJobs, instances, downloads) { showWorkshopDownloads = false }
+    instances.firstOrNull { it.id == serversId && it.engine == EngineType.JAVA }?.let { instance ->
+        JavaServersDialog(instance, onPlay = { address ->
+            serversId = null
+            launchInstance(instance, address.text)
+        }, onDismiss = { serversId = null })
+    }
 
     if (showBedrockApps) {
         BedrockAppsDialog(bedrock, bedrockLauncher, onRefreshBedrock, onDismiss = { showBedrockApps = false })
