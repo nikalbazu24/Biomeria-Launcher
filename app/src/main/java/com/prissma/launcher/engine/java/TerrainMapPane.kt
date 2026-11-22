@@ -1,7 +1,9 @@
 package com.prissma.launcher.engine.java
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.graphics.Bitmap
+import android.os.SystemClock
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -24,6 +26,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -33,21 +36,34 @@ import kotlinx.coroutines.withContext
 import kotlin.math.floor
 import kotlin.math.roundToInt
 
-internal data class TerrainPadInput(val action: (PanelPadAction) -> Unit, val pan: (Float, Float) -> Unit)
+internal data class TerrainPadInput(
+    val action: (PanelPadAction) -> Unit,
+    val pan: (Float, Float) -> Unit,
+    val managingWaypoints: () -> Boolean
+)
 
 @Composable
 internal fun TerrainMapPane(
     bridge: DualScreenBridge,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
+    controllerActive: Boolean = false,
     onPadInput: ((TerrainPadInput?) -> Unit)? = null
 ) {
     val directory = bridge.terrainDirectory ?: return
     val context = LocalContext.current
     var position by remember(bridge) { mutableStateOf<TerrainPosition?>(null) }
     LaunchedEffect(bridge) {
+        var lastRead = 0L
         while (true) {
-            position = withContext(Dispatchers.IO) { bridge.readTerrainPosition() }
+            val next = withContext(Dispatchers.IO) { bridge.readTerrainPosition() }
+            val now = SystemClock.elapsedRealtime()
+            if (next != null) {
+                position = next
+                lastRead = now
+            } else if (now - lastRead > 1200L) {
+                position = null
+            }
             delay(180)
         }
     }
@@ -57,7 +73,7 @@ internal fun TerrainMapPane(
         return
     }
     key(player.scope) {
-        TerrainView(directory, player, context, modifier, compact, onPadInput)
+        TerrainView(directory, player, context, modifier, compact, controllerActive, onPadInput)
     }
 }
 
@@ -68,26 +84,33 @@ private fun TerrainView(
     context: Context,
     modifier: Modifier,
     compact: Boolean,
+    controllerActive: Boolean,
     onPadInput: ((TerrainPadInput?) -> Unit)?
 ) {
     var view by remember { mutableStateOf(TerrainCamera(player.x, player.z, if (compact) 80f else 112f)) }
     val camera = if (view.follow) view.copy(x = player.x, z = player.z) else view
     val preference = remember(context) { context.getSharedPreferences("terrain-waypoints", Context.MODE_PRIVATE) }
-    var waypoints by remember(player.scope) {
-        mutableStateOf(preference.getString(player.scope, "").orEmpty().split(';').mapNotNull { point ->
-            val values = point.split(',').mapNotNull(String::toIntOrNull)
-            if (values.size == 3) TerrainWaypoint(values[0], values[1], values[2]) else null
-        }.take(32))
+    fun readBook() = TerrainWaypointBook.decode(preference.getString(player.scope, "").orEmpty())
+    var waypoints by remember(preference, player.scope) { mutableStateOf(readBook()) }
+    DisposableEffect(preference, player.scope) {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == player.scope) waypoints = readBook()
+        }
+        preference.registerOnSharedPreferenceChangeListener(listener)
+        waypoints = readBook()
+        onDispose { preference.unregisterOnSharedPreferenceChangeListener(listener) }
     }
-    var waypointMenu by remember { mutableStateOf(false) }
-    fun updateWaypoints(updated: List<TerrainWaypoint>) {
+    var managingWaypoints by remember { mutableStateOf(false) }
+    var createImmediately by remember { mutableStateOf(false) }
+    var waypointPadInput by remember { mutableStateOf<((PanelPadAction) -> Unit)?>(null) }
+    fun openWaypoints(create: Boolean) {
+        createImmediately = create
+        managingWaypoints = true
+    }
+    fun saveBook(updated: TerrainWaypointBook) {
+        if (updated == waypoints) return
         waypoints = updated
-        preference.edit().putString(player.scope, updated.joinToString(";") { "${it.x},${it.y},${it.z}" }).apply()
-    }
-
-    fun addWaypoint() {
-        val point = TerrainWaypoint(floor(camera.x).toInt(), floor(player.y).toInt(), floor(camera.z).toInt())
-        if (point !in waypoints) updateWaypoints((waypoints + point).takeLast(32))
+        preference.edit().putString(player.scope, updated.encode()).apply()
     }
 
     val requested by rememberUpdatedState(camera.chunks())
@@ -112,25 +135,39 @@ private fun TerrainView(
     }
     val input by rememberUpdatedState(TerrainPadInput(
         action = { action ->
-            when (action) {
+            if (managingWaypoints) waypointPadInput?.invoke(action)
+            else when (action) {
                 PanelPadAction.PICK -> view = camera.copy(follow = true)
                 PanelPadAction.SPLIT -> view = camera.zoom(1.25f)
                 PanelPadAction.TRANSFER -> view = camera.zoom(.8f)
-                PanelPadAction.MARK -> addWaypoint()
+                PanelPadAction.MARK -> openWaypoints(true)
+                PanelPadAction.SEARCH -> openWaypoints(false)
                 else -> Unit
             }
         },
-        pan = { x, y -> view = camera.pan(x * camera.span * .06, y * camera.span * .06) }
+        pan = { x, y -> if (!managingWaypoints) view = camera.pan(x * camera.span * .06, y * camera.span * .06) },
+        managingWaypoints = { managingWaypoints }
     ))
     val register by rememberUpdatedState(onPadInput)
     DisposableEffect(Unit) {
-        register?.invoke(TerrainPadInput({ input.action(it) }, { x, y -> input.pan(x, y) }))
+        register?.invoke(TerrainPadInput({ input.action(it) }, { x, y -> input.pan(x, y) }, { input.managingWaypoints() }))
         onDispose { register?.invoke(null) }
     }
     val shape = RoundedCornerShape(if (compact) 12.dp else 16.dp)
     val frame = modifier.clip(shape).background(Color(0xff101c23)).border(1.dp, Color(0xff506372), shape)
     val liveCamera by rememberUpdatedState(camera)
     Box(frame) {
+        if (managingWaypoints) {
+            TerrainWaypointPane(waypoints, player, TerrainWaypoint(
+                floor(camera.x).toInt(), floor(player.y).toInt(), floor(camera.z).toInt(), "Marca ${waypoints.points.size + 1}"
+            ), createImmediately, controllerActive, ::saveBook, follow = { point ->
+                saveBook(waypoints.follow(point.id))
+                view = camera.copy(x = point.x.toDouble(), z = point.z.toDouble(), follow = false)
+                managingWaypoints = false
+            }, onClose = { managingWaypoints = false }, onPadInput = { waypointPadInput = it })
+            return@Box
+        }
+        val active = waypoints.active
         Canvas(Modifier.fillMaxSize().semantics { contentDescription = "Mapa de terreno de PRISSMA" }.then(
             if (compact) Modifier else Modifier.pointerInput(Unit) {
                 detectTransformGestures { _, pan, zoom, _ ->
@@ -158,10 +195,23 @@ private fun TerrainView(
                     dstSize = IntSize((end.x.roundToInt() - left).coerceAtLeast(1), (end.y.roundToInt() - top).coerceAtLeast(1)),
                     filterQuality = FilterQuality.None)
             }
-            if (!compact) waypoints.forEach { point ->
-                val anchor = screen(point.x.toDouble(), point.z.toDouble())
-                drawCircle(Color(0xff0e1c22), 7.dp.toPx(), anchor)
-                drawCircle(Color(0xffffcf80), 4.dp.toPx(), anchor)
+            for (point in waypoints.points) {
+                if (point.id == active?.id || compact) continue
+                drawWaypoint(point, screen(point.x.toDouble(), point.z.toDouble()), 5.dp.toPx(), false)
+            }
+            if (active != null) {
+                val radius = (if (compact) 4.dp else 6.dp).toPx()
+                val anchor = screen(active.x.toDouble(), active.z.toDouble())
+                // Keep the target visible on the edge of the minimap when it is outside the current view.
+                val target = if (compact) {
+                    val inset = (radius * 2).coerceAtMost(size.minDimension / 2)
+                    val bearing = anchor - center
+                    val ratio = maxOf(kotlin.math.abs(bearing.x), kotlin.math.abs(bearing.y))
+                    if (ratio > size.minDimension / 2 - inset) {
+                        center + bearing * ((size.minDimension / 2 - inset) / ratio)
+                    } else anchor
+                } else anchor
+                drawWaypoint(active, target, radius, true)
             }
             val cursor = screen(player.x, player.z)
             val cursorSize = (if (compact) 8.dp else 11.dp).toPx()
@@ -177,7 +227,16 @@ private fun TerrainView(
                 drawPath(arrow, Color(0xffd7ffa8))
             }
         }
-        MapLabel(if (compact) "N ↑" else "N ↑    ${camera.span.toInt()} bloques", Modifier.align(Alignment.TopStart).padding(8.dp))
+        Column(Modifier.align(Alignment.TopStart).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            MapLabel(if (compact) "N ↑" else "N ↑    ${camera.span.toInt()} bloques")
+            if (active != null && !compact) {
+                MapLabel(active.name, Modifier.widthIn(max = 170.dp))
+                MapLabel("${active.distanceFrom(player)} bloques")
+            }
+        }
+        if (active != null && compact) {
+            MapLabel("${active.distanceFrom(player)} b", Modifier.align(Alignment.BottomStart).padding(5.dp))
+        }
         if (!compact) {
             Row(Modifier.align(Alignment.TopEnd).padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 FilledTonalButton(onClick = { view = camera.zoom(1.25f) }, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("−") }
@@ -187,35 +246,16 @@ private fun TerrainView(
             MapLabel("X ${floor(player.x).toInt()}   Y ${floor(player.y).toInt()}   Z ${floor(player.z).toInt()}",
                 Modifier.align(Alignment.BottomStart).padding(8.dp))
             Row(Modifier.align(Alignment.BottomEnd).padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                FilledTonalButton(onClick = ::addWaypoint, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("+ Marca") }
-                Box {
-                    FilledTonalButton(onClick = { waypointMenu = true }, enabled = waypoints.isNotEmpty(),
-                        contentPadding = PaddingValues(horizontal = 8.dp)) { Text("Marcas ${waypoints.size}") }
-                    DropdownMenu(waypointMenu, onDismissRequest = { waypointMenu = false }) {
-                        waypoints.forEachIndexed { index, point ->
-                            DropdownMenuItem(
-                                text = { Text("Marca ${index + 1} · ${point.x}, ${point.z}") },
-                                onClick = {
-                                    view = camera.copy(x = point.x.toDouble(), z = point.z.toDouble(), follow = false)
-                                    waypointMenu = false
-                                },
-                                trailingIcon = {
-                                    TextButton(onClick = {
-                                        updateWaypoints(waypoints - point)
-                                        if (waypoints.isEmpty()) waypointMenu = false
-                                    }) { Text("Borrar") }
-                                }
-                            )
-                        }
-                    }
-                }
+                FilledTonalButton(onClick = { openWaypoints(true) }, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("+ Marca") }
+                FilledTonalButton(onClick = { openWaypoints(false) },
+                    contentPadding = PaddingValues(horizontal = 8.dp)) { Text("Marcas ${waypoints.points.size}") }
             }
         }
     }
 }
 
 @Composable
-private fun MapLabel(text: String, modifier: Modifier) {
+private fun MapLabel(text: String, modifier: Modifier = Modifier) {
     Text(text, modifier.background(Color(0xe51c2932), RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 4.dp),
-        color = Color(0xffe2f1e8), style = MaterialTheme.typography.labelMedium)
+        color = Color(0xffe2f1e8), style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
 }

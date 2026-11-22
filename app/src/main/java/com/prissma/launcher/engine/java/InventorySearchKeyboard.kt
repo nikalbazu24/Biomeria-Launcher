@@ -11,6 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -30,25 +31,30 @@ internal fun InventorySearchKeyboard(
     focus: PanelPadSlot?,
     onKey: (Int) -> Unit,
     onClear: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    placeholder: String = "Buscar por nombre",
+    doneLabel: String = "Ver objetos",
+    rows: List<List<PanelPadSlot>> = inventorySearchRows,
+    keyLabel: (Int) -> String? = { null }
 ) {
     Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(query.ifBlank { "Buscar por nombre" }, Modifier.weight(1f).padding(8.dp),
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(query.ifBlank { placeholder }, Modifier.weight(1f).padding(8.dp),
                 style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             TextButton(onClick = onClear, enabled = query.isNotEmpty()) { Text("Limpiar") }
         }
-        inventorySearchRows.forEach { row ->
+        rows.forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                 row.forEach { key ->
                     val reveal = remember(key) { BringIntoViewRequester() }
                     LaunchedEffect(focus == key) {
                         if (focus == key) reveal.bringIntoView()
                     }
-                    val label = when (key.number) {
+                    val label = keyLabel(key.number) ?: when (key.number) {
                         SEARCH_SPACE -> "Espacio"
                         SEARCH_ERASE -> "Borrar"
-                        SEARCH_DONE -> "Ver objetos"
+                        SEARCH_DONE -> doneLabel
                         else -> inventorySearchCharacters[key.number].uppercaseChar().toString()
                     }
                     FilledTonalButton(

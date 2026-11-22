@@ -13,7 +13,6 @@ private val terrainScope = Regex("[0-9a-f]{32}")
 internal data class TerrainPosition(val scope: String, val x: Double, val y: Double, val z: Double, val yaw: Float)
 internal data class TerrainChunk(val x: Int, val z: Int)
 internal data class TerrainTile(val modifiedAt: Long, val pixels: IntArray)
-internal data class TerrainWaypoint(val x: Int, val y: Int, val z: Int)
 internal data class TerrainCamera(val x: Double, val z: Double, val span: Float = 112f, val follow: Boolean = true) {
     fun pan(dx: Double, dz: Double) = copy(
         x = (x + dx).coerceIn(-WORLD_LIMIT.toDouble(), WORLD_LIMIT.toDouble()),

@@ -244,6 +244,8 @@ private fun DualScreenPanel(
     val panelAction by rememberUpdatedState<(PanelPadAction) -> Unit>({ action ->
         val target = padSlot?.takeIf { slot -> padRows.any { slot in it } } ?: padRows.firstOrNull()?.firstOrNull()
         when {
+            showingMap && page == actionPage && mapPadInput?.managingWaypoints?.invoke() == true ->
+                mapPadInput?.action?.invoke(action)
             canShowRecipes && showRecipes -> recipePadInput?.invoke(action)
             editingSearch && searchable && page == actionPage -> when {
                 action == PanelPadAction.BACK || action == PanelPadAction.SEARCH -> editingSearch = false
@@ -308,7 +310,7 @@ private fun DualScreenPanel(
             !controllerActive -> "Mantén Select para usar el mando aquí"
             showingRecipes -> "↑/↓ · Recorrer    A · Elegir    B · Atrás"
             editingSearch && searchable -> "Cruceta · Teclado    A · Elegir    B · Aplicar"
-            showingMap -> "Stick derecho · Mover    X/Y · Zoom    A · Centrar    R3 · Marca"
+            showingMap -> "Stick derecho · Mover    X/Y · Zoom    A · Centrar    R3 · Nueva marca    Start · Marcas"
             matchingSlots != null -> "Cruceta · Coincidencias    A · Tomar o colocar    B · Limpiar"
             searchable -> "Start · Buscar    A · Tomar o colocar    X · Dividir    Y · Mover rápido"
             padFocus != null && !padFocus.selectsHotbar -> "A · Tomar o colocar    X · Dividir    Y · Mover rápido    B · Volver"
@@ -331,7 +333,8 @@ private fun DualScreenPanel(
             return@Column
         }
         if (showingMap && bridge != null) {
-            TerrainMapPane(bridge, Modifier.weight(1f).fillMaxWidth(), onPadInput = { mapPadInput = it })
+            TerrainMapPane(bridge, Modifier.weight(1f).fillMaxWidth(), controllerActive = controllerActive,
+                onPadInput = { mapPadInput = it })
             return@Column
         }
         if (showingRecipes && bridge != null && live != null) {
