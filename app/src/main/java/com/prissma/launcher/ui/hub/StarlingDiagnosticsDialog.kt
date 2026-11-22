@@ -78,7 +78,7 @@ internal fun StarlingDiagnosticsDialog(
         text = {
             Column(Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("En Starling, pulsa Export diagnostic ZIP y luego Share latest diagnostic ZIP. Elige PRISSMA en el menú de Android.")
+                Text("Desde el diagnóstico de Starling, exporta y comparte el ZIP. Elige PRISSMA en el menú de Android.")
                 if (installation != null) {
                     LauncherButton("Abrir diagnóstico de Starling", { errorMessage = launcher.openDiagnostics() }, enabled = !busy)
                 } else LauncherButton("Ver Starling ARM64", { errorMessage = launcher.openReleases() }, enabled = !busy)
