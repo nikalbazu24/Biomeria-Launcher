@@ -65,11 +65,13 @@ class StarlingReportTest {
     }
 
     @Test
-    fun distinguishesInstalledUnavailableAndMissingStarling() {
-        assertEquals("Starling · 0.9.0", StarlingInstallation("0.9.0", canOpen = true).label)
-        assertNull(StarlingInstallation(null, canOpen = true).launchProblem())
-        assertTrue(StarlingInstallation(null, canOpen = false).launchProblem().orEmpty().contains("habilitado"))
-        assertTrue((null as StarlingInstallation?).launchProblem().orEmpty().contains("ARM64"))
+    fun reportsIncludedRustEngineAndMissingRuntime() {
+        val bundled = StarlingInstallation("0.9.0", canOpen = true)
+        val missing = StarlingInstallation("0.9.0", canOpen = false)
+        assertEquals("Rust integrado · Starling 0.9.0", bundled.label)
+        assertNull(bundled.launchProblem())
+        assertEquals("Falta el motor Rust en esta compilación de PRISSMA.", missing.launchProblem())
+        assertEquals(missing.launchProblem(), (null as StarlingInstallation?).launchProblem())
     }
 
     private fun zip(name: String, entries: Map<String, String>, declared: Set<String>): File =
