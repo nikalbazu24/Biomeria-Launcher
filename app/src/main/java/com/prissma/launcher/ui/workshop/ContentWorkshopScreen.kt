@@ -189,7 +189,6 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
                         enabled = job?.state?.isFinished != false && (item.category != WorkshopCategory.MODS || loader == "fabric")
                     ) {
                         downloads.mod(instance, item.projectId, item.title, item.category)
-                        status = "Descarga en segundo plano · " + item.title
                     }
                 }
             }
