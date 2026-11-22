@@ -6,7 +6,8 @@ import org.junit.Test
 class PanelPadRouterTest {
     private val focus = mutableListOf<Boolean>()
     private val actions = mutableListOf<PanelPadAction>()
-    private val router = PanelPadRouter({ focus += it }, { actions += it })
+    private val pans = mutableListOf<Pair<Float, Float>>()
+    private val router = PanelPadRouter({ focus += it }, { actions += it }, { x, y -> pans += x to y })
     private val neutral = GamepadAxes(0f, 0f, 0f, 0f, 0f, 0f, attack = false, use = false)
 
     @Test
@@ -86,5 +87,33 @@ class PanelPadRouterTest {
         assertFalse(router.button(4, 96, PanelPadAction.PICK, true, false, 900))
         assertEquals(listOf(true, false, true, false), focus)
         assertEquals(listOf(PanelPadAction.PICK), actions)
+    }
+
+    @Test
+    fun rightStickRepeatsAnAnalogVectorOnlyWhileTheOwningGamepadMovesIt() {
+        router.setAvailable(true)
+        val diagonal = neutral.copy(lookX = .78f, lookY = -.35f)
+        assertFalse(router.motion(4, diagonal, 0))
+        router.select(4, 600)
+        router.motion(7, diagonal, 610)
+        router.motion(4, diagonal, 620)
+        router.tick(630)
+        assertTrue(pans.isEmpty())
+
+        router.motion(4, neutral, 660)
+        router.motion(4, diagonal, 700)
+        router.tick(701)
+        router.tick(740)
+        router.tick(793)
+        router.motion(4, neutral, 800)
+        router.tick(950)
+        assertEquals(List(2) { .78f to -.35f }, pans)
+        assertTrue(actions.isEmpty())
+
+        router.motion(4, diagonal, 1000)
+        router.removeDevice(4)
+        router.tick(1100)
+        assertEquals(2, pans.size)
+        assertEquals(listOf(true, false), focus)
     }
 }

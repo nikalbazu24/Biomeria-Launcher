@@ -198,7 +198,7 @@ public final class GamePanelBridge {
                     case "xaero" -> {
                         if (layout == Layout.PERSONAL && slot == 0 && xaero.openWorldMap()) return true;
                     }
-                    case "map-down", "map-move", "map-up", "map-zoom" -> {
+                    case "map-down", "map-move", "map-up", "map-zoom", "map-pan" -> {
                         if (layout == Layout.XAERO) {
                             xaeroView.input(screen, parts[1], slot);
                             if (game.currentScreen.get(clientInstance) != screen) return true;

@@ -54,6 +54,7 @@ internal enum class PanelLayout(
         PanelCommand.INSPECT_RECIPE, PanelCommand.PLACE_RECIPE -> this == CRAFTING_TABLE && slot >= 0
         PanelCommand.MAP_DOWN, PanelCommand.MAP_MOVE, PanelCommand.MAP_UP -> this == XAERO && slot in 0..0xffffff
         PanelCommand.MAP_ZOOM -> this == XAERO && (slot == -1 || slot == 1)
+        PanelCommand.MAP_PAN -> this == XAERO && validXaeroPanVector(slot)
     }
 }
 
@@ -83,7 +84,7 @@ internal data class PanelInventory(
 internal enum class PanelCommand(val wireName: String) {
     PICK("pick"), SPLIT("split"), QUICK_MOVE("quick"), SELECT_HOTBAR("hotbar"),
     CLOSE_MENU("close"), OPEN_XAERO("xaero"), INSPECT_RECIPE("inspect"), PLACE_RECIPE("recipe"),
-    MAP_DOWN("map-down"), MAP_MOVE("map-move"), MAP_UP("map-up"), MAP_ZOOM("map-zoom")
+    MAP_DOWN("map-down"), MAP_MOVE("map-move"), MAP_UP("map-up"), MAP_ZOOM("map-zoom"), MAP_PAN("map-pan")
 }
 
 internal class DualScreenBridge(val directory: File) {

@@ -18,6 +18,30 @@ internal data class PanelRecipeBook(
     val missing: List<PanelStack>
 )
 
+internal data class RecipeBookNavigation(
+    val focusedId: Int? = null,
+    val detailId: Int? = null,
+    val searching: Boolean = false,
+    val onlyCraftable: Boolean = false
+) {
+    fun focusedRecipe(results: List<PanelRecipe>): PanelRecipe? =
+        results.firstOrNull { it.id == focusedId } ?: results.firstOrNull()
+
+    fun move(results: List<PanelRecipe>, offset: Int): RecipeBookNavigation {
+        val current = focusedRecipe(results) ?: return this
+        val next = (results.indexOf(current) + offset).coerceIn(0, results.lastIndex)
+        return copy(focusedId = results[next].id)
+    }
+
+    fun open(recipe: PanelRecipe) = copy(focusedId = recipe.id, detailId = recipe.id)
+
+    fun back(): RecipeBookNavigation? = when {
+        searching -> copy(searching = false)
+        detailId != null -> copy(detailId = null)
+        else -> null
+    }
+}
+
 internal fun DualScreenBridge.readRecipeBook(generation: Long, previous: PanelRecipeBook?): PanelRecipeBook? {
     val file = File(directory, "recipes")
     val modifiedAt = file.lastModified()

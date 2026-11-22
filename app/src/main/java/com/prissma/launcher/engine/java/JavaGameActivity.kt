@@ -71,6 +71,7 @@ class JavaGameActivity : ComponentActivity() {
     private var dualScreenBridge: DualScreenBridge? = null
     private var lowerPanelVisible = false
     private var lowerPanelInput: ((PanelPadAction) -> Unit)? = null
+    private var lowerPanelPan: ((Float, Float) -> Unit)? = null
     private var resumed = false
     private var hostFocused = false
     private var inputManager: InputManager? = null
@@ -81,7 +82,8 @@ class JavaGameActivity : ComponentActivity() {
             lowerGamepadFocused = focused
             if (::gameInput.isInitialized) gameInput.reset()
         },
-        onAction = { lowerPanelInput?.invoke(it) }
+        onAction = { lowerPanelInput?.invoke(it) },
+        onPan = { x, y -> lowerPanelPan?.invoke(x, y) }
     )
     private val devices = object : InputManager.InputDeviceListener {
         override fun onInputDeviceAdded(deviceId: Int) = Unit
@@ -126,12 +128,14 @@ class JavaGameActivity : ComponentActivity() {
         reconcilePadFocus()
     }
 
-    internal fun attachLowerPanelInput(input: (PanelPadAction) -> Unit): () -> Unit {
+    internal fun attachLowerPanelInput(input: (PanelPadAction) -> Unit, pan: (Float, Float) -> Unit): () -> Unit {
         lowerPanelInput = input
+        lowerPanelPan = pan
         reconcilePadFocus()
         return {
             if (lowerPanelInput === input) {
                 lowerPanelInput = null
+                lowerPanelPan = null
                 reconcilePadFocus()
             }
         }

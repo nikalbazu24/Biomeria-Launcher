@@ -43,3 +43,12 @@ internal fun xaeroTouchPosition(x: Float, y: Float, width: Int, height: Int): In
     val vertical = (y / height.coerceAtLeast(1)).coerceIn(0f, 1f)
     return ((horizontal * 4095).roundToInt() shl 12) or (vertical * 4095).roundToInt()
 }
+
+internal fun xaeroPanVector(x: Float, y: Float): Int {
+    val horizontal = (x.coerceIn(-1f, 1f) * 127).roundToInt()
+    val vertical = (y.coerceIn(-1f, 1f) * 127).roundToInt()
+    return ((horizontal and 0xff) shl 8) or (vertical and 0xff)
+}
+
+internal fun validXaeroPanVector(value: Int): Boolean =
+    value in 1..0xffff && value ushr 8 != 0x80 && value and 0xff != 0x80

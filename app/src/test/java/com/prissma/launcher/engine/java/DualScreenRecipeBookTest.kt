@@ -39,6 +39,30 @@ class DualScreenRecipeBookTest {
         assertEquals(listOf(plank), filterPanelRecipes(recipes, "", onlyCraftable = true))
     }
 
+    @Test
+    fun controllerFocusSurvivesReturningToTheListAndRefreshingItsOrder() {
+        val recipes = listOf(chest, plank, manual)
+        val initial = RecipeBookNavigation()
+        assertEquals(chest, initial.move(recipes, -1).focusedRecipe(recipes))
+        val moved = initial.move(recipes, 1)
+        assertEquals(plank, moved.focusedRecipe(recipes.reversed()))
+        val details = moved.open(plank)
+        assertEquals(plank.id, details.detailId)
+        assertEquals(moved, details.copy(searching = true).back()?.back())
+        assertNull(moved.back())
+    }
+
+    @Test
+    fun filteringMovesFocusToAnAvailableRecipeAndAnEmptyListHasNoTarget() {
+        val recipes = listOf(chest, plank, manual)
+        val filtered = RecipeBookNavigation(focusedId = chest.id, onlyCraftable = true)
+        val ready = filterPanelRecipes(recipes, "", filtered.onlyCraftable)
+        assertEquals(plank, filtered.focusedRecipe(ready))
+        assertEquals(plank, filtered.move(ready, 1).focusedRecipe(ready))
+        assertNull(filtered.focusedRecipe(emptyList()))
+        assertEquals(filtered, filtered.move(emptyList(), -1))
+    }
+
     private fun fixture(
         recipes: List<PanelRecipe>,
         selectedId: Int = -1,

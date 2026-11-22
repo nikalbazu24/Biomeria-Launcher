@@ -165,6 +165,7 @@ private fun DualScreenPanel(
         hud.routes(it.layout) && (it.layout != PanelLayout.XAERO || it.xaeroLowerAvailable)
     }?.generation
     var showRecipes by remember(menuSession) { mutableStateOf(false) }
+    var recipePadInput by remember(menuSession) { mutableStateOf<((PanelPadAction) -> Unit)?>(null) }
     LaunchedEffect(menuSession, menuPage) {
         if (menuSession != null && menuPage != null) {
             if (previousMenuPage == null) returnPage = page
@@ -195,7 +196,8 @@ private fun DualScreenPanel(
     val interactive = live?.interactive == true && if (menuPage != null) routed != null else allowGameInput
     val controllerActive = activity.lowerGamepadFocused
     val showingMap = routed != null && live?.layout == PanelLayout.XAERO
-    val showingRecipes = showRecipes && table && routed != null && live?.recipeBookAvailable == true
+    val canShowRecipes = table && routed != null && live?.recipeBookAvailable == true
+    val showingRecipes = showRecipes && canShowRecipes
     val padRows = remember(bridge, live?.layout, page, showingRecipes) {
         when {
             showingRecipes || (bridge != null && live == null) -> emptyList()
@@ -214,10 +216,9 @@ private fun DualScreenPanel(
     val panelAction by rememberUpdatedState<(PanelPadAction) -> Unit>({ action ->
         val target = padSlot?.takeIf { slot -> padRows.any { slot in it } } ?: padRows.firstOrNull()?.firstOrNull()
         when {
+            canShowRecipes && showRecipes -> recipePadInput?.invoke(action)
             action == PanelPadAction.BACK -> {
-                if (showingRecipes) {
-                    showRecipes = false
-                } else if (routed == null || live == null || bridge?.send(live, PanelCommand.CLOSE_MENU) == true) {
+                if (routed == null || live == null || bridge?.send(live, PanelCommand.CLOSE_MENU) == true) {
                     activity.releaseLowerGamepad()
                 }
             }
@@ -228,6 +229,7 @@ private fun DualScreenPanel(
                 PanelPadAction.TRANSFER -> bridge.send(live, PanelCommand.MAP_ZOOM, 1)
                 else -> Unit
             }
+            action == PanelPadAction.NEXT_TAB && canShowRecipes -> showRecipes = true
             action == PanelPadAction.NEXT_TAB || action == PanelPadAction.PREVIOUS_TAB -> {
                 if (menuPage == null && bridge != null) {
                     val tabs = PanelPage.entries.filter { it.canStart }
@@ -253,8 +255,13 @@ private fun DualScreenPanel(
         }
         Unit
     })
+    val panelPan by rememberUpdatedState<(Float, Float) -> Unit>({ x, y ->
+        if (showingMap && page == actionPage && live != null) {
+            bridge?.send(live, PanelCommand.MAP_PAN, xaeroPanVector(x, y))
+        }
+    })
     DisposableEffect(activity) {
-        val detach = activity.attachLowerPanelInput { panelAction(it) }
+        val detach = activity.attachLowerPanelInput({ panelAction(it) }, { x, y -> panelPan(x, y) })
         onDispose(detach)
     }
 
@@ -271,8 +278,8 @@ private fun DualScreenPanel(
             maxLines = 1, overflow = TextOverflow.Ellipsis)
         val controls = when {
             !controllerActive -> "Mantén Select para usar el mando aquí"
-            showingRecipes -> "B · Volver a la mesa    Select · Devolver mando"
-            showingMap -> "X/Y · Zoom    B · Cerrar    Select · Devolver mando"
+            showingRecipes -> "↑/↓ · Recorrer    A · Elegir    B · Atrás"
+            showingMap -> "Stick derecho · Mover mapa    X/Y · Zoom    B · Cerrar"
             padFocus != null && !padFocus.selectsHotbar -> "A · Tomar o colocar    X · Dividir    Y · Mover rápido    B · Volver"
             padFocus?.selectsHotbar == true -> "A · Seleccionar en mano    B · Volver"
             page == PanelPage.MAP && hud.panelMap == PanelMapSource.XAERO -> "A · Abrir Xaero    L1/R1 · Pestañas    B · Volver"
@@ -292,7 +299,15 @@ private fun DualScreenPanel(
             return@Column
         }
         if (showingRecipes && bridge != null && live != null) {
-            RecipeBookPane(bridge, live, onBack = { showRecipes = false }, modifier = Modifier.weight(1f).fillMaxWidth())
+            RecipeBookPane(
+                bridge, live, controllerActive, onBack = { showRecipes = false },
+                onPlaced = {
+                    padSlot = PanelPadSlot(0)
+                    showRecipes = false
+                },
+                onPadInput = { recipePadInput = it },
+                modifier = Modifier.weight(1f).fillMaxWidth()
+            )
             return@Column
         }
         Column(
@@ -365,7 +380,7 @@ private fun DualScreenPanel(
                                 enabled = interactive) { Text("Cerrar mesa") }
                             if (live.recipeBookAvailable) OutlinedButton(
                                 onClick = { showRecipes = true }, enabled = interactive
-                            ) { Text("Recetas") }
+                            ) { Text(if (controllerActive) "Recetas [R1]" else "Recetas") }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column {

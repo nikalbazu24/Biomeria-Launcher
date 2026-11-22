@@ -25,6 +25,8 @@ final class XaeroMapView {
 
     private final Access access;
     private final Object client;
+    private CameraPan cameraPan;
+    private boolean reportedPanFailure;
     private Object worldBackup;
     private Object previewTarget;
     private ByteBuffer readPixels;
@@ -40,6 +42,11 @@ final class XaeroMapView {
     private XaeroMapView(ClassLoader loader, Object client) throws ReflectiveOperationException {
         this.access = new Access(loader);
         this.client = client;
+        try {
+            cameraPan = new CameraPan(access.mapScreen);
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
+            // Camera fields are optional. The regular map and its touch input still work.
+        }
     }
 
     static XaeroMapView create(ClassLoader loader, Object client) {
@@ -145,6 +152,10 @@ final class XaeroMapView {
 
     void input(Object screen, String command, int value) {
         if (failed) return;
+        if (command.equals("map-pan")) {
+            pan(screen, value);
+            return;
+        }
         try {
             if (command.equals("map-zoom")) {
                 if (value == -1 || value == 1) {
@@ -167,6 +178,25 @@ final class XaeroMapView {
             // GuiMap pans from the current mouse coordinates while its left button is held.
         } catch (ReflectiveOperationException | RuntimeException | LinkageError error) {
             fail(error);
+        }
+    }
+
+    private void pan(Object screen, int value) {
+        if (pressed || value <= 0 || value > 0xffff) return;
+        int horizontal = (byte) (value >>> 8);
+        int vertical = (byte) value;
+        if (horizontal == -128 || vertical == -128) return;
+        if (cameraPan != null) {
+            try {
+                cameraPan.move(screen, horizontal, vertical);
+                return;
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
+                cameraPan = null;
+            }
+        }
+        if (!reportedPanFailure) {
+            reportedPanFailure = true;
+            System.err.println("[PRISSMA] Esta versión de Xaero no admite mover el mapa con el stick.");
         }
     }
 
@@ -224,6 +254,37 @@ final class XaeroMapView {
 
     private interface PointerAction {
         void run(double x, double y) throws ReflectiveOperationException;
+    }
+
+    private static final class CameraPan {
+        private final Field cameraX, cameraZ, scale, attached, reinit, destination, animationX, animationZ;
+
+        CameraPan(Class<?> screen) throws ReflectiveOperationException {
+            cameraX = Access.field(screen, "cameraX");
+            cameraZ = Access.field(screen, "cameraZ");
+            scale = Access.field(screen, "scale");
+            attached = Access.field(screen, "attachedCamera");
+            reinit = Access.field(screen, "shouldReinit");
+            destination = Access.field(screen, "cameraDestination");
+            animationX = Access.field(screen, "cameraDestinationAnimX");
+            animationZ = Access.field(screen, "cameraDestinationAnimZ");
+        }
+
+        void move(Object screen, int horizontal, int vertical) throws ReflectiveOperationException {
+            double zoom = scale.getDouble(screen);
+            if (!Double.isFinite(zoom) || zoom <= 0) return;
+            // Use the same screen-to-world scale as Xaero's drag, without clicking any map widgets.
+            double step = 30.0 / (127 * zoom);
+            if (attached.getBoolean(screen)) {
+                attached.setBoolean(screen, false);
+                reinit.setBoolean(screen, true);
+            }
+            destination.set(screen, null);
+            animationX.set(screen, null);
+            animationZ.set(screen, null);
+            cameraX.setDouble(screen, cameraX.getDouble(screen) + horizontal * step);
+            cameraZ.setDouble(screen, cameraZ.getDouble(screen) + vertical * step);
+        }
     }
 
     private static final class Access {

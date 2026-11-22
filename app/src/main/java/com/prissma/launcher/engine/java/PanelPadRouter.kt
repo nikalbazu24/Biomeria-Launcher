@@ -29,7 +29,8 @@ internal data class GamepadAxes(
 /** Routes physical events once and quarantines held controls until their next release after a handoff. */
 internal class PanelPadRouter(
     private val onFocus: (Boolean) -> Unit,
-    private val onAction: (PanelPadAction) -> Unit
+    private val onAction: (PanelPadAction) -> Unit,
+    private val onPan: (Float, Float) -> Unit = { _, _ -> }
 ) {
     private data class Button(val device: Int, val code: Int)
 
@@ -42,6 +43,8 @@ internal class PanelPadRouter(
     private var stickDevice: Int? = null
     private var stickDirection: PanelPadAction? = null
     private var nextRepeat = 0L
+    private var panAxes: GamepadAxes? = null
+    private var nextPan = 0L
     private var lastDirection: PanelPadAction? = null
     private var lastDirectionAt = 0L
 
@@ -82,6 +85,8 @@ internal class PanelPadRouter(
         owner = device
         stickDevice = null
         stickDirection = null
+        panAxes = null
+        nextPan = 0L
         lastDirection = null
         onFocus(device != null)
     }
@@ -106,6 +111,10 @@ internal class PanelPadRouter(
         }
         if (owner == null) return false
 
+        if (device == owner) {
+            panAxes = axes.takeIf { it.lookX != 0f || it.lookY != 0f }
+            if (panAxes == null) nextPan = 0L
+        }
         val direction = axes.direction()
         if (direction != null && (device != stickDevice || direction != stickDirection)) {
             stickDevice = device
@@ -120,10 +129,15 @@ internal class PanelPadRouter(
     }
 
     fun tick(time: Long) {
-        val direction = stickDirection ?: return
-        if (owner != null && time >= nextRepeat && !digitalDirectionHeld()) {
+        val direction = stickDirection
+        if (direction != null && time >= nextRepeat && !digitalDirectionHeld()) {
             nextRepeat = time + 120L
             dispatch(direction, time)
+        }
+        val axes = panAxes
+        if (axes != null && time >= nextPan) {
+            nextPan = time + 90L
+            onPan(axes.lookX, axes.lookY)
         }
     }
 

@@ -27,6 +27,19 @@ class DualScreenXaeroTest {
         assertEquals(0xffffff, xaeroTouchPosition(640f, 400f, 640, 360))
     }
 
+    @Test
+    fun mapPanPreservesBothSignedAxesAndRejectsMalformedOrUnroutedCommands() {
+        val pan = xaeroPanVector(1.5f, -.5f)
+        assertEquals(127, (pan shr 8).toByte().toInt())
+        assertEquals(-63, pan.toByte().toInt())
+        assertEquals(0x817f, xaeroPanVector(-1f, 1f))
+        assertTrue(PanelLayout.XAERO.accepts(PanelCommand.MAP_PAN, pan))
+        assertFalse(PanelLayout.CRAFTING_TABLE.accepts(PanelCommand.MAP_PAN, pan))
+        listOf(0, -1, 0x8001, 0x0180, 0x10000).forEach {
+            assertFalse(PanelLayout.XAERO.accepts(PanelCommand.MAP_PAN, it))
+        }
+    }
+
     private fun frame(generation: Long = 7, width: Int = 2, height: Int = 1, extraByte: Boolean = false): XaeroFrame? {
         val bytes = ByteArrayOutputStream()
         DataOutputStream(bytes).use { out ->

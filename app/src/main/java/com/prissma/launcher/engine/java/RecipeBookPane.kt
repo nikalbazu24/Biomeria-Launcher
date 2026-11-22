@@ -1,8 +1,10 @@
 package com.prissma.launcher.engine.java
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -22,14 +24,16 @@ import kotlinx.coroutines.withContext
 internal fun RecipeBookPane(
     bridge: DualScreenBridge,
     inventory: PanelInventory,
+    controllerActive: Boolean,
     onBack: () -> Unit,
+    onPlaced: () -> Unit,
+    onPadInput: (((PanelPadAction) -> Unit)?) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var book by remember { mutableStateOf<PanelRecipeBook?>(null) }
-    var selectedId by remember { mutableStateOf<Int?>(null) }
-    var query by remember { mutableStateOf("") }
-    var typing by remember { mutableStateOf(false) }
-    var onlyCraftable by remember { mutableStateOf(false) }
+    var book by remember(inventory.generation) { mutableStateOf<PanelRecipeBook?>(null) }
+    var navigation by remember(inventory.generation) { mutableStateOf(RecipeBookNavigation()) }
+    var query by remember(inventory.generation) { mutableStateOf("") }
+    val listState = rememberLazyListState()
     DisposableEffect(bridge, inventory.generation) {
         bridge.viewRecipes(inventory.generation)
         onDispose { bridge.viewRecipes(null) }
@@ -43,41 +47,85 @@ internal fun RecipeBookPane(
     }
 
     val snapshot = book
-    val selected = snapshot?.recipes?.firstOrNull { it.id == selectedId }
+    val results = remember(snapshot?.recipes, query, navigation.onlyCraftable) {
+        filterPanelRecipes(snapshot?.recipes.orEmpty(), query, navigation.onlyCraftable)
+    }
+    val selected = snapshot?.recipes?.firstOrNull { it.id == navigation.detailId }
+    val focused = navigation.focusedRecipe(results)
+    val hasCursorItem = inventory.held.count > 0
+
+    fun back() {
+        val previous = navigation.back()
+        if (previous == null) onBack() else navigation = previous
+    }
+
+    fun inspect(recipe: PanelRecipe) {
+        if (bridge.send(inventory, PanelCommand.INSPECT_RECIPE, recipe.id)) navigation = navigation.open(recipe)
+    }
+
+    fun place(recipe: PanelRecipe) {
+        if (recipe.state == PanelRecipeState.READY && !hasCursorItem &&
+            bridge.send(inventory, PanelCommand.PLACE_RECIPE, recipe.id)
+        ) onPlaced()
+    }
+
+    val padAction by rememberUpdatedState<(PanelPadAction) -> Unit>({ action ->
+        when {
+            action == PanelPadAction.BACK -> back()
+            navigation.searching -> Unit
+            navigation.detailId != null -> {
+                if (action == PanelPadAction.PICK && selected?.id == navigation.detailId) selected?.let(::place)
+            }
+            action == PanelPadAction.UP -> navigation = navigation.move(results, -1)
+            action == PanelPadAction.DOWN -> navigation = navigation.move(results, 1)
+            action == PanelPadAction.SPLIT -> navigation = navigation.copy(onlyCraftable = !navigation.onlyCraftable)
+            action == PanelPadAction.PICK -> navigation.focusedRecipe(results)?.let(::inspect)
+            else -> Unit
+        }
+    })
+    val updatePadInput by rememberUpdatedState(onPadInput)
+    DisposableEffect(Unit) {
+        updatePadInput { padAction(it) }
+        onDispose { updatePadInput(null) }
+    }
+    LaunchedEffect(controllerActive, focused?.id, navigation.detailId, navigation.searching) {
+        if (controllerActive && focused != null && navigation.detailId == null && !navigation.searching) {
+            val index = results.indexOf(focused)
+            if (listState.layoutInfo.visibleItemsInfo.none { it.key == focused.id }) listState.scrollToItem(index)
+        }
+    }
+
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             when {
-                typing -> OutlinedButton(onClick = { typing = false }) { Text("Ver recetas") }
-                selectedId != null -> OutlinedButton(onClick = { selectedId = null }) { Text("Recetas") }
+                navigation.searching -> OutlinedButton(onClick = ::back) { Text("Ver recetas") }
+                navigation.detailId != null -> OutlinedButton(onClick = ::back) { Text("Recetas") }
                 else -> OutlinedButton(onClick = onBack) { Text("Mesa 3×3") }
             }
-            Text(if (typing) query.ifBlank { "Buscar por nombre" } else "Libro de recetas",
+            Text(if (navigation.searching) query.ifBlank { "Buscar por nombre" } else "Libro de recetas",
                 modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.titleSmall)
-            if (!typing && selectedId == null) {
-                OutlinedButton(onClick = { typing = true }) { Text("Buscar") }
+            if (!navigation.searching && navigation.detailId == null) {
+                OutlinedButton(onClick = { navigation = navigation.copy(searching = true) }) { Text("Buscar") }
             }
         }
 
         when {
-            typing -> RecipeSearchKeys(query, { query = it }, Modifier.weight(1f))
+            navigation.searching -> RecipeSearchKeys(query, { query = it }, Modifier.weight(1f))
             snapshot == null -> Text("Leyendo las recetas de Minecraft…", color = Prissma.colors.textMuted)
             selected != null -> RecipeDetails(
-                selected, snapshot, hasCursorItem = inventory.held.count != 0, modifier = Modifier.weight(1f)
-            ) {
-                if (bridge.send(inventory, PanelCommand.PLACE_RECIPE, selected.id)) onBack()
-            }
-            selectedId != null -> Text("La receta ya no está en el libro.", color = Prissma.colors.textMuted)
+                selected, snapshot, hasCursorItem, controllerActive, modifier = Modifier.weight(1f)
+            ) { place(selected) }
+            navigation.detailId != null -> Text("La receta ya no está en el libro.", color = Prissma.colors.textMuted)
             else -> {
-                val results = remember(snapshot.recipes, query, onlyCraftable) {
-                    filterPanelRecipes(snapshot.recipes, query, onlyCraftable)
-                }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    FilterChip(onlyCraftable, { onlyCraftable = !onlyCraftable }, label = { Text("Solo fabricables") })
+                    FilterChip(navigation.onlyCraftable,
+                        { navigation = navigation.copy(onlyCraftable = !navigation.onlyCraftable) },
+                        label = { Text(if (controllerActive) "Solo fabricables [X]" else "Solo fabricables") })
                     if (query.isNotBlank()) {
-                        FilterChip(true, { typing = true }, label = {
+                        FilterChip(true, { navigation = navigation.copy(searching = true) }, label = {
                             Text(query, modifier = Modifier.widthIn(max = 150.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         })
                     }
@@ -86,13 +134,16 @@ internal fun RecipeBookPane(
                     Text(if (snapshot.recipes.isEmpty()) "Todavía no has desbloqueado recetas para la mesa."
                         else "No hay recetas que coincidan.", color = Prissma.colors.textMuted)
                 }
-                LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     items(results, key = { it.id }) { recipe ->
                         Surface(
-                            onClick = { if (bridge.send(inventory, PanelCommand.INSPECT_RECIPE, recipe.id)) selectedId = recipe.id },
+                            onClick = { inspect(recipe) },
                             modifier = Modifier.fillMaxWidth(),
                             shape = MaterialTheme.shapes.small,
-                            color = MaterialTheme.colorScheme.surfaceVariant
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            border = if (controllerActive && recipe.id == focused?.id) {
+                                BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                            } else null
                         ) {
                             Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -120,6 +171,7 @@ private fun RecipeDetails(
     recipe: PanelRecipe,
     book: PanelRecipeBook,
     hasCursorItem: Boolean,
+    controllerActive: Boolean,
     modifier: Modifier,
     onPlace: () -> Unit
 ) {
@@ -128,7 +180,9 @@ private fun RecipeDetails(
             style = MaterialTheme.typography.titleMedium)
         when (recipe.state) {
             PanelRecipeState.READY -> {
-                Button(onClick = onPlace, enabled = !hasCursorItem) { Text("Colocar ingredientes") }
+                Button(onClick = onPlace, enabled = !hasCursorItem) {
+                    Text(if (controllerActive) "Colocar ingredientes [A]" else "Colocar ingredientes")
+                }
                 Text(if (hasCursorItem) "Guarda el objeto que llevas en el cursor."
                     else "Recoge el resultado en la mesa.", color = Prissma.colors.textMuted)
             }
