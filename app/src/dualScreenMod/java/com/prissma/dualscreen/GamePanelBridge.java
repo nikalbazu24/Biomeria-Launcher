@@ -15,8 +15,7 @@ import java.util.stream.Stream;
 
 /** Runs at the tail of the Fabric client tick so inventory changes follow Minecraft's own protocol. */
 public final class GamePanelBridge {
-    private static final int MAGIC = 0x50525334;
-    private static final int SLOTS = 46;
+    private static final int MAGIC = 0x50525335;
     private static final int MAP_PIXELS = 128 * 128;
     private static final String SESSION = System.getProperty("prissma.dualscreen.session", "");
     private static final int SNAPSHOT_TICKS = 4;
@@ -27,9 +26,12 @@ public final class GamePanelBridge {
     private static Object previousWorld;
     private static Object previousPlayer;
     private static Object previousHandler;
+    private static Object previousScreen;
     private static Object clientInstance;
-    private static Object routedCraftingScreen;
+    private static Object routedScreen;
+    private static Layout routedLayout = Layout.PERSONAL;
     private static XaeroPanel xaero;
+    private static XaeroMapView xaeroView;
     private static RecipeBookPanel recipeBook;
     private static byte[] previousMap;
     private static int mapRevision;
@@ -37,13 +39,20 @@ public final class GamePanelBridge {
     private static byte[] lastSnapshot;
     private static long lastWrite;
 
+    // Ordinals and slot counts match Android's PanelLayout.
+    private enum Layout {
+        PERSONAL(46), CRAFTING_TABLE(46), CHEST(63), DOUBLE_CHEST(90), FURNACE(39), XAERO(0);
+        final int slots;
+        Layout(int slots) { this.slots = slots; }
+    }
+
     private GamePanelBridge() {}
 
     public static void tick(Object client) {
         if (SESSION.isEmpty() || disabled || ++ticks % 2 != 0) return;
         Path root = Path.of(SESSION);
         if (!Files.isRegularFile(root.resolve("visible"))) {
-            routedCraftingScreen = null;
+            clearRoute();
             return;
         }
         try {
@@ -51,6 +60,7 @@ public final class GamePanelBridge {
                 ClassLoader loader = client.getClass().getClassLoader();
                 game = new Access(loader);
                 xaero = new XaeroPanel(loader);
+                xaeroView = XaeroMapView.create(loader, client);
                 try {
                     recipeBook = new RecipeBookPanel(loader);
                 } catch (ReflectiveOperationException | LinkageError error) {
@@ -63,10 +73,12 @@ public final class GamePanelBridge {
             Object screen = game.currentScreen.get(client);
             Object personal = player == null ? null : game.playerHandler.get(player);
             Object active = player == null ? null : game.currentHandler.get(player);
-            boolean table = screen != null && screen.getClass() == game.craftingScreen
-                    && active != null && active.getClass() == game.craftingHandler
-                    && game.screenHandler.invoke(screen) == active;
-            Object handler = table ? active : personal;
+            Layout layout = game.layout(screen, active);
+            if (layout == Layout.PERSONAL && xaeroView != null && xaeroView.isMap(screen) && personal == active) {
+                layout = Layout.XAERO;
+            }
+            boolean screenControlsSlots = layout != Layout.PERSONAL && layout != Layout.XAERO;
+            Object handler = screenControlsSlots ? active : personal;
             if (world != previousWorld || player != previousPlayer) {
                 previousWorld = world;
                 previousPlayer = player;
@@ -74,32 +86,40 @@ public final class GamePanelBridge {
                 writtenMapRevision = -1;
                 generation++;
             }
-            if (handler != previousHandler) {
+            if (handler != previousHandler || screen != previousScreen) {
                 previousHandler = handler;
+                previousScreen = screen;
                 generation++;
             }
             Object interactions = game.interactions.get(client);
             boolean canUse = world != null && handler != null && interactions != null
-                    && (table || (screen == null && active == personal))
+                    && (layout != Layout.PERSONAL || (screen == null && active == personal))
                     && !(boolean) game.spectator.invoke(player);
-            routedCraftingScreen = canUse && table && hasGenerationMarker(root.resolve("crafting")) ? screen : null;
-            if (consumeRequests(root, player, world, handler, interactions, canUse, table, screen)) {
-                routedCraftingScreen = null;
+            boolean route = canUse && layout != Layout.PERSONAL
+                    && (layout != Layout.XAERO || xaeroView.available())
+                    && hasGenerationMarker(root.resolve("routed-menu"));
+            if (!route || routedScreen != screen) clearRoute();
+            if (route) {
+                routedScreen = screen;
+                routedLayout = layout;
+            }
+            if (consumeRequests(root, player, world, handler, interactions, canUse, layout, screen)) {
+                clearRoute();
                 return;
             }
             if (ticks % SNAPSHOT_TICKS == 0) {
-                if (recipeBook != null && routedCraftingScreen != null && hasGenerationMarker(root.resolve("recipes-open"))) {
+                if (recipeBook != null && routedLayout == Layout.CRAFTING_TABLE && hasGenerationMarker(root.resolve("recipes-open"))) {
                     try {
                         recipeBook.publish(root.resolve("recipes"), generation, player, world, handler);
                     } catch (ReflectiveOperationException | LinkageError error) {
                         disableRecipeBook(error);
                     }
                 }
-                publishSnapshot(root, player, world, handler, canUse, table);
+                publishSnapshot(root, player, world, handler, canUse, layout, screen);
             }
         } catch (ReflectiveOperationException | LinkageError error) {
             disabled = true;
-            routedCraftingScreen = null;
+            clearRoute();
             System.err.println("[PRISSMA] El panel Fabric no pudo leer la sesión del juego: " + error.getClass().getSimpleName());
         } catch (IOException ignored) {
             // Android can close the panel or dispose the session between ticks.
@@ -120,21 +140,33 @@ public final class GamePanelBridge {
         System.err.println("[PRISSMA] Libro de recetas no disponible: " + error.getClass().getSimpleName() + ": " + error.getMessage());
     }
 
-    public static boolean hidesCrafting(Object screen) {
-        return routedCraftingScreen != null && routedCraftingScreen == screen;
+    private static void clearRoute() {
+        if (routedLayout == Layout.XAERO && xaeroView != null) xaeroView.detach(routedScreen);
+        routedScreen = null;
+        routedLayout = Layout.PERSONAL;
     }
 
-    public static boolean blocksCraftingMouse() {
-        if (routedCraftingScreen == null) return false;
+    public static boolean renderRoutedScreen(Object screen, Object draw, float delta) {
+        if (routedScreen != screen) return false;
+        if (routedLayout != Layout.XAERO) return true;
+        return xaeroView.render(screen, draw, delta, Path.of(SESSION).resolve("xaero-frame"), generation);
+    }
+
+    public static boolean keepsWorldVisibleUnderXaero() {
+        return routedLayout == Layout.XAERO && blocksRoutedMouse();
+    }
+
+    public static boolean blocksRoutedMouse() {
+        if (routedScreen == null || routedLayout == Layout.XAERO && !xaeroView.available()) return false;
         try {
-            return hidesCrafting(game.currentScreen.get(clientInstance));
+            return routedScreen == game.currentScreen.get(clientInstance);
         } catch (IllegalAccessException ignored) {
             return false;
         }
     }
 
     private static boolean consumeRequests(Path root, Object player, Object world, Object handler, Object interactions,
-                                           boolean canUse, boolean table, Object screen)
+                                           boolean canUse, Layout layout, Object screen)
             throws IOException, ReflectiveOperationException {
         List<Path> requests;
         try (Stream<Path> files = Files.list(root)) {
@@ -144,30 +176,36 @@ public final class GamePanelBridge {
         for (Path request : requests) {
             String command = Files.size(request) <= 64 ? Files.readString(request, StandardCharsets.US_ASCII) : "";
             Files.deleteIfExists(request);
-            if (!canUse || (table && !hidesCrafting(screen))) continue;
+            if (!canUse || (layout != Layout.PERSONAL && routedScreen != screen)) continue;
             String[] parts = command.split(" ");
             if (parts.length != 3) continue;
             try {
                 if (Long.parseLong(parts[0]) != generation) continue;
                 int slot = Integer.parseInt(parts[2]);
                 switch (parts[1]) {
-                    case "pick" -> click(player, handler, interactions, slot, 0, game.pickup);
-                    case "split" -> click(player, handler, interactions, slot, 1, game.pickup);
-                    case "quick" -> click(player, handler, interactions, slot, 0, game.quickMove);
+                    case "pick" -> click(player, handler, interactions, slot, 0, game.pickup, layout.slots);
+                    case "split" -> click(player, handler, interactions, slot, 1, game.pickup, layout.slots);
+                    case "quick" -> click(player, handler, interactions, slot, 0, game.quickMove, layout.slots);
                     case "hotbar" -> {
-                        if (!table && slot >= 0 && slot <= 8) game.selectSlot.invoke(game.inventory.invoke(player), slot);
+                        if (layout == Layout.PERSONAL && slot >= 0 && slot <= 8) game.selectSlot.invoke(game.inventory.invoke(player), slot);
                     }
                     case "close" -> {
-                        if (table && slot == 0) {
+                        if (layout != Layout.PERSONAL && slot == 0) {
                             game.closeScreen.invoke(screen);
                             return true;
                         }
                     }
                     case "xaero" -> {
-                        if (!table && slot == 0 && xaero.openWorldMap()) return true;
+                        if (layout == Layout.PERSONAL && slot == 0 && xaero.openWorldMap()) return true;
+                    }
+                    case "map-down", "map-move", "map-up", "map-zoom" -> {
+                        if (layout == Layout.XAERO) {
+                            xaeroView.input(screen, parts[1], slot);
+                            if (game.currentScreen.get(clientInstance) != screen) return true;
+                        }
                     }
                     case "inspect", "recipe" -> {
-                        if (!table || recipeBook == null || slot < 0) continue;
+                        if (layout != Layout.CRAFTING_TABLE || recipeBook == null || slot < 0) continue;
                         if (parts[1].equals("inspect")) {
                             recipeBook.inspect(slot);
                         } else if ((boolean) game.empty.invoke(game.cursorStack.invoke(handler))) {
@@ -187,16 +225,16 @@ public final class GamePanelBridge {
         return false;
     }
 
-    private static void click(Object player, Object handler, Object interactions, int slot, int button, Object action)
+    private static void click(Object player, Object handler, Object interactions, int slot, int button, Object action, int slotCount)
             throws ReflectiveOperationException {
         List<?> slots = (List<?>) game.slots.get(handler);
-        if (slot >= 0 && slot < SLOTS && slot < slots.size()) {
+        if (slot >= 0 && slot < slotCount && slot < slots.size()) {
             game.clickSlot.invoke(interactions, game.syncId.getInt(handler), slot, button, action, player);
         }
     }
 
     private static void publishSnapshot(Path root, Object player, Object world, Object handler, boolean canUse,
-                                        boolean table)
+                                        Layout layout, Object screen)
             throws IOException, ReflectiveOperationException {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream(2048);
         try (DataOutputStream data = new DataOutputStream(bytes)) {
@@ -206,17 +244,25 @@ public final class GamePanelBridge {
             data.writeBoolean(present);
             if (present) {
                 data.writeBoolean(canUse);
-                data.writeByte(table ? 1 : 0);
+                data.writeByte(layout.ordinal());
                 data.writeInt(game.selectedSlot.getInt(game.inventory.invoke(player)));
                 data.writeDouble((double) game.x.invoke(player));
                 data.writeDouble((double) game.y.invoke(player));
                 data.writeDouble((double) game.z.invoke(player));
                 writeStack(data, game.cursorStack.invoke(handler));
                 List<?> slots = (List<?>) game.slots.get(handler);
-                for (int i = 0; i < SLOTS; i++) writeStack(data, i < slots.size() ? game.slotStack.invoke(slots.get(i)) : null);
+                for (int i = 0; i < layout.slots; i++) writeStack(data, i < slots.size() ? game.slotStack.invoke(slots.get(i)) : null);
                 data.writeInt(publishHeldMap(root, player, world));
                 xaero.write(data);
-                data.writeBoolean(table && recipeBook != null);
+                data.writeBoolean(layout == Layout.CRAFTING_TABLE && recipeBook != null);
+                String title = layout == Layout.PERSONAL ? "" : (String) game.text.invoke(game.title.invoke(screen));
+                data.writeUTF(title.substring(0, Math.min(title.length(), 96)));
+                if (layout == Layout.FURNACE) {
+                    data.writeFloat((float) game.cookProgress.invoke(handler));
+                    data.writeFloat((float) game.fuelProgress.invoke(handler));
+                    data.writeBoolean((boolean) game.furnaceBurning.invoke(handler));
+                }
+                data.writeBoolean(xaeroView != null && xaeroView.available());
             }
         }
         byte[] snapshot = bytes.toByteArray();
@@ -277,8 +323,8 @@ public final class GamePanelBridge {
         final Field player, world, currentScreen, interactions, playerHandler, currentHandler, slots, syncId, selectedSlot, mapColors;
         final Method slotStack, cursorStack, empty, name, text, count, inventory, selectSlot, clickSlot, spectator;
         final Method x, y, z, mainHand, offHand, component, mapState, mapColor;
-        final Method screenHandler, closeScreen;
-        final Class<?> craftingScreen, craftingHandler;
+        final Method screenHandler, closeScreen, title, chestRows, cookProgress, fuelProgress, furnaceBurning;
+        final Class<?> craftingScreen, craftingHandler, chestScreen, chestHandler, furnaceScreen, furnaceHandler;
         final Object pickup, quickMove, mapId;
 
         Access(ClassLoader loader) throws ReflectiveOperationException {
@@ -295,8 +341,18 @@ public final class GamePanelBridge {
             currentScreen = field(client, "field_1755");
             craftingScreen = type(loader, 479);
             craftingHandler = type(loader, 1714);
-            screenHandler = craftingScreen.getMethod("method_17577");
+            chestScreen = type(loader, 476);
+            chestHandler = type(loader, 1707);
+            furnaceScreen = type(loader, 3873);
+            furnaceHandler = type(loader, 3858);
+            chestRows = chestHandler.getMethod("method_17388");
+            Class<?> furnace = type(loader, 1720);
+            cookProgress = furnace.getMethod("method_17363");
+            fuelProgress = furnace.getMethod("method_17364");
+            furnaceBurning = furnace.getMethod("method_17365");
+            screenHandler = type(loader, 465).getMethod("method_17577");
             closeScreen = type(loader, 437).getMethod("method_25419");
+            title = type(loader, 437).getMethod("method_25440");
             interactions = field(client, "field_1761");
             playerHandler = field(playerEntity, "field_7498");
             currentHandler = field(playerEntity, "field_7512");
@@ -325,6 +381,24 @@ public final class GamePanelBridge {
             mapColor = type(loader, 3620).getMethod("method_38480", int.class);
             pickup = field(action, "field_7790").get(null);
             quickMove = field(action, "field_7794").get(null);
+        }
+
+        Layout layout(Object screen, Object handler) throws ReflectiveOperationException {
+            if (screen == null || handler == null) return Layout.PERSONAL;
+            Class<?> screenType = screen.getClass();
+            Class<?> handlerType = handler.getClass();
+            if (screenType == craftingScreen && handlerType == craftingHandler && screenHandler.invoke(screen) == handler) {
+                return Layout.CRAFTING_TABLE;
+            }
+            if (screenType == chestScreen && handlerType == chestHandler && screenHandler.invoke(screen) == handler) {
+                int rows = (int) chestRows.invoke(handler);
+                if (rows == 3) return Layout.CHEST;
+                if (rows == 6) return Layout.DOUBLE_CHEST;
+            }
+            if (screenType == furnaceScreen && handlerType == furnaceHandler && screenHandler.invoke(screen) == handler) {
+                return Layout.FURNACE;
+            }
+            return Layout.PERSONAL;
         }
 
         private static Class<?> type(ClassLoader loader, int id) throws ClassNotFoundException {

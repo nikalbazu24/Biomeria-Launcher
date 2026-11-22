@@ -134,14 +134,14 @@ jobs:
               assert metadata["environment"] == "client"
               assert metadata["depends"]["minecraft"] == "1.21.4"
               mixins = json.loads(mod.read(metadata["mixins"][0]))
-              expected_mixins = ["MinecraftClientMixin", "CraftingScreenMixin", "CraftingMouseMixin"]
+              expected_mixins = ["MinecraftClientMixin", "RoutedScreenMixin", "RoutedMouseMixin", "XaeroWorldRenderMixin"]
               assert mixins["client"] == expected_mixins
               mixin_package = mixins["package"].replace(".", "/")
               bridge_path = "com/prissma/dualscreen/GamePanelBridge"
               assert not bridge_path.startswith(mixin_package + "/")
               for entry in [mixin_package + "/" + name for name in expected_mixins] + [
                   bridge_path, bridge_path + "$Access", "com/prissma/dualscreen/XaeroPanel",
-                  "com/prissma/dualscreen/RecipeBookPanel"
+                  "com/prissma/dualscreen/RecipeBookPanel", "com/prissma/dualscreen/XaeroMapView"
               ]:
                   assert mod.read(entry + ".class").startswith(bytes.fromhex("CAFEBABE"))
           PY

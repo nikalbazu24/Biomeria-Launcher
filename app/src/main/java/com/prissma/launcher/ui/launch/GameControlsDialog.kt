@@ -70,17 +70,17 @@ internal fun GameControlsDialog(
 @Composable
 internal fun PanelPreferenceControls(settings: GameHudSettings, onChange: (GameHudSettings) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Mesa de crafteo abajo", Modifier.weight(1f))
-            Switch(settings.routeCrafting, { onChange(settings.copy(routeCrafting = it)) })
-        }
+        PanelSwitch("Mesa de crafteo abajo", settings.routeCrafting) { onChange(settings.copy(routeCrafting = it)) }
+        PanelSwitch("Cofres abajo", settings.routeChests) { onChange(settings.copy(routeChests = it)) }
+        PanelSwitch("Hornos abajo", settings.routeFurnaces) { onChange(settings.copy(routeFurnaces = it)) }
+        PanelSwitch("Mapa de Xaero abajo", settings.routeXaeroMap) { onChange(settings.copy(routeXaeroMap = it)) }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Ranuras compactas", Modifier.weight(1f))
             Switch(settings.compactPanel, { onChange(settings.copy(compactPanel = it)) })
         }
         Text("Pestaña al iniciar", style = MaterialTheme.typography.labelMedium)
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            PanelPage.entries.filter { it != PanelPage.OPTIONS }.forEach { page ->
+            PanelPage.entries.filter { it.canStart }.forEach { page ->
                 FilterChip(settings.panelHome == page, { onChange(settings.copy(panelHome = page)) },
                     label = { Text(page.label) })
             }
@@ -92,6 +92,14 @@ internal fun PanelPreferenceControls(settings: GameHudSettings, onChange: (GameH
                     label = { Text(source.label) })
             }
         }
+    }
+}
+
+@Composable
+private fun PanelSwitch(label: String, enabled: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f))
+        Switch(enabled, onChange)
     }
 }
 

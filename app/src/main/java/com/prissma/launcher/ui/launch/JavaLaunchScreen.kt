@@ -106,7 +106,10 @@ fun JavaLaunchScreen(
             settings.getBoolean("panel-crafting-" + instance.id, true),
             PanelPage.fromPreference(settings.getString("panel-home-" + instance.id, null)),
             PanelMapSource.fromPreference(settings.getString("panel-map-" + instance.id, null)),
-            settings.getBoolean("panel-compact-" + instance.id, false)))
+            settings.getBoolean("panel-compact-" + instance.id, false),
+            settings.getBoolean("panel-chests-" + instance.id, true),
+            settings.getBoolean("panel-furnaces-" + instance.id, true),
+            settings.getBoolean("panel-xaero-map-" + instance.id, true)))
     }
     val supported = supportsJavaLoader(instance.version, instance.loader)
 
@@ -119,7 +122,10 @@ fun JavaLaunchScreen(
             .putBoolean("panel-crafting-" + instance.id, updated.routeCrafting)
             .putString("panel-home-" + instance.id, updated.panelHome.name)
             .putString("panel-map-" + instance.id, updated.panelMap.name)
-            .putBoolean("panel-compact-" + instance.id, updated.compactPanel).apply()
+            .putBoolean("panel-compact-" + instance.id, updated.compactPanel)
+            .putBoolean("panel-chests-" + instance.id, updated.routeChests)
+            .putBoolean("panel-furnaces-" + instance.id, updated.routeFurnaces)
+            .putBoolean("panel-xaero-map-" + instance.id, updated.routeXaeroMap).apply()
     }
     val gameActivity = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         result.data?.getBundleExtra("GAME_HUD")?.let { saveHud(GameHudSettings.fromBundle(it)) }

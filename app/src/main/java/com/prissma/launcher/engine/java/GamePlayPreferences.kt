@@ -35,8 +35,19 @@ internal data class GameHudSettings(
     val routeCrafting: Boolean = true,
     val panelHome: PanelPage = PanelPage.INVENTORY,
     val panelMap: PanelMapSource = PanelMapSource.MINECRAFT,
-    val compactPanel: Boolean = false
+    val compactPanel: Boolean = false,
+    val routeChests: Boolean = true,
+    val routeFurnaces: Boolean = true,
+    val routeXaeroMap: Boolean = true
 ) {
+    fun routes(layout: PanelLayout) = when (layout) {
+        PanelLayout.PERSONAL -> false
+        PanelLayout.CRAFTING_TABLE -> routeCrafting
+        PanelLayout.CHEST, PanelLayout.DOUBLE_CHEST -> routeChests
+        PanelLayout.FURNACE -> routeFurnaces
+        PanelLayout.XAERO -> routeXaeroMap
+    }
+
     fun toBundle() = Bundle().apply {
         putBoolean("touch", showTouch)
         putBoolean("fps", showFps)
@@ -46,6 +57,9 @@ internal data class GameHudSettings(
         putString("panelHome", panelHome.name)
         putString("panelMap", panelMap.name)
         putBoolean("compactPanel", compactPanel)
+        putBoolean("routeChests", routeChests)
+        putBoolean("routeFurnaces", routeFurnaces)
+        putBoolean("routeXaeroMap", routeXaeroMap)
     }
 
     companion object {
@@ -57,7 +71,10 @@ internal data class GameHudSettings(
             bundle?.getBoolean("routeCrafting", true) ?: true,
             PanelPage.fromPreference(bundle?.getString("panelHome")),
             PanelMapSource.fromPreference(bundle?.getString("panelMap")),
-            bundle?.getBoolean("compactPanel", false) ?: false
+            bundle?.getBoolean("compactPanel", false) ?: false,
+            bundle?.getBoolean("routeChests", true) ?: true,
+            bundle?.getBoolean("routeFurnaces", true) ?: true,
+            bundle?.getBoolean("routeXaeroMap", true) ?: true
         )
     }
 }

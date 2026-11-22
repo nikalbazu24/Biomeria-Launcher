@@ -137,6 +137,7 @@ private fun DualScreenPanel(
 ) {
     var page by remember { mutableStateOf(hud.panelHome) }
     var returnPage by remember { mutableStateOf<PanelPage?>(null) }
+    var previousMenuPage by remember { mutableStateOf<PanelPage?>(null) }
     var inventory by remember(bridge) { mutableStateOf<PanelInventory?>(null) }
     var pixels by remember(bridge) { mutableStateOf<IntArray?>(null) }
     var click by remember { mutableStateOf(PanelCommand.PICK) }
@@ -151,22 +152,27 @@ private fun DualScreenPanel(
 
     val live = inventory
     val table = live?.layout == PanelLayout.CRAFTING_TABLE
-    val tableSession = live?.generation?.takeIf { hud.routeCrafting && table }
-    var showRecipes by remember(tableSession) { mutableStateOf(false) }
-    LaunchedEffect(tableSession) {
-        if (tableSession != null) {
-            if (page != PanelPage.CRAFT) returnPage = page
-            page = PanelPage.CRAFT
+    val menuPage = live?.layout?.menuPage
+    val menuSession = live?.takeIf {
+        hud.routes(it.layout) && (it.layout != PanelLayout.XAERO || it.xaeroLowerAvailable)
+    }?.generation
+    var showRecipes by remember(menuSession) { mutableStateOf(false) }
+    LaunchedEffect(menuSession, menuPage) {
+        if (menuSession != null && menuPage != null) {
+            if (previousMenuPage == null) returnPage = page
+            previousMenuPage = menuPage
+            page = menuPage
             click = PanelCommand.PICK
         } else {
-            if (page == PanelPage.CRAFT) returnPage?.let { page = it }
+            if (page == previousMenuPage) returnPage?.let { page = it }
             returnPage = null
+            previousMenuPage = null
         }
     }
-    val routed = tableSession?.takeIf { page == PanelPage.CRAFT && allowMenus && live?.interactive == true }
+    val routed = menuSession?.takeIf { page == menuPage && allowMenus && live?.interactive == true }
     DisposableEffect(bridge, routed) {
-        bridge?.routeCrafting(routed)
-        onDispose { if (routed != null) bridge?.routeCrafting(null) }
+        bridge?.routeMenu(routed)
+        onDispose { if (routed != null) bridge?.routeMenu(null) }
     }
 
     val revision = live?.mapRevision ?: -1
@@ -177,7 +183,7 @@ private fun DualScreenPanel(
         }
     }
 
-    val interactive = live?.interactive == true && if (table) routed != null else allowGameInput
+    val interactive = live?.interactive == true && if (menuPage != null) routed != null else allowGameInput
     val sendSlot: (Int) -> Unit = { slot ->
         if (interactive && live != null) bridge?.send(live, click, slot)
     }
@@ -189,13 +195,17 @@ private fun DualScreenPanel(
         Text(title, color = Prissma.colors.textPrimary, style = MaterialTheme.typography.titleMedium,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PanelPage.entries.forEach { tab ->
+            PanelPage.entries.filter { it != PanelPage.STORAGE || menuPage == PanelPage.STORAGE }.forEach { tab ->
                 FilterChip(selected = page == tab, onClick = { page = tab; click = PanelCommand.PICK },
                     label = { Text(tab.label) })
             }
         }
         HorizontalDivider(color = Prissma.colors.borderSubtle)
-        if (showRecipes && routed != null && bridge != null && live?.recipeBookAvailable == true) {
+        if (routed != null && bridge != null && live?.layout == PanelLayout.XAERO) {
+            XaeroMapPane(bridge, live, Modifier.weight(1f).fillMaxWidth())
+            return@Column
+        }
+        if (showRecipes && table && routed != null && bridge != null && live?.recipeBookAvailable == true) {
             RecipeBookPane(bridge, live, onBack = { showRecipes = false }, modifier = Modifier.weight(1f).fillMaxWidth())
             return@Column
         }
@@ -222,23 +232,30 @@ private fun DualScreenPanel(
                         "Acceso rápido", onSlot = onHotbar)
                 }
                 live == null -> Text("Entra a un mundo para conectar el panel.", style = MaterialTheme.typography.bodyMedium)
+                live.layout == PanelLayout.XAERO -> {
+                    Text(if (menuSession != null && page == PanelPage.MAP) "El mapa se abrirá al volver al juego."
+                        else "Mapa abierto en la pantalla del juego.")
+                    if (menuSession != null && page != PanelPage.MAP) {
+                        OutlinedButton(onClick = { page = PanelPage.MAP }) { Text("Mostrar mapa aquí") }
+                    }
+                }
                 page == PanelPage.MAP -> {
                     Text("X ${live.x}    Y ${live.y}    Z ${live.z}", style = MaterialTheme.typography.titleSmall)
                     val image = remember(pixels) {
                         pixels?.let { Bitmap.createBitmap(it, DUAL_MAP_SIZE, DUAL_MAP_SIZE, Bitmap.Config.ARGB_8888).asImageBitmap() }
                     }
                     if (hud.panelMap == PanelMapSource.XAERO) {
-                        XaeroMapPanel(live, interactive && !table) {
+                        XaeroMapPanel(live, interactive && menuPage == null, hud.routeXaeroMap) {
                             bridge.send(live, PanelCommand.OPEN_XAERO)
                         }
                     } else if (image == null) Text("Equipa un mapa explorado en una mano para verlo aquí.")
                     else Image(image, contentDescription = "Mapa equipado",
                         modifier = Modifier.size(192.dp), contentScale = ContentScale.Fit)
                 }
-                table && (!hud.routeCrafting || page != PanelPage.CRAFT) -> {
-                    Text("Mesa de crafteo abierta", style = MaterialTheme.typography.titleSmall)
-                    if (hud.routeCrafting) OutlinedButton(onClick = { page = PanelPage.CRAFT }) { Text("Mostrar mesa aquí") }
-                    else Text("Usa la mesa en la pantalla del juego.")
+                menuPage != null && (menuSession == null || page != menuPage) -> {
+                    Text(live.menuTitle, style = MaterialTheme.typography.titleSmall)
+                    if (menuSession != null) OutlinedButton(onClick = { page = menuPage }) { Text("Mostrar aquí") }
+                    else Text("Usa el menú en la pantalla del juego.")
                 }
                 else -> {
                     if (!interactive) Text("Vuelve a la vista de juego para mover objetos.", style = MaterialTheme.typography.bodySmall)
@@ -252,9 +269,13 @@ private fun DualScreenPanel(
                         }, label = { Text("Mover rápido") }, enabled = interactive)
                         if (live.held.count > 0) Text("En cursor · ${live.held.name} ×${live.held.count}")
                     }
-                    if (page == PanelPage.CRAFT) {
+                    if (menuPage == PanelPage.STORAGE) {
+                        ContainerSlots(live, interactive, hud.compactPanel, sendSlot) {
+                            bridge.send(live, PanelCommand.CLOSE_MENU)
+                        }
+                    } else if (page == PanelPage.CRAFT) {
                         if (table) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = { bridge.send(live, PanelCommand.CLOSE_TABLE) },
+                            OutlinedButton(onClick = { bridge.send(live, PanelCommand.CLOSE_MENU) },
                                 enabled = interactive) { Text("Cerrar mesa") }
                             if (live.recipeBookAvailable) OutlinedButton(
                                 onClick = { showRecipes = true }, enabled = interactive
@@ -280,21 +301,23 @@ private fun DualScreenPanel(
                     val inventoryStart = live.layout.inventoryStart
                     if (page == PanelPage.INVENTORY) {
                         SlotRow((hotbarStart until hotbarStart + 9).toList(), live, interactive,
-                            "Barra rápida", live.selectedSlot + hotbarStart, hud.compactPanel, sendSlot)
+                            "Barra rápida", live.selectedSlot + hotbarStart, hud.compactPanel, onSlot = sendSlot)
                     }
                     for (start in inventoryStart until hotbarStart step 9) {
                         SlotRow((start until start + 9).toList(), live, interactive,
-                            if (start == inventoryStart) "Inventario" else null, compact = hud.compactPanel, onSlot = sendSlot)
+                            if (start == inventoryStart) "Inventario" else null, compact = hud.compactPanel,
+                            fit = menuPage == PanelPage.STORAGE, onSlot = sendSlot)
                     }
-                    if (page == PanelPage.CRAFT) {
+                    if (page == PanelPage.CRAFT || menuPage == PanelPage.STORAGE) {
                         SlotRow((hotbarStart until hotbarStart + 9).toList(), live, interactive,
-                            "Barra rápida", live.selectedSlot + hotbarStart, hud.compactPanel, sendSlot)
+                            "Barra rápida", live.selectedSlot + hotbarStart, hud.compactPanel,
+                            fit = menuPage == PanelPage.STORAGE, onSlot = sendSlot)
                     }
                 }
             }
         }
 
-        if (live != null && !table && page == PanelPage.INVENTORY) {
+        if (live != null && live.layout == PanelLayout.PERSONAL && page == PanelPage.INVENTORY) {
             SlotRow((0..8).toList(), null, interactive, "Seleccionar en mano", live.selectedSlot) { slot ->
                 if (interactive) bridge?.send(live, PanelCommand.SELECT_HOTBAR, slot)
             }
@@ -303,9 +326,50 @@ private fun DualScreenPanel(
 }
 
 @Composable
-private fun XaeroMapPanel(live: PanelInventory, canOpen: Boolean, onOpen: () -> Unit) {
+private fun ContainerSlots(
+    live: PanelInventory,
+    interactive: Boolean,
+    compact: Boolean,
+    onSlot: (Int) -> Unit,
+    onClose: () -> Unit
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(live.menuTitle, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium,
+            maxLines = 1, overflow = TextOverflow.Ellipsis)
+        OutlinedButton(onClick = onClose, enabled = interactive) { Text("Cerrar") }
+    }
+    val furnace = live.furnace
+    if (furnace != null) {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            SlotRow(listOf(0), live, interactive, "Material", compact = compact, onSlot = onSlot)
+            SlotRow(listOf(1), live, interactive, "Combustible", compact = compact, onSlot = onSlot)
+            SlotRow(listOf(2), live, interactive, "Resultado", compact = compact, onSlot = onSlot)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            FurnaceMeter("Cocción", furnace.cook, Modifier.weight(1f))
+            FurnaceMeter("Combustible", if (furnace.burning) furnace.fuel else 0f, Modifier.weight(1f))
+        }
+    } else {
+        repeat(live.layout.chestRows) { row ->
+            SlotRow((row * 9 until (row + 1) * 9).toList(), live, interactive, fit = true, onSlot = onSlot)
+        }
+    }
+}
+
+@Composable
+private fun FurnaceMeter(label: String, progress: Float, modifier: Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text("$label · ${(progress * 100).toInt()} %", style = MaterialTheme.typography.labelMedium)
+        LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+    }
+}
+
+@Composable
+private fun XaeroMapPanel(live: PanelInventory, canOpen: Boolean, preferBelow: Boolean, onOpen: () -> Unit) {
     if (live.xaeroWorldMap) {
-        OutlinedButton(onClick = onOpen, enabled = canOpen) { Text("Abrir World Map arriba") }
+        val target = if (preferBelow && live.xaeroLowerAvailable) "abajo" else "arriba"
+        OutlinedButton(onClick = onOpen, enabled = canOpen) { Text("Abrir World Map $target") }
     }
     if (live.xaeroMinimap) {
         Text("Marcadores de Xaero’s Minimap", style = MaterialTheme.typography.titleSmall)
@@ -330,11 +394,13 @@ private fun SlotRow(
     label: String? = null,
     selected: Int? = null,
     compact: Boolean = false,
+    fit: Boolean = false,
     onSlot: (Int) -> Unit
 ) {
-    Column {
+    Column(if (fit) Modifier.fillMaxWidth() else Modifier) {
         if (label != null) Text(label, color = Prissma.colors.textMuted, style = MaterialTheme.typography.labelMedium)
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(if (fit) Modifier.fillMaxWidth() else Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             slots.forEach { number ->
                 val item = live?.slots?.get(number)
                 val name = item?.name?.takeIf { it.isNotBlank() } ?: if (live == null) "${number + 1}" else "—"
@@ -344,11 +410,11 @@ private fun SlotRow(
                 ) else ButtonDefaults.filledTonalButtonColors()
                 FilledTonalButton(
                     onClick = { onSlot(number) },
-                    modifier = Modifier.width(when {
+                    modifier = (if (fit) Modifier.weight(1f) else Modifier.width(when {
                         live == null -> 46.dp
                         compact -> 53.dp
                         else -> 66.dp
-                    })
+                    }))
                         .semantics { contentDescription = description },
                     enabled = enabled,
                     colors = colors,

@@ -39,7 +39,7 @@ class DualScreenBridgeTest {
         assertNull(bridge.readInventory(writeSnapshot(bridge.directory, ready = false)))
         assertNull(bridge.readInventory(writeSnapshot(bridge.directory, magic = 0)))
         val snapshot = File(bridge.directory, "snapshot")
-        snapshot.writeBytes(byteArrayOf(0x50, 0x52, 0x53, 0x34))
+        snapshot.writeBytes(byteArrayOf(0x50, 0x52, 0x53, 0x35))
         assertNull(bridge.readInventory(snapshot.lastModified()))
     }
 
@@ -56,7 +56,7 @@ class DualScreenBridgeTest {
         )))
         assertTrue(table.recipeBookAvailable)
         assertFalse(bridge.send(table, PanelCommand.INSPECT_RECIPE, 501))
-        bridge.routeCrafting(8)
+        bridge.routeMenu(8)
         bridge.viewRecipes(8)
         assertEquals("8", File(bridge.directory, "recipes-open").readText())
         assertTrue(bridge.send(table, PanelCommand.INSPECT_RECIPE, 501))
@@ -87,14 +87,73 @@ class DualScreenBridgeTest {
         assertFalse(bridge.send(table, PanelCommand.OPEN_XAERO))
         assertFalse(bridge.send(table, PanelCommand.PICK, 9))
 
-        bridge.routeCrafting(table.generation)
-        assertEquals("8", File(bridge.directory, "crafting").readText())
+        bridge.routeMenu(table.generation)
+        assertEquals("8", File(bridge.directory, "routed-menu").readText())
         assertTrue(bridge.send(table, PanelCommand.PICK, 9))
-        assertTrue(bridge.send(table, PanelCommand.CLOSE_TABLE))
+        assertTrue(bridge.send(table, PanelCommand.CLOSE_MENU))
         writeSnapshot(bridge.directory, generation = 9)
-        assertFalse(bridge.send(table, PanelCommand.CLOSE_TABLE))
+        assertFalse(bridge.send(table, PanelCommand.CLOSE_MENU))
         bridge.visibility(false)
-        assertFalse(File(bridge.directory, "crafting").exists())
+        assertFalse(File(bridge.directory, "routed-menu").exists())
+    }
+
+    @Test
+    fun decodesDoubleChestAndValidatesItsLastSlotsAgainstTheActiveMenu() {
+        val bridge = DualScreenBridge.create(temporary.root)
+        bridge.visibility(true)
+        val double = requireNotNull(bridge.readInventory(writeSnapshot(
+            bridge.directory, generation = 13, layout = PanelLayout.DOUBLE_CHEST, menuTitle = "Cofre grande"
+        )))
+        assertEquals("Cofre grande", double.menuTitle)
+        assertEquals(90, double.slots.size)
+        assertEquals(6, double.layout.chestRows)
+        assertEquals(54, double.layout.inventoryStart)
+        assertEquals(81, double.layout.hotbarStart)
+        assertFalse(bridge.send(double, PanelCommand.PICK, 53))
+        bridge.routeMenu(13)
+        assertTrue(bridge.send(double, PanelCommand.PICK, 53))
+        assertTrue(bridge.send(double, PanelCommand.QUICK_MOVE, 89))
+        assertFalse(bridge.send(double, PanelCommand.QUICK_MOVE, 90))
+        assertFalse(bridge.send(double, PanelCommand.PLACE_RECIPE, 40))
+        val single = requireNotNull(bridge.readInventory(writeSnapshot(
+            bridge.directory, generation = 14, layout = PanelLayout.CHEST
+        )))
+        assertEquals(63, single.slots.size)
+        assertEquals(3, single.layout.chestRows)
+        assertFalse(bridge.send(double, PanelCommand.PICK, 53))
+    }
+
+    @Test
+    fun decodesFurnaceProgressAndSanitizesBounds() {
+        val bridge = DualScreenBridge.create(temporary.root)
+        val furnace = requireNotNull(bridge.readInventory(writeSnapshot(
+            bridge.directory, layout = PanelLayout.FURNACE, furnace = PanelFurnace(.35f, 1.4f, true)
+        )))
+        assertEquals(39, furnace.slots.size)
+        assertEquals(3, furnace.layout.inventoryStart)
+        assertEquals(30, furnace.layout.hotbarStart)
+        assertEquals(PanelFurnace(.35f, 1f, true), furnace.furnace)
+        assertNull(bridge.readInventory(writeSnapshot(
+            bridge.directory, layout = PanelLayout.FURNACE, furnace = PanelFurnace(Float.NaN, 0f, false)
+        )))
+    }
+
+    @Test
+    fun xaeroGesturesRequireARoutedSupportedMapAndBoundedArguments() {
+        val bridge = DualScreenBridge.create(temporary.root)
+        bridge.visibility(true)
+        bridge.routeMenu(7)
+        val unsupported = requireNotNull(bridge.readInventory(writeSnapshot(bridge.directory, layout = PanelLayout.XAERO)))
+        assertFalse(bridge.send(unsupported, PanelCommand.MAP_ZOOM, 1))
+        val map = requireNotNull(bridge.readInventory(writeSnapshot(
+            bridge.directory, layout = PanelLayout.XAERO, xaeroLowerAvailable = true
+        )))
+        assertTrue(map.slots.isEmpty())
+        assertTrue(bridge.send(map, PanelCommand.MAP_DOWN, 0x00ffffff))
+        assertTrue(bridge.send(map, PanelCommand.MAP_ZOOM, -1))
+        assertFalse(bridge.send(map, PanelCommand.MAP_MOVE, 0x01000000))
+        assertFalse(bridge.send(map, PanelCommand.MAP_ZOOM, 2))
+        assertFalse(bridge.send(map, PanelCommand.PICK, 0))
     }
 
     @Test
@@ -119,6 +178,7 @@ class DualScreenBridgeTest {
     fun preferencesKeepLegacyDefaultsAndRecoverInvalidValues() {
         assertEquals(PanelPage.CRAFT, PanelPage.fromPreference("CRAFT"))
         assertEquals(PanelPage.INVENTORY, PanelPage.fromPreference("OPTIONS"))
+        assertEquals(PanelPage.INVENTORY, PanelPage.fromPreference("STORAGE"))
         assertEquals(PanelPage.INVENTORY, PanelPage.fromPreference(null))
         assertEquals(PanelMapSource.XAERO, PanelMapSource.fromPreference("XAERO"))
         assertEquals(PanelMapSource.MINECRAFT, PanelMapSource.fromPreference("unavailable"))
@@ -181,7 +241,10 @@ class DualScreenBridgeTest {
         xaeroMinimap: Boolean = false,
         waypoints: List<PanelWaypoint> = emptyList(),
         recipeBookAvailable: Boolean = false,
-        heldCount: Int = 8
+        heldCount: Int = 8,
+        menuTitle: String = "",
+        furnace: PanelFurnace = PanelFurnace(0f, 0f, false),
+        xaeroLowerAvailable: Boolean = false
     ): Long {
         val file = File(dir, "snapshot")
         DataOutputStream(file.outputStream()).use { out ->
@@ -196,11 +259,9 @@ class DualScreenBridgeTest {
             out.writeDouble(91.0)
             out.writeUTF("Roble")
             out.writeInt(heldCount)
-            out.writeUTF("Tablones")
-            out.writeInt(4)
-            repeat(45) {
-                out.writeUTF("")
-                out.writeInt(0)
+            repeat(layout.slotCount) { slot ->
+                out.writeUTF(if (slot == 0) "Tablones" else "")
+                out.writeInt(if (slot == 0) 4 else 0)
             }
             out.writeInt(15)
             out.writeBoolean(xaeroWorldMap)
@@ -213,6 +274,13 @@ class DualScreenBridgeTest {
                 out.writeInt(mark.z)
             }
             out.writeBoolean(recipeBookAvailable)
+            out.writeUTF(menuTitle)
+            if (layout == PanelLayout.FURNACE) {
+                out.writeFloat(furnace.cook)
+                out.writeFloat(furnace.fuel)
+                out.writeBoolean(furnace.burning)
+            }
+            out.writeBoolean(xaeroLowerAvailable)
         }
         return file.lastModified()
     }

@@ -8,18 +8,17 @@ import java.nio.file.StandardCopyOption
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
 
-internal const val DUAL_SNAPSHOT_MAGIC = 0x50525334
-internal const val DUAL_INVENTORY_SLOTS = 46
+internal const val DUAL_SNAPSHOT_MAGIC = 0x50525335
 internal const val DUAL_MAP_SIZE = 128
 internal const val DUAL_SCREEN_MOD = "DUAL_SCREEN_MOD"
 
 internal fun supportsDualInventory(version: String, loader: String?) = version == "1.21.4" && loader == "fabric"
 
-internal enum class PanelPage(val label: String) {
-    INVENTORY("Inventario"), CRAFT("Crafteo"), MAP("Mapa"), OPTIONS("Opciones");
+internal enum class PanelPage(val label: String, val canStart: Boolean = true) {
+    INVENTORY("Inventario"), CRAFT("Crafteo"), MAP("Mapa"), STORAGE("Contenedor", false), OPTIONS("Opciones", false);
 
     companion object {
-        fun fromPreference(value: String?) = entries.firstOrNull { it != OPTIONS && it.name == value } ?: INVENTORY
+        fun fromPreference(value: String?) = entries.firstOrNull { it.canStart && it.name == value } ?: INVENTORY
     }
 }
 
@@ -31,20 +30,36 @@ internal enum class PanelMapSource(val label: String) {
     }
 }
 
-internal enum class PanelLayout(val craftSize: Int, val inventoryStart: Int, val hotbarStart: Int) {
-    PERSONAL(2, 9, 36), CRAFTING_TABLE(3, 10, 37);
+internal enum class PanelLayout(
+    val slotCount: Int,
+    val inventoryStart: Int,
+    val hotbarStart: Int,
+    val menuPage: PanelPage?,
+    val chestRows: Int = 0
+) {
+    PERSONAL(46, 9, 36, null),
+    CRAFTING_TABLE(46, 10, 37, PanelPage.CRAFT),
+    CHEST(63, 27, 54, PanelPage.STORAGE, chestRows = 3),
+    DOUBLE_CHEST(90, 54, 81, PanelPage.STORAGE, chestRows = 6),
+    FURNACE(39, 3, 30, PanelPage.STORAGE),
+    XAERO(0, 0, 0, PanelPage.MAP);
+
+    val craftSize get() = if (this == CRAFTING_TABLE) 3 else 2
 
     fun accepts(command: PanelCommand, slot: Int): Boolean = when (command) {
-        PanelCommand.PICK, PanelCommand.SPLIT, PanelCommand.QUICK_MOVE -> slot in 0 until DUAL_INVENTORY_SLOTS
+        PanelCommand.PICK, PanelCommand.SPLIT, PanelCommand.QUICK_MOVE -> slot in 0 until slotCount
         PanelCommand.SELECT_HOTBAR -> this == PERSONAL && slot in 0..8
-        PanelCommand.CLOSE_TABLE -> this == CRAFTING_TABLE && slot == 0
+        PanelCommand.CLOSE_MENU -> menuPage != null && slot == 0
         PanelCommand.OPEN_XAERO -> this == PERSONAL && slot == 0
         PanelCommand.INSPECT_RECIPE, PanelCommand.PLACE_RECIPE -> this == CRAFTING_TABLE && slot >= 0
+        PanelCommand.MAP_DOWN, PanelCommand.MAP_MOVE, PanelCommand.MAP_UP -> this == XAERO && slot in 0..0xffffff
+        PanelCommand.MAP_ZOOM -> this == XAERO && (slot == -1 || slot == 1)
     }
 }
 
 internal data class PanelStack(val name: String, val count: Int)
 internal data class PanelWaypoint(val name: String, val x: Int, val y: Int, val z: Int)
+internal data class PanelFurnace(val cook: Float, val fuel: Float, val burning: Boolean)
 internal data class PanelInventory(
     val generation: Long,
     val interactive: Boolean,
@@ -59,12 +74,16 @@ internal data class PanelInventory(
     val xaeroWorldMap: Boolean,
     val xaeroMinimap: Boolean,
     val waypoints: List<PanelWaypoint>,
-    val recipeBookAvailable: Boolean
+    val recipeBookAvailable: Boolean,
+    val menuTitle: String,
+    val furnace: PanelFurnace?,
+    val xaeroLowerAvailable: Boolean
 )
 
 internal enum class PanelCommand(val wireName: String) {
     PICK("pick"), SPLIT("split"), QUICK_MOVE("quick"), SELECT_HOTBAR("hotbar"),
-    CLOSE_TABLE("close"), OPEN_XAERO("xaero"), INSPECT_RECIPE("inspect"), PLACE_RECIPE("recipe")
+    CLOSE_MENU("close"), OPEN_XAERO("xaero"), INSPECT_RECIPE("inspect"), PLACE_RECIPE("recipe"),
+    MAP_DOWN("map-down"), MAP_MOVE("map-move"), MAP_UP("map-up"), MAP_ZOOM("map-zoom")
 }
 
 internal class DualScreenBridge(val directory: File) {
@@ -72,7 +91,7 @@ internal class DualScreenBridge(val directory: File) {
 
     fun readInventory(nowMillis: Long = System.currentTimeMillis()): PanelInventory? {
         val file = File(directory, "snapshot")
-        if (!file.isFile || nowMillis - file.lastModified() !in 0L..1800L || file.length() > 32768L) return null
+        if (!file.isFile || nowMillis - file.lastModified() !in 0L..1800L || file.length() > 65_536L) return null
         return try {
             DataInputStream(file.inputStream().buffered()).use(::decodePanelInventory)
         } catch (error: IOException) {
@@ -99,7 +118,8 @@ internal class DualScreenBridge(val directory: File) {
         if (command == PanelCommand.OPEN_XAERO && !now.xaeroWorldMap) return false
         if (command == PanelCommand.INSPECT_RECIPE && !now.recipeBookAvailable) return false
         if (command == PanelCommand.PLACE_RECIPE && (!now.recipeBookAvailable || now.held.count != 0)) return false
-        if (inventory.layout == PanelLayout.CRAFTING_TABLE && !File(directory, "crafting").isFile) return false
+        if (inventory.layout.menuPage != null && !File(directory, "routed-menu").isFile) return false
+        if (inventory.layout == PanelLayout.XAERO && !now.xaeroLowerAvailable) return false
         val target = File(directory, String.format(Locale.ROOT, "command-%012d", sequence.incrementAndGet()))
         val staged = File(directory, target.name + ".part")
         return try {
@@ -113,7 +133,7 @@ internal class DualScreenBridge(val directory: File) {
         }
     }
 
-    fun routeCrafting(generation: Long?) = setGenerationMarker("crafting", generation)
+    fun routeMenu(generation: Long?) = setGenerationMarker("routed-menu", generation)
 
     fun viewRecipes(generation: Long?) = setGenerationMarker("recipes-open", generation)
 
@@ -144,7 +164,7 @@ internal class DualScreenBridge(val directory: File) {
             }
         } else {
             marker.delete()
-            routeCrafting(null)
+            routeMenu(null)
             viewRecipes(null)
             directory.listFiles()?.filter { it.name.startsWith("command-") }?.forEach { it.delete() }
         }
@@ -179,7 +199,7 @@ internal fun decodePanelInventory(input: DataInputStream): PanelInventory? {
         return PanelStack(label, count)
     }
     val held = stack()
-    val slots = List(DUAL_INVENTORY_SLOTS) { stack() }
+    val slots = List(layout.slotCount) { stack() }
     val mapRevision = input.readInt()
     val xaeroWorldMap = input.readBoolean()
     val xaeroMinimap = input.readBoolean()
@@ -187,6 +207,15 @@ internal fun decodePanelInventory(input: DataInputStream): PanelInventory? {
     if (waypointCount > 24 || !xaeroMinimap && waypointCount > 0) return null
     val waypoints = List(waypointCount) { PanelWaypoint(label(), input.readInt(), input.readInt(), input.readInt()) }
     val recipeBookAvailable = input.readBoolean() && layout == PanelLayout.CRAFTING_TABLE
+    val menuTitle = label()
+    val furnace = if (layout == PanelLayout.FURNACE) {
+        val cook = input.readFloat()
+        val fuel = input.readFloat()
+        if (!cook.isFinite() || !fuel.isFinite()) return null
+        PanelFurnace(cook.coerceIn(0f, 1f), fuel.coerceIn(0f, 1f), input.readBoolean())
+    } else null
+    val xaeroLowerAvailable = input.readBoolean()
     return PanelInventory(generation, interactive, layout, selected, kotlin.math.floor(x).toInt(), kotlin.math.floor(y).toInt(),
-        kotlin.math.floor(z).toInt(), held, slots, mapRevision, xaeroWorldMap, xaeroMinimap, waypoints, recipeBookAvailable)
+        kotlin.math.floor(z).toInt(), held, slots, mapRevision, xaeroWorldMap, xaeroMinimap, waypoints, recipeBookAvailable,
+        menuTitle, furnace, xaeroLowerAvailable)
 }
