@@ -7,6 +7,7 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include "prissma_glfw_android.h"
+#include "prissma_log_redaction.h"
 #include <dlfcn.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -34,21 +35,24 @@ namespace {
 
     std::mutex gLogMutex;
     std::deque<std::string> gLogQueue;
+    std::string gMinecraftToken;
     bool gStdioRedirected = false;
     bool gJvmRunning = false;
     FILE* gLogFile = nullptr;
 
-    void pushLogLine(const std::string& line) {
-        if (line.empty()) return;
+    std::string pushLogLine(const std::string& line) {
+        if (line.empty()) return {};
         std::lock_guard<std::mutex> lock(gLogMutex);
+        std::string safeLine = redactMinecraftToken(line, gMinecraftToken);
         if (gLogFile) {
-            fprintf(gLogFile, "%s\n", line.c_str());
+            fprintf(gLogFile, "%s\n", safeLine.c_str());
             fflush(gLogFile);
         }
         if (gLogQueue.size() > 250) {
             gLogQueue.pop_front();
         }
-        gLogQueue.push_back(line);
+        gLogQueue.push_back(safeLine);
+        return safeLine;
     }
 
     void preloadLibraryIfExists(const std::string& fullPath) {
@@ -100,8 +104,7 @@ namespace {
             while ((pos = pending.find('\n')) != std::string::npos) {
                 std::string line = pending.substr(0, pos);
                 pending.erase(0, pos + 1);
-                LOGI("%s", line.c_str());
-                pushLogLine(line);
+                LOGI("%s", pushLogLine(line).c_str());
             }
         }
         close(readFd);
@@ -473,8 +476,6 @@ Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativeLaunchJvm(
         return 1;
     }
 
-    ensureStdioRedirected();
-
     auto toStdString = [&](jstring jStr) -> std::string {
         if (!jStr) return "";
         const char* chars = env->GetStringUTFChars(jStr, nullptr);
@@ -503,6 +504,14 @@ Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativeLaunchJvm(
     };
     readArguments(jvmArguments, cfg->jvmArguments);
     readArguments(gameArgs, cfg->gameArgs);
+
+    {
+        std::lock_guard<std::mutex> lock(gLogMutex);
+        for (std::size_t i = 0; i + 1 < cfg->gameArgs.size(); ++i) {
+            if (cfg->gameArgs[i] == "--accessToken") gMinecraftToken = cfg->gameArgs[i + 1];
+        }
+    }
+    ensureStdioRedirected();
 
     pthread_t worker;
     if (pthread_create(&worker, nullptr, jvmWorkerThread, cfg) != 0) {

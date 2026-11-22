@@ -343,15 +343,9 @@ class JavaRuntimeManager(private val context: Context) {
         playerUuid: String,
         assetsDir: File,
         assetIndexId: String,
-        accountType: String = "Offline"
+        microsoft: Boolean = false
     ): Array<String> {
         val instanceRoot = File(context.filesDir, "instances/$instanceId")
-        val userType = when (accountType.lowercase()) {
-            "microsoft" -> "msa"
-            "ely.by" -> "mojang"
-            else -> "legacy"
-        }
-
         return arrayOf(
             "--username", playerName,
             "--version", resolvedVersion,
@@ -359,8 +353,7 @@ class JavaRuntimeManager(private val context: Context) {
             "--assetsDir", assetsDir.absolutePath,
             "--assetIndex", assetIndexId,
             "--uuid", playerUuid,
-            "--accessToken", "0",
-            "--userType", userType,
+            "--userType", if (microsoft) "msa" else "legacy",
             "--versionType", "PRISSMA"
         )
     }

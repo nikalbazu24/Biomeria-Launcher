@@ -49,9 +49,13 @@ import com.prissma.launcher.ui.components.PanelShape
 import com.prissma.launcher.ui.theme.Prissma
 import com.prissma.launcher.ui.theme.PrissmaTheme
 import com.prissma.launcher.ui.launch.GameHudControls
+import com.prissma.launcher.data.accounts.MinecraftAccounts
+import com.prissma.launcher.data.accounts.MicrosoftLoginError
 import kotlinx.coroutines.delay
 import kotlin.system.exitProcess
 import kotlin.math.roundToInt
+
+internal const val MICROSOFT_PROFILE_ID = "MICROSOFT_PROFILE_ID"
 
 class JavaGameActivity : ComponentActivity() {
     private lateinit var gameInput: GameInput
@@ -85,6 +89,7 @@ class JavaGameActivity : ComponentActivity() {
         val gameDirPath = intent.getStringExtra("GAME_DIR_PATH") ?: filesDir.absolutePath
         val classpath = intent.getStringExtra("CLASSPATH") ?: ""
         val gameArgs = intent.getStringArrayExtra("GAME_ARGS") ?: emptyArray()
+        val profileId = intent.getStringExtra(MICROSOFT_PROFILE_ID)
         val jvmArguments = intent.getStringArrayExtra("JVM_ARGS") ?: emptyArray()
         val libJvmPath = intent.getStringExtra("LIBJVM_PATH") ?: ""
         val javaHomePath = intent.getStringExtra("JAVA_HOME_PATH") ?: ""
@@ -99,13 +104,33 @@ class JavaGameActivity : ComponentActivity() {
 
         setContent {
             PrissmaTheme {
+                var token by remember { mutableStateOf(if (profileId == null) "0" else null) }
+                var sessionError by remember { mutableStateOf<String?>(null) }
+                LaunchedEffect(profileId) {
+                    if (profileId != null) {
+                        try {
+                            token = MinecraftAccounts(applicationContext).launchToken(profileId)
+                        } catch (error: MicrosoftLoginError) {
+                            sessionError = error.message
+                        }
+                    }
+                }
+                val accessToken = token
+                if (accessToken == null) {
+                    Column(Modifier.fillMaxSize().background(Prissma.colors.surfaceVoid).safeDrawingPadding().padding(20.dp),
+                        verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(sessionError ?: "Verificando sesión de Minecraft…", color = Prissma.colors.textMuted)
+                        LauncherButton("Volver", { finish() })
+                    }
+                    return@PrissmaTheme
+                }
                 JavaNativeViewportScreen(
                     instanceTitle = title,
                     version = version,
                     mainClass = mainClass,
                     gameDirPath = gameDirPath,
                     classpath = classpath,
-                    gameArgs = gameArgs,
+                    gameArgs = remember(accessToken, gameArgs) { gameArgs + arrayOf("--accessToken", accessToken) },
                     jvmArguments = jvmArguments,
                     libJvmPath = libJvmPath,
                     javaHomePath = javaHomePath,

@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.work.WorkInfo
 import com.prissma.launcher.data.GameInstance
+import com.prissma.launcher.data.accounts.MinecraftAccounts
 import com.prissma.launcher.engine.java.DOWNLOAD_MESSAGE
 import com.prissma.launcher.engine.java.DOWNLOAD_PERCENT
 import com.prissma.launcher.engine.java.GameDownloads
@@ -33,6 +34,7 @@ import com.prissma.launcher.engine.java.selectedHeapSize
 import com.prissma.launcher.engine.java.decodeGamepadActions
 import com.prissma.launcher.engine.java.encodeGamepadActions
 import com.prissma.launcher.engine.java.JavaGameActivity
+import com.prissma.launcher.engine.java.MICROSOFT_PROFILE_ID
 import com.prissma.launcher.engine.java.JavaRuntimeManager
 import com.prissma.launcher.engine.java.MojangDownloader
 import com.prissma.launcher.engine.java.PreparedJavaGame
@@ -65,6 +67,7 @@ fun JavaLaunchScreen(
     val downloads = remember(context) { GameDownloads(context) }
     val runtimeManager = remember(context) { JavaRuntimeManager(context) }
     val downloader = remember(context) { MojangDownloader(context) }
+    val accounts = remember(context) { MinecraftAccounts(context.applicationContext) }
     val runtimeWork by remember(downloads) { downloads.observe(RUNTIME_WORK) }.collectAsState(emptyList())
     val gameWork by remember(downloads, instance) { downloads.observe(downloads.key(instance)) }.collectAsState(emptyList())
     val runtimeTask = runtimeWork.firstOrNull { !it.state.isFinished } ?: runtimeWork.lastOrNull()
@@ -130,14 +133,15 @@ fun JavaLaunchScreen(
         launchError = null
         scope.launch {
             try {
+                val microsoft = if (accountType.equals("Microsoft", ignoreCase = true)) accounts.prepareLaunch() else null
                 val gameDir = File(context.filesDir, "instances/" + instance.id)
                 val scrollScale = withContext(Dispatchers.IO) { applyMinecraftOptions(gameDir, language) }
                 val classpath = runtimeManager.buildClasspath(ready)
                 val playerUuid = UUID.nameUUIDFromBytes("OfflinePlayer:$playerName".toByteArray(Charsets.UTF_8))
                 val gameArgs = runtimeManager.buildMinecraftArgs(
                     instance.id, if (ready.neoForgePlan == null) instance.version else "neoforge-$NEOFORGE_VERSION",
-                    playerName, playerUuid.toString(), ready.assetsDir,
-                    ready.assetIndexId, accountType
+                    microsoft?.playerName ?: playerName, microsoft?.profileId ?: playerUuid.toString(), ready.assetsDir,
+                    ready.assetIndexId, microsoft = microsoft != null
                 )
                 gameActivity.launch(Intent(context, JavaGameActivity::class.java).apply {
                     putExtra("INSTANCE_TITLE", instance.title)
@@ -146,6 +150,7 @@ fun JavaLaunchScreen(
                     putExtra("GAME_DIR_PATH", gameDir.absolutePath)
                     putExtra("CLASSPATH", classpath)
                     putExtra("GAME_ARGS", gameArgs + ready.additionalGameArguments)
+                    microsoft?.let { putExtra(MICROSOFT_PROFILE_ID, it.profileId) }
                     putExtra("JVM_ARGS", ready.jvmArguments.toTypedArray())
                     putExtra("LIBJVM_PATH", installed.libJvmFile.absolutePath)
                     putExtra("JAVA_HOME_PATH", installed.javaHomeDir.absolutePath)

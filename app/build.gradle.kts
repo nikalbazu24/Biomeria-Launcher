@@ -13,6 +13,11 @@ plugins {
 
 val buildVersionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
 val buildVersionName = (project.findProperty("versionName") as String?) ?: "1.0.0-beta.1"
+val microsoftApplicationId = providers.gradleProperty("microsoftClientId")
+    .orElse(providers.environmentVariable("PRISSMA_MICROSOFT_CLIENT_ID")).orElse("").get().trim()
+require(microsoftApplicationId.isEmpty() || microsoftApplicationId.matches(Regex("[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}"))) {
+    "El ID público de Microsoft para PRISSMA debe ser un UUID."
+}
 
 val jnaAndroidVersions = listOf("5.12.1", "5.13.0", "5.14.0", "5.15.0", "5.17.0")
 val jnaAndroid = jnaAndroidVersions.associateWith { version ->
@@ -198,6 +203,7 @@ android {
         targetSdk = 35
         versionCode = buildVersionCode
         versionName = buildVersionName
+        buildConfigField("String", "MICROSOFT_CLIENT_ID", "\"$microsoftApplicationId\"")
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -266,6 +272,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

@@ -76,6 +76,7 @@ jobs:
 
       - name: Compilar APK Release Firmado ARM64
         env:
+          PRISSMA_MICROSOFT_CLIENT_ID: ${{ vars.PRISSMA_MICROSOFT_CLIENT_ID }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}

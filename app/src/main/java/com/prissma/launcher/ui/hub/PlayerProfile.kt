@@ -47,7 +47,7 @@ internal fun ProfileDialog(
     var bio by rememberSaveable { mutableStateOf(profile.bio) }
     var playStyle by rememberSaveable { mutableStateOf(profile.playStyle) }
     var language by rememberSaveable { mutableStateOf(profile.language) }
-    var type by rememberSaveable { mutableStateOf(profile.accountType) }
+    var type by rememberSaveable { mutableStateOf(if (profile.accountType.equals("Microsoft", ignoreCase = true)) "Microsoft" else "Offline") }
     var photo by rememberSaveable { mutableStateOf<String?>(null) }
     var removePhoto by rememberSaveable { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { image ->
@@ -70,7 +70,7 @@ internal fun ProfileDialog(
                     }
                 }
                 OutlinedTextField(name, { name = it.take(32) }, Modifier.fillMaxWidth(),
-                    label = { Text("Usuario de Minecraft") }, singleLine = true)
+                    label = { Text("Usuario para jugar Offline") }, singleLine = true)
                 OutlinedTextField(display, { display = it.take(32) }, Modifier.fillMaxWidth(),
                     label = { Text("Nombre en PRISSMA") }, singleLine = true)
                 OutlinedTextField(bio, { bio = it.take(240) }, Modifier.fillMaxWidth(),
@@ -86,11 +86,12 @@ internal fun ProfileDialog(
                 }
                 Text("Tipo de cuenta", style = MaterialTheme.typography.titleSmall)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("Offline", "Ely.by", "Microsoft").forEach {
+                    listOf("Offline", "Microsoft").forEach {
                         val select = { type = it }
                         FilterChip(type == it, select, { Text(it) }, modifier = Modifier.gamepadClick(onClick = select))
                     }
                 }
+                if (type == "Microsoft") MicrosoftAccountPanel(enabled = !saving)
                 Text("Estos datos y la foto se guardan en tu dispositivo.", color = Prissma.colors.textMuted,
                     style = MaterialTheme.typography.bodySmall)
             }
