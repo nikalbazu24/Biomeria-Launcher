@@ -10,7 +10,7 @@ import androidx.compose.ui.geometry.Offset
 import kotlin.math.abs
 
 internal enum class GameInputEvent(val nativeId: Int) {
-    POINTER(0), RELATIVE_POINTER(1), MOUSE_BUTTON(2), KEY(3), SCROLL(4), RESET(5)
+    POINTER(0), RELATIVE_POINTER(1), MOUSE_BUTTON(2), KEY(3), SCROLL(4), RESET(5), CHARACTER(6)
 }
 
 internal enum class GamepadAction(val event: GameInputEvent, val code: Int, val label: String = "") {
@@ -70,6 +70,7 @@ internal class GameInput(
     private var hatX = 0f
     private var hatY = 0f
     private val gamepadButtons = mutableMapOf<Int, GamepadAction>()
+    private val touchActions = mutableSetOf<GamepadAction>()
     private val analogActions = mutableSetOf<GamepadAction>()
     private val activeGamepadActions = mutableSetOf<GamepadAction>()
     private var captured = false
@@ -105,6 +106,7 @@ internal class GameInput(
         hatY = 0f
         gamepadButtons.clear()
         analogActions.clear()
+        touchActions.clear()
         activeGamepadActions.clear()
         send(GameInputEvent.RESET)
     }
@@ -301,7 +303,7 @@ internal class GameInput(
 
     private fun updateGamepadAction(action: GamepadAction) {
         // Some controllers report one press both as an axis and as an Android key.
-        val pressed = action in analogActions || action in gamepadButtons.values
+        val pressed = action in touchActions || action in analogActions || action in gamepadButtons.values
         val changed = if (pressed) activeGamepadActions.add(action) else activeGamepadActions.remove(action)
         if (!changed) return
         if (action.event == GameInputEvent.SCROLL) {
@@ -311,11 +313,37 @@ internal class GameInput(
         }
     }
 
+    fun touchMovement(x: Float, y: Float) {
+        setTouchAction(GamepadAction.WALK_LEFT, captured && x < -.28f)
+        setTouchAction(GamepadAction.WALK_RIGHT, captured && x > .28f)
+        setTouchAction(GamepadAction.WALK_FORWARD, captured && y < -.28f)
+        setTouchAction(GamepadAction.WALK_BACK, captured && y > .28f)
+    }
+
+    private fun setTouchAction(action: GamepadAction, pressed: Boolean) {
+        val changed = if (pressed) touchActions.add(action) else touchActions.remove(action)
+        if (changed) updateGamepadAction(action)
+    }
+
+    fun insertText(text: String) {
+        var position = 0
+        while (position < text.length) {
+            val point = text.codePointAt(position)
+            if (!Character.isISOControl(point) && point !in 0xD800..0xDFFF) {
+                send(GameInputEvent.CHARACTER, code = point)
+            }
+            position += Character.charCount(point)
+        }
+    }
+
+    fun tapKey(key: Int) {
+        key(key, true)
+        key(key, false)
+    }
+
     fun selectHotbarSlot(slot: Int) {
         if (!captured || slot !in 1..9) return
-        val hotbarKey = 48 + slot
-        key(hotbarKey, true)
-        key(hotbarKey, false)
+        tapKey(48 + slot)
     }
 
     fun key(key: Int, down: Boolean) {

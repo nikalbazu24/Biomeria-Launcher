@@ -26,6 +26,10 @@ import com.prissma.launcher.engine.java.DOWNLOAD_MESSAGE
 import com.prissma.launcher.engine.java.DOWNLOAD_PERCENT
 import com.prissma.launcher.engine.java.GameDownloads
 import com.prissma.launcher.engine.java.GameHudSettings
+import com.prissma.launcher.engine.java.DEFAULT_JAVA_HEAP_MB
+import com.prissma.launcher.engine.java.JavaRenderer
+import com.prissma.launcher.engine.java.RenderScale
+import com.prissma.launcher.engine.java.selectedHeapSize
 import com.prissma.launcher.engine.java.decodeGamepadActions
 import com.prissma.launcher.engine.java.encodeGamepadActions
 import com.prissma.launcher.engine.java.JavaGameActivity
@@ -71,6 +75,17 @@ fun JavaLaunchScreen(
     var launchError by remember { mutableStateOf<String?>(null) }
     var opening by remember { mutableStateOf(false) }
     var showControls by remember { mutableStateOf(false) }
+    var showPerformance by remember { mutableStateOf(false) }
+    val deviceRam = remember(context) { totalDeviceRam(context) }
+    var heapMb by remember(instance.id, deviceRam) {
+        mutableIntStateOf(selectedHeapSize(settings.getInt("heap-" + instance.id, DEFAULT_JAVA_HEAP_MB), deviceRam))
+    }
+    var renderScale by remember(instance.id) {
+        mutableStateOf(RenderScale.fromPercent(settings.getInt("render-scale-" + instance.id, 100)))
+    }
+    var renderer by remember(instance.id) {
+        mutableStateOf(JavaRenderer.fromName(settings.getString("renderer-" + instance.id, null)))
+    }
     var bindings by remember(instance.id) {
         mutableStateOf(decodeGamepadActions(settings.getString("controls-" + instance.id, "").orEmpty()))
     }
@@ -133,7 +148,9 @@ fun JavaLaunchScreen(
                     putExtra("GAME_ARGS", gameArgs)
                     putExtra("LIBJVM_PATH", installed.libJvmFile.absolutePath)
                     putExtra("JAVA_HOME_PATH", installed.javaHomeDir.absolutePath)
-                    putExtra("USE_VULKAN_ZINK", false)
+                    putExtra("JAVA_HEAP_MB", heapMb)
+                    putExtra("RENDER_SCALE", renderScale.percent)
+                    putExtra("JAVA_RENDERER", renderer.name)
                     putExtra("GAMEPAD_BINDINGS", encodeGamepadActions(bindings))
                     putExtra("HOTBAR_SCROLL_SCALE", scrollScale)
                     putExtra("GAME_HUD", hud.toBundle())
@@ -174,7 +191,10 @@ fun JavaLaunchScreen(
         }
         val optionsPanel: @Composable (Modifier) -> Unit = { modifier ->
             LaunchPanel("Opciones de partida", modifier) {
-                LauncherButton("Controles y HUD", { showControls = true })
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    LauncherButton("Controles y HUD", { showControls = true })
+                    LauncherButton("Rendimiento y vídeo", { showPerformance = true })
+                }
                 Text("Idioma de Minecraft", style = MaterialTheme.typography.titleSmall)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     gameLanguages.forEach { (code, title) ->
@@ -205,6 +225,13 @@ fun JavaLaunchScreen(
             }
         }
     }
+    if (showPerformance) GamePerformanceDialog(
+        heapMb, deviceRam, renderScale, renderer,
+        onHeap = { heapMb = it; settings.edit().putInt("heap-" + instance.id, it).apply() },
+        onScale = { renderScale = it; settings.edit().putInt("render-scale-" + instance.id, it.percent).apply() },
+        onRenderer = { renderer = it; settings.edit().putString("renderer-" + instance.id, it.name).apply() },
+        onDismiss = { showPerformance = false }
+    )
     if (showControls) GameControlsDialog(
         bindings, { mapping ->
             bindings = mapping

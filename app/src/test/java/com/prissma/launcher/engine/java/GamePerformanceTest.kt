@@ -1,0 +1,28 @@
+package com.prissma.launcher.engine.java
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class GamePerformanceTest {
+    @Test
+    fun resolutionScaleUsesRealBufferDimensions() {
+        assertEquals(1920, RenderScale.FULL.pixels(1920))
+        assertEquals(1440, RenderScale.REDUCED.pixels(1920))
+        assertEquals(810, RenderScale.REDUCED.pixels(1080))
+        assertEquals(901, RenderScale.REDUCED.pixels(1201))
+        assertEquals(1, RenderScale.REDUCED.pixels(1))
+        assertEquals(0, RenderScale.REDUCED.pixels(0))
+        assertEquals(RenderScale.FULL, RenderScale.fromPercent(85))
+    }
+
+    @Test
+    fun heapsAreLimitedByDeviceRamAndStayOnAvailablePresets() {
+        val gibibyte = 1L shl 30
+        assertEquals(listOf(768, 1024), availableHeapSizes(2 * gibibyte))
+        assertEquals(2048, selectedHeapSize(8192, 4 * gibibyte))
+        assertEquals(4096, selectedHeapSize(8192, 8 * gibibyte))
+        assertEquals(8192, selectedHeapSize(8192, 16 * gibibyte))
+        assertEquals(768, selectedHeapSize(100, 4 * gibibyte))
+        assertEquals(DEFAULT_JAVA_HEAP_MB, selectedHeapSize(8192, 0))
+    }
+}

@@ -34,8 +34,10 @@ object NativeJavaBridge {
         classpath: String,
         mainClass: String,
         gameArgs: Array<String>,
-        useVulkanZink: Boolean
+        javaHeapMb: Int
     ): Int
+
+    external fun nativeTestAudio(): String?
 
     external fun nativePollLogs(): Array<String>
 }

@@ -84,6 +84,43 @@ class GameInputTest {
     }
 
     @Test
+    fun touchJoystickIgnoresTheCenterAndReleasesDiagonalMovement() {
+        input.touchMovement(.7f, -.7f)
+        assertTrue(events.isEmpty())
+        input.setCaptured(true)
+        events.clear()
+        input.touchMovement(.12f, -.16f)
+        input.touchMovement(.7f, -.7f)
+        input.touchMovement(.7f, -.7f)
+        input.touchMovement(0f, 0f)
+        assertEquals(listOf(key(68, 1), key(87, 1), key(68, 0), key(87, 0)), events)
+    }
+
+    @Test
+    fun releasingTouchKeepsTheDirectionHeldByThePhysicalStick() {
+        input.setCaptured(true)
+        events.clear()
+        motion(moveY = -1f)
+        input.touchMovement(.7f, -.7f)
+        input.touchMovement(0f, 0f)
+        assertEquals(listOf(key(87, 1), key(68, 1), key(68, 0)), events)
+        motion()
+        assertEquals(listOf(key(87, 1), key(68, 1), key(68, 0), key(87, 0)), events)
+    }
+
+    @Test
+    fun keyboardTextSendsUnicodeCodePointsBeforeEnter() {
+        input.insertText("aé😃\n\uD800")
+        input.tapKey(257)
+        assertEquals(listOf(
+            Event(GameInputEvent.CHARACTER, 'a'.code),
+            Event(GameInputEvent.CHARACTER, 'é'.code),
+            Event(GameInputEvent.CHARACTER, 0x1F603),
+            key(257, 1), key(257, 0)
+        ), events)
+    }
+
+    @Test
     fun digitalAndAnalogTriggerSignalsDoNotCauseDoubleClicksOrEarlyRelease() {
         input.setCaptured(true)
         events.clear()

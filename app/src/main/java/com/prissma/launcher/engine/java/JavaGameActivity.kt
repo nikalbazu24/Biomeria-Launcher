@@ -1,5 +1,6 @@
 package com.prissma.launcher.engine.java
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.os.SystemClock
@@ -86,7 +87,9 @@ class JavaGameActivity : ComponentActivity() {
         val gameArgs = intent.getStringArrayExtra("GAME_ARGS") ?: emptyArray()
         val libJvmPath = intent.getStringExtra("LIBJVM_PATH") ?: ""
         val javaHomePath = intent.getStringExtra("JAVA_HOME_PATH") ?: ""
-        val useVulkanZink = intent.getBooleanExtra("USE_VULKAN_ZINK", true)
+        val javaHeapMb = intent.getIntExtra("JAVA_HEAP_MB", DEFAULT_JAVA_HEAP_MB)
+        val renderScale = RenderScale.fromPercent(intent.getIntExtra("RENDER_SCALE", 100))
+        val renderer = JavaRenderer.fromName(intent.getStringExtra("JAVA_RENDERER"))
         val hud = GameHudSettings.fromBundle(intent.getBundleExtra("GAME_HUD"))
         gameInput = GameInput(
             decodeGamepadActions(intent.getStringExtra("GAMEPAD_BINDINGS").orEmpty()),
@@ -104,7 +107,9 @@ class JavaGameActivity : ComponentActivity() {
                     gameArgs = gameArgs,
                     libJvmPath = libJvmPath,
                     javaHomePath = javaHomePath,
-                    useVulkanZink = useVulkanZink,
+                    javaHeapMb = javaHeapMb,
+                    renderScale = renderScale,
+                    renderer = renderer,
                     input = gameInput,
                     initialHud = hud,
                     onHudChanged = { setResult(RESULT_OK, Intent().putExtra("GAME_HUD", it.toBundle())) },
@@ -137,6 +142,15 @@ class JavaGameActivity : ComponentActivity() {
     }
 }
 
+private class ScaledGameSurface(context: Context, private val scale: RenderScale) : SurfaceView(context) {
+    override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
+        super.onSizeChanged(width, height, oldWidth, oldHeight)
+        if (scale != RenderScale.FULL && width > 0 && height > 0) {
+            holder.setFixedSize(scale.pixels(width), scale.pixels(height))
+        }
+    }
+}
+
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun JavaNativeViewportScreen(
@@ -148,7 +162,9 @@ private fun JavaNativeViewportScreen(
     gameArgs: Array<String>,
     libJvmPath: String,
     javaHomePath: String,
-    useVulkanZink: Boolean,
+    javaHeapMb: Int,
+    renderScale: RenderScale,
+    renderer: JavaRenderer,
     input: GameInput,
     initialHud: GameHudSettings,
     onHudChanged: (GameHudSettings) -> Unit,
@@ -163,6 +179,7 @@ private fun JavaNativeViewportScreen(
     var captured by remember { mutableStateOf(false) }
     var hud by remember(initialHud) { mutableStateOf(initialHud) }
     var showHudDialog by remember { mutableStateOf(false) }
+    var showKeyboard by remember { mutableStateOf(false) }
     var fps by remember { mutableStateOf<Int?>(null) }
     var jvmStarted by remember { mutableStateOf(false) }
     var viewportSize by remember { mutableStateOf("0x0") }
@@ -170,7 +187,11 @@ private fun JavaNativeViewportScreen(
     val logListState = rememberLazyListState()
 
     fun handleBack() {
-        if (libJvmPath.isBlank()) onExitGame() else showOverlay = !showOverlay
+        when {
+            showKeyboard -> showKeyboard = false
+            libJvmPath.isBlank() -> onExitGame()
+            else -> showOverlay = !showOverlay
+        }
     }
 
     BackHandler { handleBack() }
@@ -179,7 +200,7 @@ private fun JavaNativeViewportScreen(
         onTogglePanel { toggle() }
         onDispose { onTogglePanel(null) }
     }
-    val canSendInput = jvmStarted && !showOverlay
+    val canSendInput = jvmStarted && !showOverlay && !showKeyboard
     LaunchedEffect(canSendInput) {
         onControls(canSendInput)
         input.reset()
@@ -240,7 +261,7 @@ private fun JavaNativeViewportScreen(
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
-                SurfaceView(ctx).apply {
+                ScaledGameSurface(ctx, renderScale).apply {
                     isFocusable = true
                     isFocusableInTouchMode = true
                     requestFocus()
@@ -268,8 +289,11 @@ private fun JavaNativeViewportScreen(
                             viewportSize = "${width}x${height}"
                             NativeJavaBridge.nativeSetViewportSize(width, height)
                             input.resize(this@apply.width, this@apply.height, width, height)
+                            val waitingForScaledBuffer = renderScale != RenderScale.FULL &&
+                                (width != renderScale.pixels(this@apply.width) ||
+                                    height != renderScale.pixels(this@apply.height))
                             if (jvmStarted || libJvmPath.isBlank() || gpuStatus.startsWith("Error:") ||
-                                width <= 0 || height <= 0
+                                width <= 0 || height <= 0 || waitingForScaledBuffer
                             ) return
 
                             val status = NativeJavaBridge.nativeLaunchJvm(
@@ -281,7 +305,7 @@ private fun JavaNativeViewportScreen(
                                 classpath = classpath,
                                 mainClass = mainClass,
                                 gameArgs = gameArgs + arrayOf("--width", width.toString(), "--height", height.toString()),
-                                useVulkanZink = useVulkanZink
+                                javaHeapMb = javaHeapMb
                             )
                             jvmStarted = status == 0 || status == 1
                             if (!jvmStarted) logLines.add("[ERROR] No se pudo iniciar el hilo de Java ($status).")
@@ -329,12 +353,23 @@ private fun JavaNativeViewportScreen(
                     color = Color.White, fontSize = 12.sp, fontFamily = FontFamily.Monospace
                 )
             }
-            LauncherButton(
-                "II", { showOverlay = true },
-                modifier = Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.displayCutout).padding(6.dp)
-                    .graphicsLayer { alpha = hud.pauseOpacity }
-                    .semantics { contentDescription = "Menú de PRISSMA" }
-            )
+            Row(
+                modifier = Modifier.align(Alignment.TopEnd)
+                    .windowInsetsPadding(WindowInsets.displayCutout).padding(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                if (hasPresentedFrame) {
+                    LauncherButton("Teclado", {
+                        if (captured) input.tapKey(84) // GLFW_KEY_T abre el chat con los controles predeterminados.
+                        showKeyboard = true
+                    })
+                }
+                LauncherButton(
+                    "II", { showOverlay = true },
+                    modifier = Modifier.graphicsLayer { alpha = hud.pauseOpacity }
+                        .semantics { contentDescription = "Menú de PRISSMA" }
+                )
+            }
         }
 
         if (showOverlay) Column(
@@ -355,7 +390,7 @@ private fun JavaNativeViewportScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "$instanceTitle · MC $version ($viewportSize)",
+                        text = "$instanceTitle · MC $version ($viewportSize · ${renderScale.percent}%)",
                         color = Prissma.colors.textPrimary,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
@@ -363,7 +398,7 @@ private fun JavaNativeViewportScreen(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = gpuStatus,
+                        text = if (gpuStatus.startsWith("Error:")) gpuStatus else "${renderer.label} · $gpuStatus",
                         color = Prissma.colors.brandAccent,
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace,
@@ -423,6 +458,13 @@ private fun JavaNativeViewportScreen(
             }
         }
     }
+    if (showKeyboard) {
+        GameKeyboardDialog(onDismiss = { showKeyboard = false }) { text, pressEnter ->
+            input.insertText(text)
+            if (pressEnter) input.tapKey(257) // GLFW_KEY_ENTER
+            showKeyboard = false
+        }
+    }
     if (showHudDialog) {
         AlertDialog(
             onDismissRequest = { showHudDialog = false },
@@ -441,18 +483,11 @@ private fun TouchControls(input: GameInput, modifier: Modifier) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Bottom
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            TouchButton("↑", "Avanzar") { input.key(87, it) }
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TouchButton("←", "Izquierda") { input.key(65, it) }
-                TouchButton("↓", "Retroceder") { input.key(83, it) }
-                TouchButton("→", "Derecha") { input.key(68, it) }
-            }
-        }
+        TouchJoystick(input::touchMovement)
         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TouchButton("E", "Inventario") { input.key(69, it) }
-                TouchButton("↑", "Saltar") { input.key(32, it) }
+                TouchButton("Salto", "Saltar") { input.key(32, it) }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TouchButton("Usar", "Usar objeto") { input.mouseButton(1, it) }

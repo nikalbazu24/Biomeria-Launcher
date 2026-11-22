@@ -5,6 +5,7 @@ add_library(
     prissma_jvm_bridge
     SHARED
     prissma_jvm_bridge.cpp
+    prissma_audio.cpp
 )
 
 find_library(log-lib log)
@@ -39,3 +40,5 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(openal_soft)
 set_target_properties(OpenAL PROPERTIES VERSION "" SOVERSION "")
+
+target_link_libraries(prissma_jvm_bridge OpenAL)

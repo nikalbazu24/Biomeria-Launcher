@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <algorithm>
 #include <vector>
 #include <utility>
 #include <deque>
@@ -136,7 +137,7 @@ namespace {
         std::string classpath;
         std::string mainClass;
         std::vector<std::string> gameArgs;
-        bool useVulkanZink;
+        int javaHeapMb;
     };
 
     typedef jint (*JNI_CreateJavaVM_t)(JavaVM**, void**, void*);
@@ -165,7 +166,6 @@ namespace {
         mkdir(mobileGluesDir.c_str(), 0700);
         setenv("MG_DIR_PATH", mobileGluesDir.c_str(), 1);
         glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_NULL);
-        if (cfg->useVulkanZink) pushLogLine("[PRISSMA] Preferencia: Vulkan/Zink. Esta sesión usa MobileGlues.");
         pushLogLine("[PRISSMA] Backend de esta sesión: GLFW Android + MobileGlues (OpenGL ES).");
 
         chdir(cfg->gameDir.c_str());
@@ -234,8 +234,9 @@ namespace {
         optionStrings.push_back("-Dorg.lwjgl.glfw.libname=" + cfg->nativeLibraryDir + "/libglfw.so");
         optionStrings.push_back("-Dorg.lwjgl.openal.libname=" + cfg->nativeLibraryDir + "/libopenal.so");
         optionStrings.push_back("-Dorg.lwjgl.opengl.libname=" + cfg->nativeLibraryDir + "/libmobileglues.so");
-        optionStrings.push_back("-Xmx1536M");
-        optionStrings.push_back("-Xms512M");
+        optionStrings.push_back("-Xmx" + std::to_string(cfg->javaHeapMb) + "M");
+        optionStrings.push_back("-Xms" + std::to_string(std::min(512, cfg->javaHeapMb / 3)) + "M");
+        pushLogLine("[PRISSMA] Memoria máxima de Java: " + std::to_string(cfg->javaHeapMb) + " MiB.");
 
         std::vector<JavaVMOption> options(optionStrings.size());
         for (size_t i = 0; i < optionStrings.size(); ++i) {
@@ -463,7 +464,7 @@ Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativeLaunchJvm(
     jstring classpath,
     jstring mainClass,
     jobjectArray gameArgs,
-    jboolean useVulkanZink
+    jint javaHeapMb
 ) {
     if (gJvmRunning) {
         return 1;
@@ -487,7 +488,7 @@ Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativeLaunchJvm(
     cfg->nativeLibraryDir = toStdString(nativeLibraryDir);
     cfg->classpath = toStdString(classpath);
     cfg->mainClass = toStdString(mainClass);
-    cfg->useVulkanZink = (useVulkanZink == JNI_TRUE);
+    cfg->javaHeapMb = std::max(768, std::min(8192, static_cast<int>(javaHeapMb)));
 
     jsize argCount = env->GetArrayLength(gameArgs);
     for (jsize i = 0; i < argCount; ++i) {

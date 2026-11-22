@@ -43,7 +43,8 @@ static void hotbarScrolled(GLFWwindow* window, double x, double y)
 
 static void typed(GLFWwindow* window, unsigned int codePoint)
 {
-    assert(codePoint == 'w');
+    assert(characterChanges < 2);
+    assert(codePoint == (characterChanges == 0 ? 'w' : 0x1F603));
     ++characterChanges;
 }
 
@@ -138,6 +139,9 @@ int main(void)
     assert(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_RELEASE);
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     assert(!prissmaGlfwCursorCaptured());
+    prissmaGlfwInput(6, 0x1F603, 0, 0.0, 0.0);
+    glfwPollEvents();
+    assert(characterChanges == 2);
 
     glfwMakeContextCurrent(window);
     assert(!prissmaGlfwHasPresentedFrame());

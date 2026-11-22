@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 
-enum InputKind { Pointer, RelativePointer, MouseButton, Key, Scroll, ResetInput };
+enum InputKind { Pointer, RelativePointer, MouseButton, Key, Scroll, ResetInput, Character };
 
 typedef struct {
     int kind;
@@ -23,7 +23,7 @@ static int pendingWidth;
 static int pendingHeight;
 static ANativeWindow* activeSurface;
 static _GLFWwindow* activeWindow;
-static InputEvent inputQueue[256];
+static InputEvent inputQueue[512];
 static unsigned int inputCount;
 static PFN_eglSwapBuffers swapBuffersEgl;
 static atomic_int firstFramePresented;
@@ -318,6 +318,10 @@ static void dispatchInput(_GLFWwindow* window, const InputEvent* event)
         case ResetInput:
             releaseInputs(window);
             break;
+        case Character:
+            if (event->code >= 32 && event->code <= 0x10FFFF)
+                _glfwInputChar(window, (unsigned int) event->code, 0, GLFW_TRUE);
+            break;
     }
 }
 
@@ -326,7 +330,7 @@ static void pollEvents(void)
     if (!activeWindow)
         return;
 
-    InputEvent events[256];
+    InputEvent events[sizeof(inputQueue) / sizeof(inputQueue[0])];
     pthread_mutex_lock(&eventLock);
     const unsigned int count = inputCount;
     memcpy(events, inputQueue, count * sizeof(InputEvent));
