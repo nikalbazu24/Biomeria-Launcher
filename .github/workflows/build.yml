@@ -141,7 +141,7 @@ jobs:
               assert not bridge_path.startswith(mixin_package + "/")
               for entry in [mixin_package + "/" + name for name in expected_mixins] + [
                   bridge_path, bridge_path + "$Access", "com/prissma/dualscreen/TerrainMap",
-                  "com/prissma/dualscreen/RecipeBookPanel"
+                  "com/prissma/dualscreen/RecipeBookPanel", "com/prissma/dualscreen/InternetWorldLease"
               ]:
                   assert mod.read(entry + ".class").startswith(bytes.fromhex("CAFEBABE"))
           PY

@@ -371,6 +371,12 @@ private fun JavaNativeViewportScreen(
     var showKeyboard by remember { mutableStateOf(false) }
     var showQuickMenu by remember { mutableStateOf(false) }
     var showLanDialog by remember { mutableStateOf(false) }
+    var showInternetDialog by remember { mutableStateOf(false) }
+    val roomScope = rememberCoroutineScope()
+    val internetRoom = remember(panelBridge, roomScope) { panelBridge?.let { InternetWorldShare(it, roomScope) } }
+    DisposableEffect(internetRoom) {
+        onDispose { internetRoom?.close() }
+    }
     var pendingGameKey by remember { mutableStateOf<Int?>(null) }
     var fps by remember { mutableStateOf<Int?>(null) }
     var jvmStarted by remember { mutableStateOf(false) }
@@ -383,6 +389,7 @@ private fun JavaNativeViewportScreen(
             showKeyboard -> showKeyboard = false
             showQuickMenu -> showQuickMenu = false
             showLanDialog -> showLanDialog = false
+            showInternetDialog -> showInternetDialog = false
             libJvmPath.isBlank() -> onExitGame()
             else -> showOverlay = !showOverlay
         }
@@ -391,7 +398,9 @@ private fun JavaNativeViewportScreen(
     BackHandler { handleBack() }
     val toggle by rememberUpdatedState({ handleBack() })
     val quickToggle by rememberUpdatedState {
-        if (!showOverlay && !showKeyboard && !showHudDialog && !showLanDialog && hasPresentedFrame) showQuickMenu = !showQuickMenu
+        if (!showOverlay && !showKeyboard && !showHudDialog && !showLanDialog && !showInternetDialog && hasPresentedFrame) {
+            showQuickMenu = !showQuickMenu
+        }
     }
     DisposableEffect(Unit) {
         onTogglePanel { toggle() }
@@ -401,7 +410,8 @@ private fun JavaNativeViewportScreen(
             onToggleQuickMenu(null)
         }
     }
-    val canSendInput = jvmStarted && !showOverlay && !showKeyboard && !showQuickMenu && !showHudDialog && !showLanDialog
+    val canSendInput = jvmStarted && !showOverlay && !showKeyboard && !showQuickMenu && !showHudDialog &&
+        !showLanDialog && !showInternetDialog
     val collectTerrain = hud.showMinimap || (hud.dualScreen && hud.panelMap == PanelMapSource.PRISSMA)
     LaunchedEffect(panelBridge, collectTerrain, hud.showCoordinates) {
         withContext(Dispatchers.IO) { panelBridge?.collectTerrain(collectTerrain, hud.showCoordinates) }
@@ -717,11 +727,15 @@ private fun JavaNativeViewportScreen(
             },
             onHud = { showQuickMenu = false; showHudDialog = true },
             onPause = { showQuickMenu = false; showOverlay = true },
-            onLan = { showQuickMenu = false; showLanDialog = true }
+            onLan = { showQuickMenu = false; showLanDialog = true },
+            onInternet = { showQuickMenu = false; showInternetDialog = true }
         )
     }
     if (showLanDialog && panelBridge != null) {
         LocalWorldShareDialog(activity, panelBridge) { showLanDialog = false }
+    }
+    if (showInternetDialog && internetRoom != null) {
+        InternetWorldShareDialog(internetRoom) { showInternetDialog = false }
     }
 }
 

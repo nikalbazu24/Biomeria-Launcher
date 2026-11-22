@@ -26,7 +26,8 @@ internal fun GameQuickMenu(
     onMap: () -> Unit,
     onHud: () -> Unit,
     onPause: () -> Unit,
-    onLan: () -> Unit
+    onLan: () -> Unit,
+    onInternet: () -> Unit
 ) {
     Dialog(onDismissRequest = onClose) {
         val focus = remember { FocusRequester() }
@@ -45,7 +46,10 @@ internal fun GameQuickMenu(
                     LauncherButton("HUD", onHud, Modifier.weight(1f))
                     LauncherButton("Pausa", onPause, Modifier.weight(1f))
                 }
-                LauncherButton("Sala LAN", onLan, enabled = hasMap && canOpenInventory)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    LauncherButton("Sala LAN", onLan, Modifier.weight(1f), enabled = hasMap && canOpenInventory)
+                    LauncherButton("Por internet", onInternet, Modifier.weight(1f), enabled = hasMap)
+                }
                 LauncherButton("Volver", onClose, Modifier.focusRequester(focus), primary = true)
             }
         }

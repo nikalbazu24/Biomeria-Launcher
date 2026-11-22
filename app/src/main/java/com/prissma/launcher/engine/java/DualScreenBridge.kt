@@ -6,6 +6,7 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.Locale
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
 internal const val DUAL_SNAPSHOT_MAGIC = 0x50525336
@@ -159,18 +160,44 @@ internal class DualScreenBridge(val directory: File, val terrainDirectory: File?
         setGenerationMarker("terrain-position", if (position && terrainDirectory != null) 1L else null)
     }
 
+    fun requestInternetWorld(token: UUID): Boolean = writeMarker("internet-open", token.toString())
+
+    fun stopInternetWorld() {
+        File(directory, "internet-open").delete()
+    }
+
+    fun readInternetWorld(token: UUID): Int? {
+        val file = File(directory, "internet-world")
+        val stamp = file.lastModified()
+        if (stamp == 0L || System.currentTimeMillis() - stamp !in -150L..3500L || file.length() !in 38L..42L) {
+            return null
+        }
+        return try {
+            val value = file.readText(Charsets.US_ASCII)
+            if (value.substringBefore(' ') != token.toString()) null
+            else value.substringAfter(' ', "").toIntOrNull()?.takeIf { it in -1..65535 }
+        } catch (_: IOException) {
+            null
+        }
+    }
+
     private fun setGenerationMarker(name: String, generation: Long?) {
-        val marker = File(directory, name)
         if (generation == null) {
-            marker.delete()
+            File(directory, name).delete()
             return
         }
+        writeMarker(name, generation.toString())
+    }
+
+    private fun writeMarker(name: String, value: String): Boolean {
+        val marker = File(directory, name)
         val staged = File(directory, "$name.part")
-        try {
-            staged.writeText(generation.toString(), Charsets.US_ASCII)
+        return try {
+            staged.writeText(value, Charsets.US_ASCII)
             Files.move(staged.toPath(), marker.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            true
         } catch (_: IOException) {
-            // The secondary screen can detach while the session is closing.
+            false
         } finally {
             staged.delete()
         }

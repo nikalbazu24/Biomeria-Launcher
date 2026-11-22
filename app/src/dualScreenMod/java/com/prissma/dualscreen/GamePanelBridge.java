@@ -35,6 +35,7 @@ public final class GamePanelBridge {
     private static Object openingScreen;
     private static long openingDeadline;
     private static int preparedMenus;
+    private static final InternetWorldLease internetWorld = new InternetWorldLease();
     private static TerrainMap terrain;
     private static boolean terrainFailed;
     private static RecipeBookPanel recipeBook;
@@ -58,6 +59,8 @@ public final class GamePanelBridge {
         Path root = Path.of(SESSION);
         Path lanRequest = root.resolve("lan-open");
         boolean shareRequested = Files.isRegularFile(lanRequest);
+        boolean internetRequested = Files.isRegularFile(root.resolve("internet-open"));
+        if (!internetRequested) internetWorld.clear();
         boolean panelVisible = Files.isRegularFile(root.resolve("visible"));
         boolean mapVisible = !TERRAIN.isEmpty() && !terrainFailed && Files.isRegularFile(root.resolve("terrain-enabled"));
         boolean trackPosition = !TERRAIN.isEmpty() && !terrainFailed &&
@@ -66,7 +69,7 @@ public final class GamePanelBridge {
             clearRoute();
             preparedMenus = 0;
             openingDeadline = 0;
-            if (!trackPosition && !shareRequested) return;
+            if (!trackPosition && !shareRequested && !internetRequested) return;
         } else {
             preparedMenus = readMenuPolicy(root.resolve("menu-policy"));
         }
@@ -86,7 +89,7 @@ public final class GamePanelBridge {
             if (shareRequested && Files.deleteIfExists(lanRequest)) {
                 int port;
                 try {
-                    port = player == null || world == null ? 0 : LocalWorldShare.open(client);
+                    port = player == null || world == null ? 0 : LocalWorldShare.open(game.integratedServer.invoke(client));
                 } catch (ReflectiveOperationException | LinkageError error) {
                     port = -1;
                     System.err.println("[PRISSMA] No se pudo abrir la sala LAN: " + error);
@@ -94,6 +97,9 @@ public final class GamePanelBridge {
                 writeAtomically(root.resolve("lan-result"), Integer.toString(port).getBytes(StandardCharsets.US_ASCII));
             }
             boolean snapshotTick = ticks % SNAPSHOT_TICKS == 0;
+            if (internetRequested && snapshotTick) {
+                internetWorld.update(root, game.integratedServer.invoke(client), world != null && player != null);
+            }
             if (!panelVisible) {
                 if (trackPosition && snapshotTick) updateTerrain(root, client, world, player, mapVisible);
                 return;
@@ -388,7 +394,7 @@ public final class GamePanelBridge {
     private static final class Access {
         final Field player, world, currentScreen, interactions, playerHandler, currentHandler, slots, syncId, selectedSlot, mapColors;
         final Method slotStack, cursorStack, empty, name, text, count, inventory, selectSlot, clickSlot, spectator;
-        final Method x, y, z, mainHand, offHand, component, mapState, mapColor;
+        final Method x, y, z, mainHand, offHand, component, mapState, mapColor, integratedServer;
         final Method screenHandler, closeScreen, title, chestRows, cookProgress, fuelProgress, furnaceBurning;
         final Class<?> craftingScreen, craftingHandler, chestScreen, chestHandler, furnaceScreen, furnaceHandler;
         final Object pickup, quickMove, mapId;
@@ -405,6 +411,7 @@ public final class GamePanelBridge {
             player = field(client, "field_1724");
             world = field(client, "field_1687");
             currentScreen = field(client, "field_1755");
+            integratedServer = client.getMethod("method_1576");
             craftingScreen = type(loader, 479);
             craftingHandler = type(loader, 1714);
             chestScreen = type(loader, 476);

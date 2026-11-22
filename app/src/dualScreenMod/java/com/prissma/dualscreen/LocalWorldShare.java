@@ -5,10 +5,9 @@ import java.lang.reflect.Method;
 final class LocalWorldShare {
     private LocalWorldShare() {}
 
-    static int open(Object client) throws ReflectiveOperationException {
-        ClassLoader loader = client.getClass().getClassLoader();
-        Object server = loader.loadClass("net.minecraft.class_310").getMethod("method_1576").invoke(client);
+    static int open(Object server) throws ReflectiveOperationException {
         if (server == null) return 0;
+        ClassLoader loader = server.getClass().getClassLoader();
         Class<?> serverType = loader.loadClass("net.minecraft.server.MinecraftServer");
         Method isPublished = serverType.getMethod("method_3860");
         if ((boolean) isPublished.invoke(server)) return (int) serverType.getMethod("method_3756").invoke(server);
