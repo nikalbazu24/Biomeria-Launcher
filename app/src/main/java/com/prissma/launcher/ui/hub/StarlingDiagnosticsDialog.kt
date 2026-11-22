@@ -79,9 +79,9 @@ internal fun StarlingDiagnosticsDialog(
             Column(Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Desde el diagnóstico de Starling, exporta y comparte el ZIP. Elige PRISSMA en el menú de Android.")
-                if (installation != null) {
+                if (installation?.canOpen == true) {
                     LauncherButton("Abrir diagnóstico de Starling", { errorMessage = launcher.openDiagnostics() }, enabled = !busy)
-                } else LauncherButton("Ver Starling ARM64", { errorMessage = launcher.openReleases() }, enabled = !busy)
+                }
                 LauncherButton("Importar ZIP", {
                     try {
                         picker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))

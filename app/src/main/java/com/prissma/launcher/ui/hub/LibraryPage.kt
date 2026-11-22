@@ -77,7 +77,6 @@ internal fun LibraryPage(
     onNew: () -> Unit,
     onPlay: () -> Unit,
     onBedrockApps: () -> Unit,
-    onGetStarling: () -> Unit,
     onStarlingDiagnostics: () -> Unit,
     onWorkshop: () -> Unit,
     onEdit: () -> Unit,
@@ -88,7 +87,7 @@ internal fun LibraryPage(
         val wide = maxWidth >= 487.dp && maxHeight >= 250.dp
         val hero: @Composable (Modifier) -> Unit = {
             InstanceHero(selected, bedrock, starling, selected?.id?.let(favorites::contains) == true,
-                onPlay, onBedrockApps, onGetStarling, onStarlingDiagnostics, onWorkshop, onEdit, onFavorite, it)
+                onPlay, onBedrockApps, onStarlingDiagnostics, onWorkshop, onEdit, onFavorite, it)
         }
         val list: @Composable (Modifier) -> Unit = {
             LibraryList(instances, selected, favorites, filter, favoritesOnly, order, query, bedrock, starling,
@@ -119,7 +118,6 @@ private fun InstanceHero(
     favorite: Boolean,
     onPlay: () -> Unit,
     onBedrockApps: () -> Unit,
-    onGetStarling: () -> Unit,
     onStarlingDiagnostics: () -> Unit,
     onWorkshop: () -> Unit,
     onEdit: () -> Unit,
@@ -190,9 +188,9 @@ private fun InstanceHero(
                             LauncherButton("Taller", onWorkshop)
                         }
                         EngineType.RUST -> {
-                            if (starling?.canOpen == true) {
-                                LauncherButton("Abrir Starling", onPlay, icon = Icons.Default.PlayArrow, primary = true)
-                            } else LauncherButton("Ver Starling ARM64", onGetStarling, primary = true)
+                            LauncherButton("Jugar", onPlay, icon = Icons.Default.PlayArrow, primary = true,
+                                enabled = starling?.canOpen == true)
+                            LauncherButton("Taller", onWorkshop, enabled = starling?.canOpen == true)
                             LauncherButton("Diagnóstico", onStarlingDiagnostics)
                         }
                     }

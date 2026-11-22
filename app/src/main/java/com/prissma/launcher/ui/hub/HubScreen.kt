@@ -53,6 +53,7 @@ import com.prissma.launcher.ui.launch.JavaLaunchScreen
 import com.prissma.launcher.ui.theme.Prissma
 import com.prissma.launcher.ui.workshop.BedrockWorkshopScreen
 import com.prissma.launcher.ui.workshop.ContentWorkshopScreen
+import com.prissma.launcher.ui.workshop.StarlingWorkshopScreen
 import com.prissma.launcher.ui.workshop.WorkshopDownloadsDialog
 import com.prissma.launcher.ui.workshop.workshopDownloadsLabel
 import kotlinx.coroutines.launch
@@ -126,8 +127,7 @@ internal fun HubScreen(
         visibleLibrary(instances, filter, query, favorites, favoritesOnly, recent, order)
     }
     val selected = librarySelection(visible, selectedId)
-    val workshopInstance = selected?.takeIf { it.engine != EngineType.RUST }
-        ?: librarySelection(instances.filter { it.engine == EngineType.JAVA }, selectedId)
+    val workshopInstance = selected ?: librarySelection(instances, selectedId)
 
     fun notify(message: String) {
         scope.launch {
@@ -213,9 +213,11 @@ internal fun HubScreen(
     BackHandler(enabled = page != HubPage.LIBRARY && !showWorkshop) { page = HubPage.LIBRARY }
     if (showWorkshop && workshopInstance != null) {
         val back = { page = HubPage.LIBRARY }
-        if (workshopInstance.engine == EngineType.BEDROCK) {
-            BedrockWorkshopScreen(workshopInstance.title, bedrock, bedrockLauncher, onRefreshBedrock, back)
-        } else ContentWorkshopScreen(instance = workshopInstance, onBack = back)
+        when (workshopInstance.engine) {
+            EngineType.JAVA -> ContentWorkshopScreen(instance = workshopInstance, onBack = back)
+            EngineType.BEDROCK -> BedrockWorkshopScreen(workshopInstance.title, bedrock, bedrockLauncher, onRefreshBedrock, back)
+            EngineType.RUST -> StarlingWorkshopScreen(workshopInstance.title, starling, starlingLauncher, back)
+        }
         return
     }
 
@@ -251,8 +253,7 @@ internal fun HubScreen(
                         filter = filters[(filters.indexOf(filter) + filters.size + offset) % filters.size]
                         true
                     }
-                    page == HubPage.LIBRARY && event.key == Key.ButtonX &&
-                        selected != null && selected.engine != EngineType.RUST -> {
+                    page == HubPage.LIBRARY && event.key == Key.ButtonX && selected != null -> {
                         page = HubPage.WORKSHOP
                         true
                     }
@@ -270,7 +271,6 @@ internal fun HubScreen(
                     onNew = { showNew = true },
                     onPlay = { selected?.let(::launchInstance) },
                     onBedrockApps = { showBedrockApps = true },
-                    onGetStarling = { starlingLauncher.openReleases()?.let(::notify) },
                     onStarlingDiagnostics = { showStarlingDiagnostics = true },
                     onWorkshop = { page = HubPage.WORKSHOP },
                     onEdit = { editingId = selected?.id },

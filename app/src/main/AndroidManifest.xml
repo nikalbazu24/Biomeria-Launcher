@@ -3,6 +3,8 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -11,7 +13,6 @@
     <queries>
         <package android:name="com.mojang.minecraftpe" />
         <package android:name="com.mojang.minecrafttrialpe" />
-        <package android:name="io.github.juanluci.starling" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
@@ -80,6 +81,60 @@
             android:process=":game"
             android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation" />
+
+        <activity
+            android:name="io.github.juanluci.starling.LauncherActivity"
+            android:exported="false"
+            android:process=":rust_launch"
+            android:taskAffinity="${applicationId}.rust.launch"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <activity
+            android:name="io.github.juanluci.starling.GameActivity"
+            android:exported="false"
+            android:process=":rust_game"
+            android:taskAffinity="${applicationId}.rust"
+            android:launchMode="singleTask"
+            android:resizeableActivity="false"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/Starling.Game"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|density|screenSize|smallestScreenSize|layoutDirection|colorMode|fontWeightAdjustment|grammaticalGender">
+            <meta-data android:name="android.app.lib_name" android:value="horizon_android" />
+            <meta-data android:name="android.app.func_name" android:value="starling_on_create" />
+        </activity>
+
+        <activity
+            android:name="io.github.juanluci.starling.DiagnosticsActivity"
+            android:exported="false"
+            android:hardwareAccelerated="false"
+            android:process=":rust_diagnostics"
+            android:theme="@style/Starling.Game" />
+
+        <service
+            android:name="io.github.juanluci.starling.WorkService"
+            android:exported="false"
+            android:process=":rust_game"
+            android:foregroundServiceType="dataSync" />
+
+        <provider
+            android:name="io.github.juanluci.starling.UpdateProvider"
+            android:authorities="${applicationId}.updates"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+
+        <provider
+            android:name="io.github.juanluci.starling.GameFolderProvider"
+            android:authorities="${applicationId}.documents"
+            android:exported="true"
+            android:process=":rust_documents"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
 
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"

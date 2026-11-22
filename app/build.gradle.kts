@@ -96,6 +96,30 @@ val unpackMobileGlues by tasks.registering(Sync::class) {
     }
     into(rendererJniLibs)
 }
+val starlingArchive = layout.buildDirectory.file("downloads/starling-0.9.0-arm64.apk")
+val starlingRuntime = layout.buildDirectory.dir("generated/starling")
+val downloadStarlingArm64 by tasks.registering {
+    val sha256 = "fd31e8d90a0e787c315846ddaa81e66cc916607e67cba702658d2d569689a571"
+    inputs.property("sha256", sha256)
+    outputs.file(starlingArchive)
+    doLast {
+        val url = "https://github.com/starling-client/starling/releases/download/v0.9.0/starling-0.9.0-arm64-v8a.apk"
+        val bytes = verifiedDownload(url, sha256)
+        starlingArchive.get().asFile.apply { parentFile.mkdirs() }.writeBytes(bytes)
+    }
+}
+val unpackStarlingArm64 by tasks.registering(Sync::class) {
+    dependsOn(downloadStarlingArm64)
+    from({ zipTree(starlingArchive.get().asFile) }) {
+        include("lib/arm64-v8a/*.so", "assets/prepare-kit.zip", "assets/lowbudget.zip",
+            "assets/StarlingVisuals.zip", "assets/diagnostic-fonts/*.ttf")
+        eachFile {
+            if (path.startsWith("lib/")) path = "jniLibs/" + path.removePrefix("lib/")
+        }
+        includeEmptyDirs = false
+    }
+    into(starlingRuntime)
+}
 val prepareLwjglJars by tasks.registering {
     val jars = mapOf(
         "lwjgl" to "c26bc7db30a3414d907530eb3128c582612c10674328408e560feb5444ceefd1",
@@ -161,7 +185,7 @@ val neoForgeBootstrapJar = tasks.register<Jar>("neoForgeBootstrapJar") {
     destinationDirectory.set(neoForgeAssets.map { it.dir("neoforge") })
 }
 tasks.named("preBuild") {
-    dependsOn(unpackJnaAndroid, unpackLwjglAndroid, unpackMobileGlues, prepareLwjglJars, neoForgeBootstrapJar)
+    dependsOn(unpackJnaAndroid, unpackLwjglAndroid, unpackMobileGlues, unpackStarlingArm64, prepareLwjglJars, neoForgeBootstrapJar)
 }
 
 android {
@@ -215,6 +239,16 @@ android {
     sourceSets.getByName("main").jniLibs.srcDir(rendererJniLibs)
     sourceSets.getByName("main").assets.srcDir(lwjglAssets)
     sourceSets.getByName("main").assets.srcDir(neoForgeAssets)
+    sourceSets.getByName("main").apply {
+        java.srcDir("src/starling/java")
+        res.srcDir("src/starling/res")
+        assets.srcDir("src/starling/assets")
+        jniLibs.srcDir(starlingRuntime.map { it.dir("jniLibs") })
+        assets.srcDir(starlingRuntime.map { it.dir("assets") })
+    }
+    // Starling's native libraries and helper executables retain upstream hashes and filenames.
+    packaging.jniLibs.keepDebugSymbols.addAll(setOf("**/libhorizon*.so", "**/libstarling*.so",
+        "**/libmod*.so", "**/lib*hook*.so", "**/libemutls.so", "**/libadrenotools.so", "**/libc++_shared.so"))
     // La JVM de Minecraft carga las bibliotecas desde applicationInfo.nativeLibraryDir.
     packaging.jniLibs.useLegacyPackaging = true
     packaging.jniLibs.keepDebugSymbols.addAll(

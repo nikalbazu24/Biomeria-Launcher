@@ -3,53 +3,40 @@ package com.prissma.launcher.engine.rust
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
+import io.github.juanluci.starling.DiagnosticsActivity
+import io.github.juanluci.starling.LauncherActivity
+import java.io.File
 
-internal const val STARLING_PACKAGE = "io.github.juanluci.starling"
 internal const val STARLING_MINECRAFT_VERSION = "26.3"
-internal const val STARLING_DIAGNOSTICS_ACTIVITY = "$STARLING_PACKAGE.DiagnosticsActivity"
-internal const val STARLING_RELEASES_URL = "https://github.com/starling-client/starling/releases/latest"
+private const val STARLING_VERSION = "0.9.0"
 
 internal data class StarlingInstallation(val version: String?, val canOpen: Boolean) {
-    val label: String get() = listOfNotNull("Starling", version).joinToString(" · ")
+    val label: String get() = listOfNotNull("Rust integrado", version?.let { "Starling $it" }).joinToString(" · ")
 }
 
 internal fun StarlingInstallation?.launchProblem(): String? = when {
-    this == null -> "Instala Starling ARM64 en este perfil de Android."
-    !canOpen -> "Revisa que Starling esté habilitado en Android."
+    this == null || !canOpen -> "Falta el motor Rust en esta compilación de PRISSMA."
     else -> null
 }
 
 internal class StarlingLauncher(private val activity: Activity) {
-    private val manager get() = activity.packageManager
+    fun detect(): StarlingInstallation = StarlingInstallation(STARLING_VERSION,
+        File(activity.applicationInfo.nativeLibraryDir, "libhorizon_android.so").isFile)
 
-    @Suppress("DEPRECATION") // The integer-flags overload is also available on Android 8.
-    fun detect(): StarlingInstallation? {
-        val launch = manager.getLaunchIntentForPackage(STARLING_PACKAGE)
-        val info = try {
-            manager.getPackageInfo(STARLING_PACKAGE, 0)
-        } catch (error: PackageManager.NameNotFoundException) {
-            null
+    fun open(mod: Uri? = null): String? {
+        detect().launchProblem()?.let { return it }
+        val launch = Intent(activity, LauncherActivity::class.java)
+        if (mod != null) {
+            launch.action = Intent.ACTION_VIEW
+            launch.setDataAndType(mod, "application/zip")
+            launch.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        if (info == null && launch == null) return null
-        return StarlingInstallation(info?.versionName?.takeIf { it.isNotBlank() }, launch != null)
+        return if (start(launch)) null else "Android no pudo abrir el motor Rust."
     }
 
-    fun open(): String? {
-        val launch = manager.getLaunchIntentForPackage(STARLING_PACKAGE)
-            ?: return detect().launchProblem() ?: "Android no pudo abrir Starling."
-        return if (start(launch)) null else "Android no pudo abrir Starling."
-    }
-
-    fun openDiagnostics(): String? {
-        val launch = Intent(Intent.ACTION_VIEW).setClassName(STARLING_PACKAGE, STARLING_DIAGNOSTICS_ACTIVITY)
-        return if (start(launch)) null else "Android no pudo abrir el diagnóstico. Comprueba que Starling esté instalado y actualizado."
-    }
-
-    fun openReleases(): String? =
-        if (start(Intent(Intent.ACTION_VIEW, Uri.parse(STARLING_RELEASES_URL)))) null
-        else "Android no pudo abrir la página oficial de Starling."
+    fun openDiagnostics(): String? = if (start(Intent(activity, DiagnosticsActivity::class.java))) null
+        else "Android no pudo abrir el diagnóstico del motor Rust."
 
     private fun start(intent: Intent): Boolean = try {
         activity.startActivity(intent)
