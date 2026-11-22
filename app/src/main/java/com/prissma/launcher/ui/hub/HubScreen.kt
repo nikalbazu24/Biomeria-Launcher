@@ -37,6 +37,7 @@ import com.prissma.launcher.data.InstanceStorage
 import com.prissma.launcher.data.LibraryPreferences
 import com.prissma.launcher.data.UpdateInfo
 import com.prissma.launcher.engine.bedrock.BedrockInstallation
+import com.prissma.launcher.engine.bedrock.BedrockLauncher
 import com.prissma.launcher.engine.java.GameDownloads
 import com.prissma.launcher.engine.java.MojangDownloader
 import com.prissma.launcher.engine.java.supportedVersions
@@ -65,6 +66,8 @@ private enum class HubPage(val label: String, val icon: ImageVector) {
 @Composable
 internal fun HubScreen(
     bedrock: BedrockInstallation?,
+    bedrockLauncher: BedrockLauncher,
+    onRefreshBedrock: () -> Unit,
     onOpenBedrock: () -> String?,
     externalLaunchInstanceId: String? = null,
     updateSettingsRequest: Int = 0,
@@ -94,6 +97,7 @@ internal fun HubScreen(
     var page by rememberSaveable { mutableStateOf(HubPage.LIBRARY) }
 
     var showAccount by rememberSaveable { mutableStateOf(false) }
+    var showBedrockApps by rememberSaveable { mutableStateOf(false) }
     var savingProfile by remember { mutableStateOf(false) }
     var showNew by rememberSaveable { mutableStateOf(false) }
     var editingId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -136,6 +140,7 @@ internal fun HubScreen(
                 launchingId = null
                 val problem = onOpenBedrock()
                 if (problem != null) {
+                    if (bedrock?.canOpen != true) showBedrockApps = true
                     notify(problem)
                     return
                 }
@@ -239,6 +244,7 @@ internal fun HubScreen(
                     onSelect = { selectedId = it.id },
                     onNew = { showNew = true },
                     onPlay = { selected?.let(::launchInstance) },
+                    onBedrockApps = { showBedrockApps = true },
                     onWorkshop = { page = HubPage.WORKSHOP },
                     onEdit = { editingId = selected?.id },
                     onFavorite = {
@@ -263,7 +269,11 @@ internal fun HubScreen(
 
     if (showWorkshopDownloads) WorkshopDownloadsDialog(workshopJobs, instances, downloads) { showWorkshopDownloads = false }
 
-    if (!showWorkshopDownloads && !releaseNotesSeen && page == HubPage.LIBRARY && externalLaunchInstanceId == null &&
+    if (showBedrockApps) {
+        BedrockAppsDialog(bedrock, bedrockLauncher, onRefreshBedrock, onDismiss = { showBedrockApps = false })
+    }
+
+    if (!showWorkshopDownloads && !showBedrockApps && !releaseNotesSeen && page == HubPage.LIBRARY && externalLaunchInstanceId == null &&
         updateSettingsRequest == 0 && !showAccount && !showNew && editingId == null && deleteId == null
     ) {
         installedNotes?.let { ReleaseNotesDialog(version, it, ::acknowledgeReleaseNotes) }

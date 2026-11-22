@@ -50,6 +50,8 @@ class MainActivity : ComponentActivity() {
                 } else {
                     HubScreen(
                         bedrock = bedrock,
+                        bedrockLauncher = bedrockLauncher,
+                        onRefreshBedrock = ::refreshBedrock,
                         onOpenBedrock = ::openBedrock,
                         externalLaunchInstanceId = externalLaunchInstanceId,
                         updateSettingsRequest = updateSettingsRequest,
@@ -66,7 +68,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        bedrock = bedrockLauncher.detect()
+        refreshBedrock()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -75,7 +77,11 @@ class MainActivity : ComponentActivity() {
         outState.putString("sourceFrontendPackage", sourceFrontendPackage)
     }
 
-    private fun openBedrock(): String? = bedrockLauncher.open()?.also { bedrock = bedrockLauncher.detect() }
+    private fun refreshBedrock() {
+        bedrock = bedrockLauncher.detect()
+    }
+
+    private fun openBedrock(): String? = bedrockLauncher.open()?.also { refreshBedrock() }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)

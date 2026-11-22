@@ -73,6 +73,7 @@ internal fun LibraryPage(
     onSelect: (GameInstance) -> Unit,
     onNew: () -> Unit,
     onPlay: () -> Unit,
+    onBedrockApps: () -> Unit,
     onWorkshop: () -> Unit,
     onEdit: () -> Unit,
     onFavorite: () -> Unit,
@@ -81,7 +82,8 @@ internal fun LibraryPage(
     BoxWithConstraints(modifier) {
         val wide = maxWidth >= 487.dp && maxHeight >= 250.dp
         val hero: @Composable (Modifier) -> Unit = {
-            InstanceHero(selected, bedrock, selected?.id?.let(favorites::contains) == true, onPlay, onWorkshop, onEdit, onFavorite, it)
+            InstanceHero(selected, bedrock, selected?.id?.let(favorites::contains) == true,
+                onPlay, onBedrockApps, onWorkshop, onEdit, onFavorite, it)
         }
         val list: @Composable (Modifier) -> Unit = {
             LibraryList(instances, selected, favorites, filter, favoritesOnly, order, query, bedrock,
@@ -110,6 +112,7 @@ private fun InstanceHero(
     bedrock: BedrockInstallation?,
     favorite: Boolean,
     onPlay: () -> Unit,
+    onBedrockApps: () -> Unit,
     onWorkshop: () -> Unit,
     onEdit: () -> Unit,
     onFavorite: () -> Unit,
@@ -169,8 +172,14 @@ private fun InstanceHero(
                             LauncherButton("Preparar juego", onPlay, icon = Icons.Default.PlayArrow, primary = true)
                             LauncherButton("Taller", onWorkshop)
                         }
-                        EngineType.BEDROCK -> LauncherButton("Abrir Minecraft", onPlay, icon = Icons.Default.PlayArrow,
-                            primary = true, enabled = bedrock?.canOpen == true)
+                        EngineType.BEDROCK -> {
+                            if (bedrock?.canOpen == true) {
+                                LauncherButton("Abrir Minecraft", onPlay, icon = Icons.Default.PlayArrow, primary = true)
+                                LauncherButton("Cambiar aplicación", onBedrockApps)
+                            } else {
+                                LauncherButton("Buscar Minecraft", onBedrockApps, icon = Icons.Default.Search, primary = true)
+                            }
+                        }
                         EngineType.RUST -> LauncherButton("Preparar juego", onPlay, icon = Icons.Default.PlayArrow,
                             primary = true, enabled = false)
                     }
