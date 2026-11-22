@@ -22,67 +22,126 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-internal data class MicrosoftIdentity(val playerName: String, val profileId: String)
-
 internal class MinecraftAccounts(context: Context) {
-    private val storage = MicrosoftSessionStorage(File(context.noBackupFilesDir, "java-microsoft-session"))
+    private val microsoftStorage = EncryptedSessionFile(File(context.noBackupFilesDir, "java-microsoft-session"),
+        "prissma-java-microsoft-v1", MicrosoftSession.Companion::decode, MicrosoftSession::encode)
+    private val elyStorage = EncryptedSessionFile(File(context.noBackupFilesDir, "java-ely-session"),
+        "prissma-java-ely-v1", ElySession.Companion::decode, ElySession::encode)
     private val microsoft = MicrosoftLogin()
+    private val ely = ElyLogin()
 
-    suspend fun linked(): MicrosoftIdentity? = withContext(Dispatchers.IO) {
-        lock.withLock { storage.read()?.identity() }
-    }
+    suspend fun elyAgentMetadata(): String = withContext(Dispatchers.IO) { ely.agentMetadata() }
 
-    suspend fun start(applicationId: String): DeviceCode = withContext(Dispatchers.IO) { microsoft.start(applicationId) }
-
-    suspend fun authorize(code: DeviceCode): MicrosoftIdentity = withContext(Dispatchers.IO) {
-        val session = microsoft.finish(code)
+    suspend fun linked(mode: JavaAccountMode): JavaAccountIdentity? = withContext(Dispatchers.IO) {
         lock.withLock {
-            currentCoroutineContext().ensureActive()
-            storage.write(session)
-        }
-        session.identity()
-    }
-
-    suspend fun prepareLaunch(): MicrosoftIdentity = withContext(Dispatchers.IO) {
-        lock.withLock {
-            val saved = storage.read() ?: throw signInRequired()
-            if (saved.validFor(System.currentTimeMillis(), bufferMillis = 60_000)) return@withLock saved.identity()
-            try {
-                val refreshed = microsoft.refresh(saved, storage::write)
-                storage.write(refreshed)
-                refreshed.identity()
-            } catch (error: MicrosoftLoginError) {
-                if (error.relink) storage.clear()
-                throw error
+            when (mode) {
+                JavaAccountMode.MICROSOFT -> microsoftStorage.read()?.identity()
+                JavaAccountMode.ELY_BY -> elyStorage.read()?.identity()
+                JavaAccountMode.OFFLINE -> null
             }
         }
     }
 
-    /** The game activity reads the token directly from encrypted storage in its own process. */
-    suspend fun launchToken(profileId: String): String = withContext(Dispatchers.IO) {
-        val saved = storage.read() ?: throw signInRequired()
-        if (saved.profileId != profileId || !saved.validFor(System.currentTimeMillis())) throw signInRequired()
-        saved.minecraftToken
+    suspend fun start(applicationId: String): DeviceCode = withContext(Dispatchers.IO) { microsoft.start(applicationId) }
+
+    suspend fun authorize(code: DeviceCode): JavaAccountIdentity = withContext(Dispatchers.IO) {
+        val session = microsoft.finish(code)
+        lock.withLock {
+            currentCoroutineContext().ensureActive()
+            microsoftStorage.write(session)
+        }
+        session.identity()
     }
 
-    suspend fun signOut() = withContext(Dispatchers.IO) { lock.withLock { storage.clear() } }
+    suspend fun authorizeEly(username: String, password: String, oneTimeCode: String): JavaAccountIdentity = withContext(Dispatchers.IO) {
+        val session = ely.signIn(username, password, oneTimeCode)
+        lock.withLock {
+            currentCoroutineContext().ensureActive()
+            elyStorage.write(session)
+        }
+        session.identity()
+    }
 
-    private fun signInRequired() = MicrosoftLoginError("Vincula tu cuenta Microsoft en el perfil de PRISSMA y vuelve a intentarlo.")
+    suspend fun prepareLaunch(mode: JavaAccountMode): JavaAccountIdentity? = withContext(Dispatchers.IO) {
+        lock.withLock {
+            when (mode) {
+                JavaAccountMode.MICROSOFT -> prepareMicrosoft()
+                JavaAccountMode.ELY_BY -> prepareEly()
+                JavaAccountMode.OFFLINE -> null
+            }
+        }
+    }
+
+    private fun prepareMicrosoft(): JavaAccountIdentity {
+        val saved = microsoftStorage.read() ?: throw signInRequired(JavaAccountMode.MICROSOFT)
+        if (saved.validFor(System.currentTimeMillis(), bufferMillis = 60_000)) return saved.identity()
+        try {
+            val refreshed = microsoft.refresh(saved, microsoftStorage::write)
+            microsoftStorage.write(refreshed)
+            return refreshed.identity()
+        } catch (error: MicrosoftLoginError) {
+            if (error.relink) microsoftStorage.clear()
+            throw error
+        }
+    }
+
+    private fun prepareEly(): JavaAccountIdentity {
+        val saved = elyStorage.read() ?: throw signInRequired(JavaAccountMode.ELY_BY)
+        try {
+            val refreshed = ely.prepare(saved)
+            if (refreshed !== saved) elyStorage.write(refreshed)
+            return refreshed.identity()
+        } catch (error: ElyLoginError) {
+            if (error.relink) elyStorage.clear()
+            throw error
+        }
+    }
+
+    /** The game activity reads the token directly from encrypted storage in its own process. */
+    suspend fun launchToken(mode: JavaAccountMode, profileId: String): String = withContext(Dispatchers.IO) {
+        val token = when (mode) {
+            JavaAccountMode.MICROSOFT -> microsoftStorage.read()?.takeIf {
+                it.profileId == profileId && it.validFor(System.currentTimeMillis())
+            }?.minecraftToken
+            JavaAccountMode.ELY_BY -> elyStorage.read()?.takeIf { it.profileId == profileId }?.accessToken
+            JavaAccountMode.OFFLINE -> "0"
+        }
+        token ?: throw signInRequired(mode)
+    }
+
+    suspend fun signOut() = withContext(Dispatchers.IO) { lock.withLock { microsoftStorage.clear() } }
+
+    suspend fun signOutEly(): Boolean = withContext(Dispatchers.IO) {
+        lock.withLock {
+            val saved = try { elyStorage.read() } catch (error: AccountError) { null }
+            val revoked = try { saved == null || ely.invalidate(saved) } catch (error: IOException) { false }
+            elyStorage.clear()
+            revoked
+        }
+    }
+
+    private fun signInRequired(mode: JavaAccountMode) = AccountError("Vincula tu cuenta de ${mode.label} en el perfil de PRISSMA.")
 
     private companion object {
         val lock = Mutex()
     }
 }
 
-private fun MicrosoftSession.identity() = MicrosoftIdentity(name, profileId)
+private fun MicrosoftSession.identity() = JavaAccountIdentity(name, profileId)
+private fun ElySession.identity() = JavaAccountIdentity(name, profileId)
 
-private class MicrosoftSessionStorage(private val file: File) {
-    fun read(): MicrosoftSession? {
+private class EncryptedSessionFile<T>(
+    private val file: File,
+    private val keyAlias: String,
+    private val decode: (JSONObject) -> T,
+    private val encode: (T) -> JSONObject
+) {
+    fun read(): T? {
         val stream = try {
             file.inputStream()
         } catch (error: FileNotFoundException) {
             if (!file.exists()) return null
-            throw MicrosoftLoginError("No se pudo abrir la sesión guardada. Vuelve a vincular la cuenta.", relink = true)
+            throw AccountError("No se pudo abrir la sesión guardada. Vuelve a vincular la cuenta.")
         }
         try {
             val bytes = stream.use {
@@ -95,21 +154,21 @@ private class MicrosoftSessionStorage(private val file: File) {
             cipher.init(Cipher.DECRYPT_MODE, key(create = false), GCMParameterSpec(128, nonce))
             val plaintext = cipher.doFinal(bytes, 13, bytes.size - 13)
             return try {
-                MicrosoftSession.decode(JSONObject(plaintext.toString(Charsets.UTF_8)))
+                decode(JSONObject(plaintext.toString(Charsets.UTF_8)))
             } finally {
                 plaintext.fill(0)
             }
         } catch (error: Exception) {
-            throw MicrosoftLoginError("No se pudo leer la sesión guardada. Vuelve a vincular la cuenta.", relink = true)
+            throw AccountError("No se pudo leer la sesión guardada. Vuelve a vincular la cuenta.")
         }
     }
 
-    fun write(session: MicrosoftSession) {
+    fun write(session: T) {
         try {
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.ENCRYPT_MODE, key(create = true))
             check(cipher.iv.size == 12)
-            val plaintext = session.encode().toString().toByteArray(Charsets.UTF_8)
+            val plaintext = encode(session).toString().toByteArray(Charsets.UTF_8)
             val encrypted = try {
                 cipher.doFinal(plaintext)
             } finally {
@@ -129,7 +188,7 @@ private class MicrosoftSessionStorage(private val file: File) {
                 Files.deleteIfExists(staged)
             }
         } catch (error: Exception) {
-            throw MicrosoftLoginError("Android no pudo guardar de forma segura la sesión de Minecraft.")
+            throw AccountError("Android no pudo guardar de forma segura la sesión de Minecraft.")
         }
     }
 
@@ -139,19 +198,15 @@ private class MicrosoftSessionStorage(private val file: File) {
 
     private fun key(create: Boolean): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        val existing = store.getKey(KEY_ALIAS, null) as? SecretKey
+        val existing = store.getKey(keyAlias, null) as? SecretKey
         if (existing != null) return existing
         if (!create) throw IOException("Missing session encryption key")
         return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply {
-            init(KeyGenParameterSpec.Builder(KEY_ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+            init(KeyGenParameterSpec.Builder(keyAlias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                 .setKeySize(256)
                 .build())
         }.generateKey()
-    }
-
-    private companion object {
-        const val KEY_ALIAS = "prissma-java-microsoft-v1"
     }
 }

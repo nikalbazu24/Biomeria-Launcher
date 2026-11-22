@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.work.WorkInfo
 import com.prissma.launcher.data.GameInstance
+import com.prissma.launcher.data.accounts.JavaAccountMode
 import com.prissma.launcher.data.accounts.MinecraftAccounts
 import com.prissma.launcher.engine.java.DOWNLOAD_MESSAGE
 import com.prissma.launcher.engine.java.DOWNLOAD_PERCENT
@@ -34,6 +35,7 @@ import com.prissma.launcher.engine.java.selectedHeapSize
 import com.prissma.launcher.engine.java.decodeGamepadActions
 import com.prissma.launcher.engine.java.encodeGamepadActions
 import com.prissma.launcher.engine.java.JavaGameActivity
+import com.prissma.launcher.engine.java.ELY_PROFILE_ID
 import com.prissma.launcher.engine.java.MICROSOFT_PROFILE_ID
 import com.prissma.launcher.engine.java.JavaRuntimeManager
 import com.prissma.launcher.engine.java.MojangDownloader
@@ -133,15 +135,19 @@ fun JavaLaunchScreen(
         launchError = null
         scope.launch {
             try {
-                val microsoft = if (accountType.equals("Microsoft", ignoreCase = true)) accounts.prepareLaunch() else null
+                val mode = JavaAccountMode.fromProfile(accountType)
+                val identity = accounts.prepareLaunch(mode)
+                val agentOptions = if (mode == JavaAccountMode.ELY_BY) {
+                    runtimeManager.elyJvmArguments(installed.javaHomeDir, accounts.elyAgentMetadata())
+                } else emptyList()
                 val gameDir = File(context.filesDir, "instances/" + instance.id)
                 val scrollScale = withContext(Dispatchers.IO) { applyMinecraftOptions(gameDir, language) }
                 val classpath = runtimeManager.buildClasspath(ready)
                 val playerUuid = UUID.nameUUIDFromBytes("OfflinePlayer:$playerName".toByteArray(Charsets.UTF_8))
                 val gameArgs = runtimeManager.buildMinecraftArgs(
                     instance.id, if (ready.neoForgePlan == null) instance.version else "neoforge-$NEOFORGE_VERSION",
-                    microsoft?.playerName ?: playerName, microsoft?.profileId ?: playerUuid.toString(), ready.assetsDir,
-                    ready.assetIndexId, microsoft = microsoft != null
+                    identity?.playerName ?: playerName, identity?.profileId ?: playerUuid.toString(), ready.assetsDir,
+                    ready.assetIndexId, account = mode
                 )
                 gameActivity.launch(Intent(context, JavaGameActivity::class.java).apply {
                     putExtra("INSTANCE_TITLE", instance.title)
@@ -150,8 +156,12 @@ fun JavaLaunchScreen(
                     putExtra("GAME_DIR_PATH", gameDir.absolutePath)
                     putExtra("CLASSPATH", classpath)
                     putExtra("GAME_ARGS", gameArgs + ready.additionalGameArguments)
-                    microsoft?.let { putExtra(MICROSOFT_PROFILE_ID, it.profileId) }
-                    putExtra("JVM_ARGS", ready.jvmArguments.toTypedArray())
+                    when (mode) {
+                        JavaAccountMode.MICROSOFT -> putExtra(MICROSOFT_PROFILE_ID, checkNotNull(identity).profileId)
+                        JavaAccountMode.ELY_BY -> putExtra(ELY_PROFILE_ID, checkNotNull(identity).profileId)
+                        JavaAccountMode.OFFLINE -> Unit
+                    }
+                    putExtra("JVM_ARGS", (ready.jvmArguments + agentOptions).toTypedArray())
                     putExtra("LIBJVM_PATH", installed.libJvmFile.absolutePath)
                     putExtra("JAVA_HOME_PATH", installed.javaHomeDir.absolutePath)
                     putExtra("JAVA_HEAP_MB", heapMb)

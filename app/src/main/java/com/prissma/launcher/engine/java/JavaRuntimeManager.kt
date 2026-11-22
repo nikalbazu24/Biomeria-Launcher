@@ -3,6 +3,8 @@ package com.prissma.launcher.engine.java
 import android.content.Context
 import android.net.Uri
 import android.util.AtomicFile
+import com.prissma.launcher.data.accounts.ELY_AGENT_ENDPOINT
+import com.prissma.launcher.data.accounts.JavaAccountMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
@@ -336,14 +338,21 @@ class JavaRuntimeManager(private val context: Context) {
         jars.distinctBy { it.name }.joinToString(File.pathSeparator) { it.absolutePath }
     }
 
-    fun buildMinecraftArgs(
+    internal suspend fun elyJvmArguments(javaHome: File, metadata: String): List<String> = withContext(Dispatchers.IO) {
+        check(File(javaHome, "lib/libinstrument.so").isFile) { "El runtime de Java instalado no incluye libinstrument para Ely.by." }
+        val agent = bundledJvmJar("authlib/authlib-injector-1.2.8.jar")
+        listOf("-Dauthlibinjector.noLogFile", "-Dauthlibinjector.yggdrasil.prefetched=$metadata",
+            "-javaagent:${agent.absolutePath}=$ELY_AGENT_ENDPOINT")
+    }
+
+    internal fun buildMinecraftArgs(
         instanceId: String,
         resolvedVersion: String,
         playerName: String,
         playerUuid: String,
         assetsDir: File,
         assetIndexId: String,
-        microsoft: Boolean = false
+        account: JavaAccountMode = JavaAccountMode.OFFLINE
     ): Array<String> {
         val instanceRoot = File(context.filesDir, "instances/$instanceId")
         return arrayOf(
@@ -353,7 +362,7 @@ class JavaRuntimeManager(private val context: Context) {
             "--assetsDir", assetsDir.absolutePath,
             "--assetIndex", assetIndexId,
             "--uuid", playerUuid,
-            "--userType", if (microsoft) "msa" else "legacy",
+            "--userType", account.sessionUserType,
             "--versionType", "PRISSMA"
         )
     }

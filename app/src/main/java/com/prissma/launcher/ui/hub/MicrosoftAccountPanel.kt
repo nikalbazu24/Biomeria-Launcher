@@ -20,8 +20,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.prissma.launcher.BuildConfig
 import com.prissma.launcher.data.accounts.DeviceCode
-import com.prissma.launcher.data.accounts.MicrosoftIdentity
-import com.prissma.launcher.data.accounts.MicrosoftLoginError
+import com.prissma.launcher.data.accounts.AccountError
+import com.prissma.launcher.data.accounts.JavaAccountIdentity
+import com.prissma.launcher.data.accounts.JavaAccountMode
 import com.prissma.launcher.data.accounts.MinecraftAccounts
 import com.prissma.launcher.data.accounts.validMicrosoftApplicationId
 import com.prissma.launcher.ui.components.LauncherButton
@@ -36,7 +37,7 @@ internal fun MicrosoftAccountPanel(enabled: Boolean) {
     val accounts = remember(context) { MinecraftAccounts(context.applicationContext) }
     val scope = rememberCoroutineScope()
     var applicationId by rememberSaveable { mutableStateOf(BuildConfig.MICROSOFT_CLIENT_ID) }
-    var linked by remember { mutableStateOf<MicrosoftIdentity?>(null) }
+    var linked by remember { mutableStateOf<JavaAccountIdentity?>(null) }
     var deviceCode by remember { mutableStateOf<DeviceCode?>(null) }
     var busy by remember { mutableStateOf(true) }
     var job by remember { mutableStateOf<Job?>(null) }
@@ -44,8 +45,8 @@ internal fun MicrosoftAccountPanel(enabled: Boolean) {
 
     LaunchedEffect(accounts) {
         try {
-            linked = accounts.linked()
-        } catch (error: MicrosoftLoginError) {
+            linked = accounts.linked(JavaAccountMode.MICROSOFT)
+        } catch (error: AccountError) {
             problem = error.message
         } finally {
             busy = false
@@ -85,7 +86,7 @@ internal fun MicrosoftAccountPanel(enabled: Boolean) {
                     val code = accounts.start(applicationId)
                     deviceCode = code
                     linked = accounts.authorize(code)
-                } catch (error: MicrosoftLoginError) {
+                } catch (error: AccountError) {
                     problem = error.message
                 } catch (error: IOException) {
                     problem = "No se pudo conectar con el servicio de cuentas. Revisa tu conexión."

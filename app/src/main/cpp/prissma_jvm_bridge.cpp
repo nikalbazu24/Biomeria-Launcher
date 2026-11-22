@@ -194,6 +194,11 @@ namespace {
 
         pushLogLine("[PRISSMA] Precargando librerías nativas del JRE 21...");
         preloadJreCoreLibraries(cfg->javaHome);
+        if (std::any_of(cfg->jvmArguments.begin(), cfg->jvmArguments.end(), [](const std::string& argument) {
+            return argument.rfind("-javaagent:", 0) == 0;
+        })) {
+            preloadLibraryIfExists(cfg->javaHome + "/lib/libinstrument.so");
+        }
 
         auto createJvmFn = reinterpret_cast<JNI_CreateJavaVM_t>(
             dlsym(jvmHandle, "JNI_CreateJavaVM")

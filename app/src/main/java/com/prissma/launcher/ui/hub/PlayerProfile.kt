@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.prissma.launcher.data.SavedProfile
+import com.prissma.launcher.data.accounts.JavaAccountMode
 import com.prissma.launcher.engine.java.gameLanguages
 import com.prissma.launcher.ui.components.LauncherButton
 import com.prissma.launcher.ui.components.gamepadClick
@@ -47,7 +48,7 @@ internal fun ProfileDialog(
     var bio by rememberSaveable { mutableStateOf(profile.bio) }
     var playStyle by rememberSaveable { mutableStateOf(profile.playStyle) }
     var language by rememberSaveable { mutableStateOf(profile.language) }
-    var type by rememberSaveable { mutableStateOf(if (profile.accountType.equals("Microsoft", ignoreCase = true)) "Microsoft" else "Offline") }
+    var type by rememberSaveable { mutableStateOf(JavaAccountMode.fromProfile(profile.accountType)) }
     var photo by rememberSaveable { mutableStateOf<String?>(null) }
     var removePhoto by rememberSaveable { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { image ->
@@ -86,19 +87,23 @@ internal fun ProfileDialog(
                 }
                 Text("Tipo de cuenta", style = MaterialTheme.typography.titleSmall)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("Offline", "Microsoft").forEach {
+                    JavaAccountMode.entries.forEach {
                         val select = { type = it }
-                        FilterChip(type == it, select, { Text(it) }, modifier = Modifier.gamepadClick(onClick = select))
+                        FilterChip(type == it, select, { Text(it.label) }, modifier = Modifier.gamepadClick(onClick = select))
                     }
                 }
-                if (type == "Microsoft") MicrosoftAccountPanel(enabled = !saving)
+                when (type) {
+                    JavaAccountMode.MICROSOFT -> MicrosoftAccountPanel(enabled = !saving)
+                    JavaAccountMode.ELY_BY -> ElyAccountPanel(enabled = !saving)
+                    JavaAccountMode.OFFLINE -> Unit
+                }
                 Text("Estos datos y la foto se guardan en tu dispositivo.", color = Prissma.colors.textMuted,
                     style = MaterialTheme.typography.bodySmall)
             }
         },
         confirmButton = {
             LauncherButton(if (saving) "Guardando…" else "Guardar", {
-                onSave(SavedProfile(name.trim(), type, display.trim(), bio.trim(), playStyle.trim(), language,
+                onSave(SavedProfile(name.trim(), type.label, display.trim(), bio.trim(), playStyle.trim(), language,
                     profile.avatar.takeUnless { removePhoto }), photo?.let(Uri::parse))
             }, primary = true, enabled = name.isNotBlank() && !saving)
         },

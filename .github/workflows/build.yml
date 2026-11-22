@@ -112,6 +112,12 @@ jobs:
       - name: Verificar nativos ARM64 para Minecraft Java
         run: python3 scripts/verify_java_apk.py "PRISSMA-Launcher-${RELEASE_TAG}.apk"
 
+      - name: Verificar el agente de autenticación de Ely.by
+        run: |
+          set -o pipefail
+          unzip -p "PRISSMA-Launcher-${RELEASE_TAG}.apk" assets/authlib/authlib-injector-1.2.8.jar > "$RUNNER_TEMP/ely-authlib-injector.jar"
+          printf '%s  %s\n' '9c7f4343e6c82034958ffb48c14a2cb0c85928be7283103ce17da00c6d5a7b10' "$RUNNER_TEMP/ely-authlib-injector.jar" | sha256sum -c -
+
       - name: Verificar motor Rust dentro de la APK
         run: python3 scripts/verify_starling_apk.py "PRISSMA-Launcher-${RELEASE_TAG}.apk" app/build/downloads/starling-0.9.0-arm64.apk
 

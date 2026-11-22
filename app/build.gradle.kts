@@ -178,6 +178,19 @@ val prepareLwjglJars by tasks.registering {
     }
 }
 val neoForgeAssets = layout.buildDirectory.dir("generated/neoforge/assets")
+val elyAgentAssets = layout.buildDirectory.dir("generated/ely/assets")
+val prepareElyAgent by tasks.registering {
+    val sha256 = "9c7f4343e6c82034958ffb48c14a2cb0c85928be7283103ce17da00c6d5a7b10"
+    inputs.property("sha256", sha256)
+    outputs.dir(elyAgentAssets)
+    doLast {
+        val name = "authlib-injector-1.2.8.jar"
+        val output = elyAgentAssets.get().file("authlib/$name").asFile
+        val bytes = verifiedDownload("https://github.com/yushijinhun/authlib-injector/releases/download/v1.2.8/$name", sha256)
+        output.parentFile.mkdirs()
+        output.writeBytes(bytes)
+    }
+}
 val neoForgeBootstrapClasses = tasks.register<JavaCompile>("compileNeoForgeBootstrap") {
     source = fileTree("src/jvmBootstrap/java") { include("**/*.java") }
     classpath = files()
@@ -190,7 +203,8 @@ val neoForgeBootstrapJar = tasks.register<Jar>("neoForgeBootstrapJar") {
     destinationDirectory.set(neoForgeAssets.map { it.dir("neoforge") })
 }
 tasks.named("preBuild") {
-    dependsOn(unpackJnaAndroid, unpackLwjglAndroid, unpackMobileGlues, unpackStarlingArm64, prepareLwjglJars, neoForgeBootstrapJar)
+    dependsOn(unpackJnaAndroid, unpackLwjglAndroid, unpackMobileGlues, unpackStarlingArm64, prepareLwjglJars,
+        neoForgeBootstrapJar, prepareElyAgent)
 }
 
 android {
@@ -245,6 +259,7 @@ android {
     sourceSets.getByName("main").jniLibs.srcDir(rendererJniLibs)
     sourceSets.getByName("main").assets.srcDir(lwjglAssets)
     sourceSets.getByName("main").assets.srcDir(neoForgeAssets)
+    sourceSets.getByName("main").assets.srcDir(elyAgentAssets)
     sourceSets.getByName("main").apply {
         java.srcDir("src/starling/java")
         res.srcDir("src/starling/res")

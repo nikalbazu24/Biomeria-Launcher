@@ -49,13 +49,15 @@ import com.prissma.launcher.ui.components.PanelShape
 import com.prissma.launcher.ui.theme.Prissma
 import com.prissma.launcher.ui.theme.PrissmaTheme
 import com.prissma.launcher.ui.launch.GameHudControls
+import com.prissma.launcher.data.accounts.AccountError
+import com.prissma.launcher.data.accounts.JavaAccountMode
 import com.prissma.launcher.data.accounts.MinecraftAccounts
-import com.prissma.launcher.data.accounts.MicrosoftLoginError
 import kotlinx.coroutines.delay
 import kotlin.system.exitProcess
 import kotlin.math.roundToInt
 
 internal const val MICROSOFT_PROFILE_ID = "MICROSOFT_PROFILE_ID"
+internal const val ELY_PROFILE_ID = "ELY_PROFILE_ID"
 
 class JavaGameActivity : ComponentActivity() {
     private lateinit var gameInput: GameInput
@@ -89,7 +91,13 @@ class JavaGameActivity : ComponentActivity() {
         val gameDirPath = intent.getStringExtra("GAME_DIR_PATH") ?: filesDir.absolutePath
         val classpath = intent.getStringExtra("CLASSPATH") ?: ""
         val gameArgs = intent.getStringArrayExtra("GAME_ARGS") ?: emptyArray()
-        val profileId = intent.getStringExtra(MICROSOFT_PROFILE_ID)
+        val elyProfileId = intent.getStringExtra(ELY_PROFILE_ID)
+        val profileId = elyProfileId ?: intent.getStringExtra(MICROSOFT_PROFILE_ID)
+        val account = when {
+            elyProfileId != null -> JavaAccountMode.ELY_BY
+            profileId != null -> JavaAccountMode.MICROSOFT
+            else -> JavaAccountMode.OFFLINE
+        }
         val jvmArguments = intent.getStringArrayExtra("JVM_ARGS") ?: emptyArray()
         val libJvmPath = intent.getStringExtra("LIBJVM_PATH") ?: ""
         val javaHomePath = intent.getStringExtra("JAVA_HOME_PATH") ?: ""
@@ -109,8 +117,8 @@ class JavaGameActivity : ComponentActivity() {
                 LaunchedEffect(profileId) {
                     if (profileId != null) {
                         try {
-                            token = MinecraftAccounts(applicationContext).launchToken(profileId)
-                        } catch (error: MicrosoftLoginError) {
+                            token = MinecraftAccounts(applicationContext).launchToken(account, profileId)
+                        } catch (error: AccountError) {
                             sessionError = error.message
                         }
                     }
