@@ -1,7 +1,6 @@
 package com.prissma.launcher.data
 
 import android.content.Context
-import android.util.AtomicFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.currentCoroutineContext
@@ -47,11 +46,14 @@ data class InstalledFileItem(
     val compatibility: String? = null
 )
 
-class ModrinthRepository(private val context: Context) {
+class ModrinthRepository internal constructor(
+    private val filesDir: File,
+    private val openConnection: (String) -> HttpURLConnection
+) {
+    constructor(context: Context) : this(context.filesDir, { URL(it).openConnection() as HttpURLConnection })
 
     companion object {
         private val installationLock = Mutex()
-        private val idPattern = Regex("[A-Za-z0-9]{1,64}")
     }
 
     private val userAgent = "PRISSMA-Launcher/0.3 (github.com/nikalbazu24/Prissma-Launcher)"
@@ -60,14 +62,15 @@ class ModrinthRepository(private val context: Context) {
         query: String,
         category: WorkshopCategory,
         gameVersion: String,
-        loader: String?
+        loader: String?,
+        onlyCompatible: Boolean = true
     ): Result<List<ModrinthItem>> = withContext(Dispatchers.IO) {
         runCatching {
             val encodedQuery = URLEncoder.encode(query.trim(), "UTF-8")
             val facets = JSONArray().put(JSONArray().put("project_type:${category.modrinthType}"))
-                .put(JSONArray().put("versions:$gameVersion"))
-            if (category == WorkshopCategory.MODS && loader != null) {
-                facets.put(JSONArray().put("categories:$loader"))
+            if (onlyCompatible || category != WorkshopCategory.MODS) facets.put(JSONArray().put("versions:$gameVersion"))
+            if (category == WorkshopCategory.MODS) {
+                if (onlyCompatible && loader != null) facets.put(JSONArray().put("categories:$loader"))
                 facets.put(JSONArray().put("client_side:required").put("client_side:optional"))
             }
             val encodedFacets = URLEncoder.encode(facets.toString(), "UTF-8")
@@ -98,108 +101,101 @@ class ModrinthRepository(private val context: Context) {
         }
     }
 
+    internal suspend fun checkCompatibility(
+        projectId: String,
+        category: WorkshopCategory,
+        gameVersion: String,
+        loader: String?
+    ): WorkshopInstallPlan = withContext(Dispatchers.IO) {
+        plan(projectId, "", category, gameVersion, loader)
+    }
+
+    private fun plan(projectId: String, pins: String, category: WorkshopCategory, gameVersion: String, loader: String?) =
+        ModrinthInstallPlanner(category, gameVersion, loader, pins) { path ->
+            try {
+                httpGetText("https://api.modrinth.com/v2$path")
+            } catch (failure: ModrinthHttpFailure) {
+                if (failure.statusCode != 404 && failure.statusCode != 410) throw failure
+                throw WorkshopIncompatibility("Un proyecto o versión requeridos ya no están disponibles en Modrinth.")
+            }
+        }.plan(projectId)
+
     internal suspend fun install(
         projectId: String,
         instanceId: String,
         category: WorkshopCategory,
         gameVersion: String,
         loader: String?,
+        pins: String = "",
+        validateInstance: () -> Unit = {},
         onProgress: (WorkshopInstallProgress) -> Unit = {}
     ): Int = withContext(Dispatchers.IO) {
         installationLock.withLock {
-            onProgress(WorkshopInstallProgress(WorkshopInstallStage.CHECKING))
             require(instanceId.matches(Regex("[A-Za-z0-9_-]{1,100}")))
-            require(category != WorkshopCategory.MODS || loader == "fabric") {
-                "Elige Fabric como cargador para instalar mods."
-            }
-            val resolved = linkedMapOf<String, JSONObject>()
+            validateInstance()
+            onProgress(WorkshopInstallProgress(WorkshopInstallStage.CHECKING))
+            val artifacts = plan(projectId, pins, category, gameVersion, loader).artifacts.asReversed()
 
-            fun resolve(id: String?, versionId: String?) {
-                require(id != null || versionId != null)
-                require(listOfNotNull(id, versionId).all(idPattern::matches))
-                if (id in resolved && versionId == null) return
-                val version = if (versionId != null) {
-                    JSONObject(httpGetText("https://api.modrinth.com/v2/version/$versionId"))
-                } else {
-                    val versions = JSONArray(httpGetText("https://api.modrinth.com/v2/project/$id/version"))
-                    (0 until versions.length()).asSequence().map(versions::getJSONObject)
-                        .firstOrNull { it.matchesGame(gameVersion, category, loader) }
-                        ?: error("No hay una versión compatible de $id para Minecraft $gameVersion.")
-                }
-                val project = version.getString("project_id")
-                val resolvedId = version.getString("id")
-                require(idPattern.matches(project) && idPattern.matches(resolvedId))
-                require(id == null || id == project)
-                check(version.matchesGame(gameVersion, category, loader)) {
-                    "Una dependencia exige una versión incompatible con Minecraft $gameVersion y $loader."
-                }
-                val previous = resolved[project]
-                check(previous == null || previous.getString("id") == resolvedId) {
-                    "Los mods requieren versiones distintas de la dependencia $project."
-                }
-                if (previous != null) return
-                check(resolved.size < 60) { "El proyecto tiene demasiadas dependencias." }
-                resolved[project] = version
-                if (category != WorkshopCategory.MODS) return
-                val dependencies = version.optJSONArray("dependencies") ?: return
-                repeat(dependencies.length()) { index ->
-                    val dependency = dependencies.getJSONObject(index)
-                    if (dependency.optString("dependency_type") == "required") {
-                        resolve(dependency.optionalId("project_id"), dependency.optionalId("version_id"))
-                    }
-                }
-            }
-            resolve(projectId, null)
-
-            val instanceRoot = File(context.filesDir, "instances/$instanceId")
+            val instanceRoot = File(filesDir, "instances/$instanceId")
             val targetDir = File(instanceRoot, category.folderName).apply { mkdirs() }
             val manifestDir = File(instanceRoot, "workshop/" + category.name).apply { mkdirs() }
             val staging = File(instanceRoot, "workshop/.staging")
             check(!staging.exists() || staging.deleteRecursively()) { "No se pudo limpiar la descarga anterior." }
             check(staging.mkdirs()) { "No se pudo preparar la carpeta de instalación." }
+            val cacheRoot = File(instanceRoot, "workshop/.downloads")
+            val cache = File(cacheRoot, "${category.name}-$projectId")
             try {
+                // Only complete, verified archives survive a failed attempt.
+                val usedHashes = artifacts.mapTo(mutableSetOf()) { it.sha512 }
+                cacheRoot.listFiles()?.filter {
+                    it != cache && it.lastModified() < System.currentTimeMillis() - VERIFIED_CACHE_AGE_MS
+                }?.forEach { it.deleteRecursively() }
+                check(cache.isDirectory || cache.mkdirs()) { "No se pudo preparar la carpeta de descarga." }
+                cache.listFiles()?.filter { it.name !in usedHashes }?.forEach { it.delete() }
+                cache.setLastModified(System.currentTimeMillis())
+
                 val changes = linkedMapOf<File, File>()
+                val installing = mutableMapOf<File, WorkshopInstallProgress>()
                 val obsolete = mutableSetOf<File>()
                 val destinations = mutableSetOf<File>()
-                resolved.entries.reversed().forEachIndexed { index, (project, version) ->
+                for ((index, artifact) in artifacts.withIndex()) {
                     currentCoroutineContext().ensureActive()
-                    val files = version.getJSONArray("files")
-                    val primary = (0 until files.length()).asSequence().map(files::getJSONObject)
-                        .firstOrNull { it.optBoolean("primary") } ?: files.getJSONObject(0)
-                    val name = primary.getString("filename")
-                    require(safeFilename(name)) { "Modrinth devolvió un nombre de archivo inválido." }
-                    require(category != WorkshopCategory.MODS || name.endsWith(".jar", ignoreCase = true))
-                    val url = primary.getString("url")
-                    require(url.startsWith("https://cdn.modrinth.com/")) { "Origen del archivo inválido." }
-                    val expectedHash = primary.getJSONObject("hashes").getString("sha512").lowercase()
-                    require(expectedHash.matches(Regex("[a-f0-9]{128}")))
+                    val name = artifact.filename
                     val destination = File(targetDir, name)
-                    check(destinations.add(destination)) { "Dos dependencias usan el mismo nombre de archivo: $name." }
-
-                    val report = WorkshopInstallProgress(WorkshopInstallStage.VERIFYING, name, index + 1, resolved.size)
+                    destinations.add(destination)
+                    val report = WorkshopInstallProgress(WorkshopInstallStage.VERIFYING, name, index + 1, artifacts.size)
                     if (destination.isFile) onProgress(report)
-                    if (!destination.isFile || sha512(destination) != expectedHash) {
-                        val partial = File(staging, "archive-$index")
-                        downloadBinary(url, partial, expectedHash, primary.optLong("size"), report, onProgress)
-                        changes[destination] = partial
+                    if (!destination.isFile || sha512(destination) != artifact.sha512) {
+                        val verified = File(cache, artifact.sha512)
+                        if (verified.isFile) onProgress(report)
+                        if (!verified.isFile || sha512(verified) != artifact.sha512) {
+                            val partial = File(staging, "download.part")
+                            downloadBinary(artifact.url, partial, artifact.sha512, artifact.size, report, onProgress)
+                            Files.move(partial.toPath(), verified.toPath(), StandardCopyOption.ATOMIC_MOVE,
+                                StandardCopyOption.REPLACE_EXISTING)
+                        }
+                        val archive = File(staging, "archive-$index")
+                        verified.copyTo(archive)
+                        changes[destination] = archive
+                        installing[destination] = report.copy(stage = WorkshopInstallStage.INSTALLING)
                     }
 
-                    val manifest = File(manifestDir, "$project.json")
-                    val previous = runCatching {
-                        JSONObject(AtomicFile(manifest).readFully().toString(Charsets.UTF_8)).getString("file")
-                    }.getOrNull()
-                    val info = JSONObject().put("file", name).put("game_versions", version.getJSONArray("game_versions"))
-                        .put("loaders", version.getJSONArray("loaders"))
+                    val manifest = File(manifestDir, "${artifact.projectId}.json")
+                    val previous = runCatching { JSONObject(manifest.readText()).getString("file") }.getOrNull()
                     val stagedManifest = File(staging, "manifest-$index")
-                    stagedManifest.writeText(info.toString())
+                    stagedManifest.writeText(artifact.metadata.toString())
                     changes[manifest] = stagedManifest
-                    if (previous != null && previous != name && safeFilename(previous)) obsolete.add(File(targetDir, previous))
+                    if (previous != null && previous != name && safeWorkshopFilename(previous)) {
+                        obsolete.add(File(targetDir, previous))
+                    }
                 }
                 currentCoroutineContext().ensureActive()
-                onProgress(WorkshopInstallProgress(WorkshopInstallStage.INSTALLING, fileCount = resolved.size))
-                publishWorkshopFiles(changes, staging)
+                validateInstance()
+                onProgress(WorkshopInstallProgress(WorkshopInstallStage.INSTALLING, fileCount = artifacts.size))
+                publishWorkshopFiles(changes, staging) { destination -> installing[destination]?.let(onProgress) }
                 (obsolete - destinations).forEach { it.delete() }
-                resolved.size
+                cache.deleteRecursively()
+                artifacts.size
             } finally {
                 staging.deleteRecursively()
             }
@@ -207,7 +203,7 @@ class ModrinthRepository(private val context: Context) {
     }
 
     fun getInstalledFiles(instanceId: String, gameVersion: String, loader: String?): List<InstalledFileItem> {
-        val instanceRoot = File(context.filesDir, "instances/$instanceId")
+        val instanceRoot = File(filesDir, "instances/$instanceId")
         if (!instanceRoot.exists()) return emptyList()
 
         val list = mutableListOf<InstalledFileItem>()
@@ -242,7 +238,7 @@ class ModrinthRepository(private val context: Context) {
     }
 
     private fun httpGetText(urlString: String): String {
-        val conn = (URL(urlString).openConnection() as HttpURLConnection).apply {
+        val conn = openConnection(urlString).apply {
             requestMethod = "GET"
             connectTimeout = 10_000
             readTimeout = 10_000
@@ -252,7 +248,7 @@ class ModrinthRepository(private val context: Context) {
         return try {
             val code = conn.responseCode
             if (code !in 200..299) {
-                throw IOException("Error de red Modrinth (HTTP $code)")
+                throw ModrinthHttpFailure(code, "No se pudo consultar Modrinth (HTTP $code).")
             }
             conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
         } finally {
@@ -268,7 +264,7 @@ class ModrinthRepository(private val context: Context) {
         file: WorkshopInstallProgress,
         onProgress: (WorkshopInstallProgress) -> Unit
     ) {
-        val conn = (URL(fileUrl).openConnection() as HttpURLConnection).apply {
+        val conn = openConnection(fileUrl).apply {
             requestMethod = "GET"
             connectTimeout = 15_000
             readTimeout = 20_000
@@ -277,8 +273,9 @@ class ModrinthRepository(private val context: Context) {
         try {
             val download = file.copy(stage = WorkshopInstallStage.DOWNLOADING)
             onProgress(download.copy(totalBytes = declaredSize))
-            if (conn.responseCode !in 200..299) {
-                throw IOException("Fallo al descargar archivo (HTTP " + conn.responseCode + ")")
+            val code = conn.responseCode
+            if (code !in 200..299) {
+                throw ModrinthHttpFailure(code, "No se pudo descargar ${file.fileName} (HTTP $code).")
             }
             val total = declaredSize.takeIf { it > 0 } ?: conn.contentLengthLong
             val digest = MessageDigest.getInstance("SHA-512")
@@ -306,17 +303,18 @@ class ModrinthRepository(private val context: Context) {
             }
             onProgress(file)
             val actual = digest.digest().joinToString("") { "%02x".format(it) }
-            if (actual != expectedSha512) throw IOException("La descarga está incompleta o dañada.")
+            if (actual != expectedSha512) throw IOException("La descarga de ${file.fileName} está incompleta o dañada.")
         } finally {
             conn.disconnect()
         }
     }
 }
 
-internal fun publishWorkshopFiles(changes: Map<File, File>, staging: File) {
+internal fun publishWorkshopFiles(changes: Map<File, File>, staging: File, onFile: (File) -> Unit = {}) {
     val backups = linkedMapOf<File, File?>()
     try {
         for ((destination, staged) in changes) {
+            onFile(destination)
             val backup = if (destination.isFile) {
                 File(staging, "backup-" + backups.size).also { destination.copyTo(it) }
             } else null
@@ -338,17 +336,13 @@ internal fun publishWorkshopFiles(changes: Map<File, File>, staging: File) {
     }
 }
 
-private fun JSONObject.optionalId(name: String) = optString(name).takeUnless { it.isBlank() || it == "null" }
+private const val VERIFIED_CACHE_AGE_MS = 3 * 24 * 60 * 60 * 1000L
 
-internal fun JSONObject.matchesGame(version: String, category: WorkshopCategory, loader: String?): Boolean =
-    optJSONArray("game_versions").containsValue(version) &&
-        (category != WorkshopCategory.MODS || optJSONArray("loaders").containsValue(loader))
+private class ModrinthHttpFailure(val statusCode: Int, message: String) : IOException(message)
 
-private fun JSONArray?.containsValue(value: String?): Boolean =
-    this != null && value != null && (0 until length()).any { optString(it) == value }
-
-private fun safeFilename(name: String) =
-    name.isNotBlank() && File(name).name == name && name !in listOf(".", "..")
+internal fun shouldRetryWorkshopDownload(failure: Exception, attemptCount: Int): Boolean =
+    attemptCount < 2 && failure is IOException &&
+        (failure !is ModrinthHttpFailure || failure.statusCode in 500..599 || failure.statusCode in listOf(408, 429))
 
 private fun sha512(file: File): String {
     val digest = MessageDigest.getInstance("SHA-512")

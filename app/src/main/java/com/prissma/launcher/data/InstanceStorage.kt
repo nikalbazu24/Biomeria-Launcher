@@ -9,6 +9,8 @@ import android.net.Uri
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.Locale
 
 data class SavedProfile(
@@ -155,7 +157,13 @@ class InstanceStorage(private val context: Context) {
                 }
             )
         }
-        catalogFile.writeText(array.toString(2), Charsets.UTF_8)
+        val staging = File.createTempFile("catalog-", ".json", context.filesDir)
+        try {
+            staging.writeText(array.toString(2), Charsets.UTF_8)
+            Files.move(staging.toPath(), catalogFile.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        } finally {
+            staging.delete()
+        }
         syncExportedCartridges(instances)
     }
 

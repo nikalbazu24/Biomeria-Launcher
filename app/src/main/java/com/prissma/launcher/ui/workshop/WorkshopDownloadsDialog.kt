@@ -13,11 +13,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.work.WorkInfo
 import com.prissma.launcher.data.GameInstance
+import com.prissma.launcher.data.WorkshopCategory
 import com.prissma.launcher.engine.java.DOWNLOAD_DETAIL
 import com.prissma.launcher.engine.java.DOWNLOAD_MESSAGE
 import com.prissma.launcher.engine.java.DOWNLOAD_PERCENT
+import com.prissma.launcher.engine.java.GameDownloads
+import com.prissma.launcher.engine.java.WORKSHOP_CATEGORY_TAG
 import com.prissma.launcher.engine.java.WORKSHOP_INSTANCE_TAG
+import com.prissma.launcher.engine.java.WORKSHOP_PROJECT_TAG
+import com.prissma.launcher.engine.java.WORKSHOP_REQUEST_TAG
 import com.prissma.launcher.engine.java.WORKSHOP_TITLE_TAG
+import com.prissma.launcher.engine.java.WORKSHOP_PLAN_TAG
 import com.prissma.launcher.ui.components.LauncherButton
 import com.prissma.launcher.ui.components.PanelShape
 import com.prissma.launcher.ui.theme.Prissma
@@ -27,8 +33,30 @@ internal fun workshopDownloadsLabel(jobs: List<WorkInfo>): String {
     return if (active == 0) "Descargas" else "Descargas · $active"
 }
 
+private fun WorkInfo.workshopTag(prefix: String): String? =
+    tags.firstOrNull { it.startsWith(prefix) }?.removePrefix(prefix)?.takeIf { it.isNotBlank() }
+
+internal val WorkInfo.workshopProject: String? get() = workshopTag(WORKSHOP_PROJECT_TAG)
+
+private fun WorkInfo.workshopOwner(instances: List<GameInstance>) =
+    instances.firstOrNull { WORKSHOP_INSTANCE_TAG + it.id in tags }
+
+internal fun latestWorkshopJobs(jobs: List<WorkInfo>, instances: List<GameInstance>): List<WorkInfo> =
+    jobs.groupBy { job ->
+        val owner = job.workshopOwner(instances)?.id
+        owner to (job.workshopProject?.takeIf { owner != null } ?: job.id.toString())
+    }.values.map { history ->
+        history.firstOrNull { !it.state.isFinished }
+            ?: history.asReversed().maxBy { it.workshopTag(WORKSHOP_REQUEST_TAG)?.toLongOrNull() ?: 0L }
+    }
+
 @Composable
-internal fun WorkshopDownloadsDialog(jobs: List<WorkInfo>, instances: List<GameInstance>, onDismiss: () -> Unit) {
+internal fun WorkshopDownloadsDialog(
+    jobs: List<WorkInfo>,
+    instances: List<GameInstance>,
+    downloads: GameDownloads,
+    onDismiss: () -> Unit
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Descargas del Taller") },
@@ -38,10 +66,12 @@ internal fun WorkshopDownloadsDialog(jobs: List<WorkInfo>, instances: List<GameI
                 Modifier.fillMaxWidth().heightIn(max = 340.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(jobs.sortedBy { it.state.isFinished }, key = { it.id }) { job ->
-                    val title = job.tags.firstOrNull { it.startsWith(WORKSHOP_TITLE_TAG) }?.removePrefix(WORKSHOP_TITLE_TAG)
+                items(latestWorkshopJobs(jobs, instances).sortedBy { it.state.isFinished }, key = { it.id }) { job ->
+                    val title = job.workshopTag(WORKSHOP_TITLE_TAG)
                         ?: job.outputData.getString("title") ?: job.progress.getString("title") ?: "Contenido del Taller"
-                    val instance = instances.firstOrNull { WORKSHOP_INSTANCE_TAG + it.id in job.tags }
+                    val instance = job.workshopOwner(instances)
+                    val project = job.workshopProject
+                    val category = WorkshopCategory.entries.firstOrNull { it.name == job.workshopTag(WORKSHOP_CATEGORY_TAG) }
                     Column(
                         Modifier.fillMaxWidth().background(Prissma.colors.surfaceElevated, PanelShape)
                             .border(1.dp, Prissma.colors.borderSubtle, PanelShape).padding(10.dp),
@@ -52,6 +82,14 @@ internal fun WorkshopDownloadsDialog(jobs: List<WorkInfo>, instances: List<GameI
                             Text(instance.title, color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
                         }
                         WorkshopJobProgress(job)
+                        if ((job.state == WorkInfo.State.FAILED || job.state == WorkInfo.State.CANCELLED) &&
+                            instance != null && project != null && category != null &&
+                            (category != WorkshopCategory.MODS || instance.configuredModLoader == "fabric")
+                        ) {
+                            LauncherButton("Reintentar", {
+                                downloads.mod(instance, project, title, category, job.workshopTag(WORKSHOP_PLAN_TAG).orEmpty())
+                            })
+                        }
                     }
                 }
             }
@@ -65,7 +103,7 @@ internal fun WorkshopJobProgress(job: WorkInfo) {
     val running = job.state == WorkInfo.State.RUNNING
     val percent = if (running) job.progress.getInt(DOWNLOAD_PERCENT, -1) else -1
     val message = when (job.state) {
-        WorkInfo.State.ENQUEUED -> if (job.runAttemptCount > 0) "Reintentando cuando haya conexión" else "En cola · esperando conexión o turno"
+        WorkInfo.State.ENQUEUED -> if (job.runAttemptCount > 0) "Reintento automático pendiente" else "En cola · esperando conexión o turno"
         WorkInfo.State.BLOCKED -> "En cola"
         WorkInfo.State.RUNNING -> job.progress.getString(DOWNLOAD_MESSAGE) ?: "Preparando descarga"
         WorkInfo.State.SUCCEEDED -> "Instalación completada"

@@ -19,9 +19,11 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.prissma.launcher.R
 import com.prissma.launcher.data.GameInstance
+import com.prissma.launcher.data.InstanceStorage
 import com.prissma.launcher.data.ModrinthRepository
 import com.prissma.launcher.data.WorkshopCategory
 import com.prissma.launcher.data.WorkshopInstallStage
+import com.prissma.launcher.data.shouldRetryWorkshopDownload
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -38,6 +40,9 @@ internal const val DOWNLOAD_DETAIL = "detail"
 internal const val WORKSHOP_PROJECT_TAG = "workshop-project:"
 internal const val WORKSHOP_TITLE_TAG = "workshop-title:"
 internal const val WORKSHOP_INSTANCE_TAG = "workshop-"
+internal const val WORKSHOP_CATEGORY_TAG = "workshop-category:"
+internal const val WORKSHOP_PLAN_TAG = "workshop-plan:"
+internal const val WORKSHOP_REQUEST_TAG = "workshop-request:"
 private const val ALL_WORKSHOP_DOWNLOADS = "workshop-content-downloads"
 
 internal class GameDownloads(private val context: Context) {
@@ -54,9 +59,9 @@ internal class GameDownloads(private val context: Context) {
         enqueue(key(instance), "Minecraft " + instance.version, "game", instance.id, instance.version, instance.loader)
     }
 
-    fun mod(instance: GameInstance, projectId: String, title: String, category: WorkshopCategory) {
+    fun mod(instance: GameInstance, projectId: String, title: String, category: WorkshopCategory, pins: String = "") {
         enqueue(modKey(instance, projectId), title, "content", instance.id, instance.version,
-            instance.configuredModLoader.orEmpty(), projectId, category.name, tag = modTag(instance))
+            instance.configuredModLoader.orEmpty(), projectId, category.name, pins, tag = modTag(instance))
     }
 
     fun mods(instance: GameInstance) = work.getWorkInfosByTagFlow(modTag(instance))
@@ -71,10 +76,10 @@ internal class GameDownloads(private val context: Context) {
 
     private fun enqueue(
         key: String, title: String, kind: String, id: String = "", version: String = "", loader: String = "",
-        projectId: String = "", category: String = "", tag: String = key
+        projectId: String = "", category: String = "", pins: String = "", tag: String = key
     ) {
         val data = workDataOf("kind" to kind, "title" to title, "id" to id, "version" to version, "loader" to loader,
-            "projectId" to projectId, "category" to category)
+            "projectId" to projectId, "category" to category, "pins" to pins)
         work.enqueueUniqueWork(key, ExistingWorkPolicy.KEEP,
             OneTimeWorkRequestBuilder<GameDownloadWorker>().setInputData(data)
                 .setConstraints(network).addTag(tag)
@@ -83,6 +88,9 @@ internal class GameDownloads(private val context: Context) {
                         addTag(ALL_WORKSHOP_DOWNLOADS)
                         addTag(WORKSHOP_PROJECT_TAG + projectId)
                         addTag(WORKSHOP_TITLE_TAG + title.take(120))
+                        addTag(WORKSHOP_CATEGORY_TAG + category)
+                        if (pins.isNotEmpty()) addTag(WORKSHOP_PLAN_TAG + pins)
+                        addTag(WORKSHOP_REQUEST_TAG + System.currentTimeMillis())
                     }
                 }.build())
     }
@@ -135,7 +143,18 @@ class GameDownloadWorker(context: Context, parameters: WorkerParameters) : Corou
                     val project = inputData.getString("projectId").orEmpty()
                     val category = WorkshopCategory.valueOf(inputData.getString("category").orEmpty())
                     updates.trySend(DownloadUpdate(-1, "Esperando turno de instalación"))
-                    val items = ModrinthRepository(context).install(project, id, category, version, loader.ifBlank { null }) { status ->
+                    val configuredLoader = loader.ifBlank { null }
+                    val storage = InstanceStorage(context)
+                    val items = ModrinthRepository(context).install(
+                        project, id, category, version, configuredLoader, inputData.getString("pins").orEmpty(),
+                        validateInstance = {
+                            val instance = storage.loadInstances().firstOrNull { it.id == id }
+                            check(instance != null && instance.engine.canLaunch && instance.version == version &&
+                                instance.configuredModLoader == configuredLoader) {
+                                "La instancia cambió. Revisa qué mods son compatibles en el Taller."
+                            }
+                        }
+                    ) { status ->
                         val detail = buildList {
                             if (status.fileNumber > 0) add("Archivo ${status.fileNumber} de ${status.fileCount}")
                             status.fileName?.let { add(it.take(120)) }
@@ -155,7 +174,9 @@ class GameDownloadWorker(context: Context, parameters: WorkerParameters) : Corou
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            if (error is IOException && runAttemptCount < 2) Result.retry()
+            val retry = if (isWorkshop) shouldRetryWorkshopDownload(error, runAttemptCount)
+                else error is IOException && runAttemptCount < 2
+            if (retry) Result.retry()
             else Result.failure(workDataOf(DOWNLOAD_MESSAGE to (error.message ?: "Falló la descarga.").take(500), "title" to title))
         } finally {
             updates.close()

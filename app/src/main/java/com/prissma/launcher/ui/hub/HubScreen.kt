@@ -248,7 +248,7 @@ fun HubScreen(
         }
     }
 
-    if (showWorkshopDownloads) WorkshopDownloadsDialog(workshopJobs, instances) { showWorkshopDownloads = false }
+    if (showWorkshopDownloads) WorkshopDownloadsDialog(workshopJobs, instances, downloads) { showWorkshopDownloads = false }
 
     if (!showWorkshopDownloads && !releaseNotesSeen && page == HubPage.LIBRARY && externalLaunchInstanceId == null &&
         updateSettingsRequest == 0 && !showAccount && !showNew && editingId == null && deleteId == null

@@ -34,7 +34,6 @@ import com.prissma.launcher.data.InstalledFileItem
 import com.prissma.launcher.data.ModrinthItem
 import com.prissma.launcher.data.ModrinthRepository
 import com.prissma.launcher.data.WorkshopCategory
-import com.prissma.launcher.engine.java.WORKSHOP_PROJECT_TAG
 import com.prissma.launcher.engine.java.GameDownloads
 import com.prissma.launcher.ui.components.ControlShape
 import com.prissma.launcher.ui.components.LauncherButton
@@ -71,6 +70,7 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
     }
     var query by rememberSaveable { mutableStateOf("") }
     var submitted by rememberSaveable { mutableStateOf("") }
+    var includeOtherMods by rememberSaveable(instance.id) { mutableStateOf(false) }
     var reload by remember { mutableIntStateOf(0) }
     var results by remember { mutableStateOf<List<ModrinthItem>>(emptyList()) }
     var installed by remember { mutableStateOf<List<InstalledFileItem>>(emptyList()) }
@@ -79,6 +79,8 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
     var showDownloads by rememberSaveable { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     var confirmRemoval by remember { mutableStateOf<InstalledFileItem?>(null) }
+    var checkMod by remember(instance.id, instance.version, loader) { mutableStateOf<ModrinthItem?>(null) }
+    val latestJobs = remember(jobs, instance) { latestWorkshopJobs(jobs, listOf(instance)) }
 
     fun search() {
         focus.clearFocus()
@@ -86,7 +88,7 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
         reload += 1
     }
 
-    LaunchedEffect(tab, submitted, reload, instance) {
+    LaunchedEffect(tab, submitted, reload, instance, includeOtherMods) {
         status = null
         val category = tab.category
         if (category == null) {
@@ -95,7 +97,7 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
         } else {
             results = emptyList()
             loading = true
-            repository.searchProjects(submitted, category, instance.version, loader)
+            repository.searchProjects(submitted, category, instance.version, loader, onlyCompatible = !includeOtherMods)
                 .onSuccess { results = it }
                 .onFailure { status = it.message ?: "No se pudo consultar Modrinth." }
             loading = false
@@ -125,7 +127,7 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
             },
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        PageHeader("Taller", instance.title + " · Minecraft " + instance.version + " · Modrinth", onBack)
+        PageHeader("Taller", "${instance.title} · Minecraft ${instance.version} · ${instance.loader}", onBack)
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             LauncherButton(workshopDownloadsLabel(jobs), { showDownloads = true }, primary = activeJobs.isNotEmpty())
             WorkshopTab.entries.forEach {
@@ -143,12 +145,13 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
                     keyboardActions = KeyboardActions(onSearch = { search() }))
                 LauncherButton("Buscar", ::search, icon = Icons.Default.Search, enabled = !loading)
             }
-            if (tab == WorkshopTab.MODS) {
-                Text(
-                    if (loader != "fabric") "Elige Fabric al crear o gestionar la instancia para instalar mods."
-                    else "Los resultados se filtran por Minecraft " + instance.version + " y Fabric.",
-                    style = MaterialTheme.typography.bodySmall, color = Prissma.colors.textMuted
-                )
+            if (tab == WorkshopTab.MODS && loader == "fabric") {
+                val toggle = { includeOtherMods = !includeOtherMods }
+                FilterChip(includeOtherMods, toggle, { Text("Incluir otras versiones y cargadores") },
+                    modifier = Modifier.gamepadClick(onClick = toggle))
+            } else if (tab == WorkshopTab.MODS) {
+                Text("Selecciona Fabric en la instancia para instalar mods.",
+                    style = MaterialTheme.typography.bodySmall, color = Prissma.colors.textMuted)
             }
         }
         status?.let { Text(it, color = Prissma.colors.netP2P, style = MaterialTheme.typography.bodySmall) }
@@ -176,26 +179,34 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
                     }
                 }
             }
-            results.isEmpty() -> EmptyResults("Sin resultados compatibles con Minecraft " + instance.version + ".")
+            results.isEmpty() -> EmptyResults(if (tab == WorkshopTab.MODS && includeOtherMods) "No se encontraron mods."
+                else "Sin resultados compatibles con Minecraft ${instance.version}.")
             else -> LazyVerticalGrid(
                 columns = GridCells.Adaptive(245.dp), modifier = Modifier.fillMaxSize(),
                 horizontalArrangement = Arrangement.spacedBy(9.dp), verticalArrangement = Arrangement.spacedBy(9.dp)
             ) {
                 items(results, key = { it.projectId }) { item ->
-                    val matchingJobs = jobs.filter { WORKSHOP_PROJECT_TAG + item.projectId in it.tags || item.projectId in it.tags }
-                    val job = matchingJobs.firstOrNull { !it.state.isFinished } ?: matchingJobs.lastOrNull()
+                    val job = latestJobs.firstOrNull { it.workshopProject == item.projectId || item.projectId in it.tags }
                     ProjectCard(
                         item, job,
                         enabled = job?.state?.isFinished != false && (item.category != WorkshopCategory.MODS || loader == "fabric")
                     ) {
-                        downloads.mod(instance, item.projectId, item.title, item.category)
+                        if (item.category == WorkshopCategory.MODS) checkMod = item
+                        else downloads.mod(instance, item.projectId, item.title, item.category)
                     }
                 }
             }
         }
     }
 
-    if (showDownloads) WorkshopDownloadsDialog(jobs, listOf(instance)) { showDownloads = false }
+    if (showDownloads) WorkshopDownloadsDialog(jobs, listOf(instance), downloads) { showDownloads = false }
+
+    checkMod?.let { item ->
+        WorkshopCompatibilityDialog(item, instance, repository, onDismiss = { checkMod = null }) { plan ->
+            downloads.mod(instance, item.projectId, item.title, item.category, plan.pins)
+            checkMod = null
+        }
+    }
 
     if (showTutorial) {
         AlertDialog(
@@ -205,7 +216,7 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("1. Crea una instancia Java, elige la versión de Minecraft y selecciona Fabric.")
                     Text("2. Abre el Taller de esa instancia, entra en Mods y busca lo que quieres instalar.")
-                    Text("3. Pulsa Descargar. PRISSMA comprueba la versión, el cargador y las dependencias obligatorias.")
+                    Text("3. Pulsa Comprobar. Revisa qué versión del mod y qué dependencias se instalarán, y confirma la descarga.")
                     Text("4. Revisa los archivos en Guardados. Cuando termine la descarga, vuelve a la instancia y pulsa Jugar.")
                 }
             },
@@ -250,7 +261,12 @@ private fun ProjectCard(item: ModrinthItem, job: WorkInfo?, enabled: Boolean, on
             style = MaterialTheme.typography.bodySmall, color = Prissma.colors.textMuted)
         if (job != null) WorkshopJobProgress(job)
         if (job?.state?.isFinished != false) {
-            LauncherButton(if (job?.state == WorkInfo.State.FAILED) "Reintentar" else "Descargar", onSave, enabled = enabled)
+            val action = when {
+                job?.state == WorkInfo.State.FAILED -> "Reintentar"
+                item.category == WorkshopCategory.MODS -> "Comprobar"
+                else -> "Descargar"
+            }
+            LauncherButton(action, onSave, enabled = enabled)
         }
     }
 }
