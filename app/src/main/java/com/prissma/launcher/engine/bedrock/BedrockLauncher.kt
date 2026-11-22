@@ -2,6 +2,7 @@ package com.prissma.launcher.engine.bedrock
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -94,6 +95,18 @@ internal class BedrockLauncher(private val activity: Activity) {
         val store = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")).setPackage("com.android.vending")
         val web = Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=$packageName"))
         return if (start(store) || start(web)) null else "No se pudo abrir Google Play en este dispositivo."
+    }
+
+    fun importArchive(archive: PreparedBedrockImport, selectedPackage: String): BedrockImportDelivery {
+        val target = detect()?.takeIf { it.canOpen && it.packageName == selectedPackage }
+        return deliverBedrockArchive(archive.type, target?.packageName) { packageName, mime ->
+            start(Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(archive.uri, mime)
+                setPackage(packageName)
+                clipData = ClipData.newRawUri(archive.name, archive.uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            })
+        }
     }
 
     fun openAppSettings(packageName: String): String? =

@@ -179,6 +179,7 @@ private fun InstanceHero(
                             } else {
                                 LauncherButton("Buscar Minecraft", onBedrockApps, icon = Icons.Default.Search, primary = true)
                             }
+                            LauncherButton("Taller", onWorkshop)
                         }
                         EngineType.RUST -> LauncherButton("Preparar juego", onPlay, icon = Icons.Default.PlayArrow,
                             primary = true, enabled = false)

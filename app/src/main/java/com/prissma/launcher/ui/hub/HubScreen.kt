@@ -48,6 +48,7 @@ import com.prissma.launcher.ui.components.ReleaseNotesDialog
 import com.prissma.launcher.ui.components.gamepadClick
 import com.prissma.launcher.ui.launch.JavaLaunchScreen
 import com.prissma.launcher.ui.theme.Prissma
+import com.prissma.launcher.ui.workshop.BedrockWorkshopScreen
 import com.prissma.launcher.ui.workshop.ContentWorkshopScreen
 import com.prissma.launcher.ui.workshop.WorkshopDownloadsDialog
 import com.prissma.launcher.ui.workshop.workshopDownloadsLabel
@@ -116,7 +117,7 @@ internal fun HubScreen(
         visibleLibrary(instances, filter, query, favorites, favoritesOnly, recent, order)
     }
     val selected = librarySelection(visible, selectedId)
-    val workshopInstance = selected?.takeIf { it.engine == EngineType.JAVA }
+    val workshopInstance = selected?.takeIf { it.engine != EngineType.RUST }
         ?: librarySelection(instances.filter { it.engine == EngineType.JAVA }, selectedId)
 
     fun notify(message: String) {
@@ -190,7 +191,10 @@ internal fun HubScreen(
     val showWorkshop = page == HubPage.WORKSHOP && workshopInstance != null
     BackHandler(enabled = page != HubPage.LIBRARY && !showWorkshop) { page = HubPage.LIBRARY }
     if (showWorkshop && workshopInstance != null) {
-        ContentWorkshopScreen(instance = workshopInstance, onBack = { page = HubPage.LIBRARY })
+        val back = { page = HubPage.LIBRARY }
+        if (workshopInstance.engine == EngineType.BEDROCK) {
+            BedrockWorkshopScreen(workshopInstance.title, bedrock, bedrockLauncher, onRefreshBedrock, back)
+        } else ContentWorkshopScreen(instance = workshopInstance, onBack = back)
         return
     }
 
@@ -227,7 +231,7 @@ internal fun HubScreen(
                         true
                     }
                     page == HubPage.LIBRARY && event.key == Key.ButtonX &&
-                        selected?.engine == EngineType.JAVA -> {
+                        selected != null && selected.engine != EngineType.RUST -> {
                         page = HubPage.WORKSHOP
                         true
                     }
