@@ -2,8 +2,12 @@ package com.prissma.launcher.engine.java
 
 import android.content.Context
 import android.content.Intent
+import android.hardware.input.InputManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
+import android.view.InputDevice
 import android.view.KeyEvent as AndroidKeyEvent
 import android.view.MotionEvent
 import android.view.SurfaceHolder
@@ -65,20 +69,93 @@ class JavaGameActivity : ComponentActivity() {
     private var controlsActive = false
     private var togglePanel: (() -> Unit)? = null
     private var dualScreenBridge: DualScreenBridge? = null
+    private var lowerPanelVisible = false
+    private var lowerPanelInput: ((PanelPadAction) -> Unit)? = null
+    private var resumed = false
+    private var hostFocused = false
+    private var inputManager: InputManager? = null
+    internal var lowerGamepadFocused by mutableStateOf(false)
+        private set
+    private val padRouter = PanelPadRouter(
+        onFocus = { focused ->
+            lowerGamepadFocused = focused
+            if (::gameInput.isInitialized) gameInput.reset()
+        },
+        onAction = { lowerPanelInput?.invoke(it) }
+    )
+    private val devices = object : InputManager.InputDeviceListener {
+        override fun onInputDeviceAdded(deviceId: Int) = Unit
+        override fun onInputDeviceChanged(deviceId: Int) = Unit
+        override fun onInputDeviceRemoved(deviceId: Int) = padRouter.removeDevice(deviceId)
+    }
 
     override fun dispatchKeyEvent(event: AndroidKeyEvent): Boolean {
         if (event.keyCode == AndroidKeyEvent.KEYCODE_BUTTON_SELECT && togglePanel != null) {
-            if (event.action == AndroidKeyEvent.ACTION_UP) togglePanel?.invoke()
+            if (event.action == AndroidKeyEvent.ACTION_UP && !event.isCanceled &&
+                !padRouter.select(event.deviceId, event.eventTime - event.downTime)
+            ) togglePanel?.invoke()
             return true
+        }
+        val down = event.action == AndroidKeyEvent.ACTION_DOWN
+        val up = event.action == AndroidKeyEvent.ACTION_UP
+        if ((down || up) && (event.isFromSource(InputDevice.SOURCE_GAMEPAD) ||
+                event.isFromSource(InputDevice.SOURCE_JOYSTICK) ||
+                event.isFromSource(InputDevice.SOURCE_DPAD) || AndroidKeyEvent.isGamepadButton(event.keyCode))
+        ) {
+            val routed = padRouter.button(event.deviceId, event.keyCode, lowerPanelAction(event.keyCode),
+                down, event.repeatCount > 0, event.eventTime)
+            if (routed) return true
         }
         return (controlsActive && gameInput.keyEvent(event)) || super.dispatchKeyEvent(event)
     }
 
-    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean =
-        (controlsActive && gameInput.motion(event)) || super.dispatchGenericMotionEvent(event)
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        if (event.isFromSource(InputDevice.SOURCE_JOYSTICK)) {
+            val axes = readGamepadAxes(event)
+            if (padRouter.motion(event.deviceId, axes, event.eventTime)) return true
+            if (controlsActive) {
+                gameInput.gamepadMotion(axes)
+                return true
+            }
+        }
+        return (controlsActive && gameInput.motion(event)) || super.dispatchGenericMotionEvent(event)
+    }
+
+    internal fun setLowerPanelVisible(visible: Boolean) {
+        lowerPanelVisible = visible
+        reconcilePadFocus()
+    }
+
+    internal fun attachLowerPanelInput(input: (PanelPadAction) -> Unit): () -> Unit {
+        lowerPanelInput = input
+        reconcilePadFocus()
+        return {
+            if (lowerPanelInput === input) {
+                lowerPanelInput = null
+                reconcilePadFocus()
+            }
+        }
+    }
+
+    internal fun releaseLowerGamepad() = padRouter.release()
+
+    internal fun tickLowerGamepad() = padRouter.tick(SystemClock.uptimeMillis())
+
+    private fun reconcilePadFocus() {
+        padRouter.setAvailable(controlsActive && resumed && hostFocused && lowerPanelVisible && lowerPanelInput != null)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        resumed = true
+        reconcilePadFocus()
+    }
 
     override fun onPause() {
-        if (controlsActive) gameInput.reset()
+        val wasLowerFocused = lowerGamepadFocused
+        resumed = false
+        reconcilePadFocus()
+        if (controlsActive && !wasLowerFocused) gameInput.reset()
         super.onPause()
     }
 
@@ -120,6 +197,9 @@ class JavaGameActivity : ComponentActivity() {
             decodeGamepadActions(intent.getStringExtra("GAMEPAD_BINDINGS").orEmpty()),
             intent.getDoubleExtra("HOTBAR_SCROLL_SCALE", 1.0)
         )
+        inputManager = getSystemService(InputManager::class.java)?.also {
+            it.registerInputDeviceListener(devices, Handler(Looper.getMainLooper()))
+        }
 
         setContent {
             PrissmaTheme {
@@ -161,7 +241,10 @@ class JavaGameActivity : ComponentActivity() {
                     initialHud = hud,
                     panelBridge = panelBridge,
                     onHudChanged = { setResult(RESULT_OK, Intent().putExtra("GAME_HUD", it.toBundle())) },
-                    onControls = { controlsActive = it },
+                    onControls = {
+                        controlsActive = it
+                        reconcilePadFocus()
+                    },
                     onTogglePanel = { togglePanel = it },
                     onExitGame = { finish() }
                 )
@@ -171,11 +254,15 @@ class JavaGameActivity : ComponentActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
+        val wasLowerFocused = lowerGamepadFocused
+        hostFocused = hasFocus
+        reconcilePadFocus()
         if (hasFocus) enableImmersiveMode()
-        else if (controlsActive) gameInput.reset()
+        else if (controlsActive && !wasLowerFocused) gameInput.reset()
     }
 
     override fun onDestroy() {
+        inputManager?.unregisterInputDeviceListener(devices)
         dualScreenBridge?.directory?.deleteRecursively()
         super.onDestroy()
         exitProcess(0)
@@ -189,6 +276,20 @@ class JavaGameActivity : ComponentActivity() {
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
     }
+}
+
+private fun lowerPanelAction(code: Int): PanelPadAction? = when (code) {
+    AndroidKeyEvent.KEYCODE_DPAD_UP -> PanelPadAction.UP
+    AndroidKeyEvent.KEYCODE_DPAD_DOWN -> PanelPadAction.DOWN
+    AndroidKeyEvent.KEYCODE_DPAD_LEFT -> PanelPadAction.LEFT
+    AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> PanelPadAction.RIGHT
+    AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_BUTTON_A -> PanelPadAction.PICK
+    AndroidKeyEvent.KEYCODE_BUTTON_X -> PanelPadAction.SPLIT
+    AndroidKeyEvent.KEYCODE_BUTTON_Y -> PanelPadAction.TRANSFER
+    AndroidKeyEvent.KEYCODE_BUTTON_B -> PanelPadAction.BACK
+    AndroidKeyEvent.KEYCODE_BUTTON_L1 -> PanelPadAction.PREVIOUS_TAB
+    AndroidKeyEvent.KEYCODE_BUTTON_R1 -> PanelPadAction.NEXT_TAB
+    else -> null
 }
 
 private class ScaledGameSurface(context: Context, private val scale: RenderScale) : SurfaceView(context) {
@@ -271,6 +372,7 @@ private fun JavaNativeViewportScreen(
             while (true) {
                 captured = NativeJavaBridge.nativeCursorCaptured()
                 input.setCaptured(captured)
+                activity.tickLowerGamepad()
                 input.tick()
                 delay(16L)
             }

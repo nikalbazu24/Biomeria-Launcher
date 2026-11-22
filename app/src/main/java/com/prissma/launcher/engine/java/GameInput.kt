@@ -188,21 +188,12 @@ internal class GameInput(
 
     fun motion(event: MotionEvent): Boolean {
         if (event.isFromSource(InputDevice.SOURCE_MOUSE)) return mouse(event)
-        if (!event.isFromSource(InputDevice.SOURCE_JOYSTICK)) return false
-        val useZAxes = event.device?.getMotionRange(MotionEvent.AXIS_Z, event.source) != null &&
-            event.device?.getMotionRange(MotionEvent.AXIS_RZ, event.source) != null
-        gamepadMotion(
-            moveX = axis(event, MotionEvent.AXIS_X),
-            moveY = axis(event, MotionEvent.AXIS_Y),
-            lookX = axis(event, if (useZAxes) MotionEvent.AXIS_Z else MotionEvent.AXIS_RX),
-            lookY = axis(event, if (useZAxes) MotionEvent.AXIS_RZ else MotionEvent.AXIS_RY),
-            hatX = axis(event, MotionEvent.AXIS_HAT_X),
-            hatY = axis(event, MotionEvent.AXIS_HAT_Y),
-            attack = maxOf(event.getAxisValue(MotionEvent.AXIS_RTRIGGER), event.getAxisValue(MotionEvent.AXIS_GAS)) > .45f,
-            use = maxOf(event.getAxisValue(MotionEvent.AXIS_LTRIGGER), event.getAxisValue(MotionEvent.AXIS_BRAKE)) > .45f
-        )
-        return true
+        return false
     }
+
+    fun gamepadMotion(axes: GamepadAxes) = gamepadMotion(
+        axes.moveX, axes.moveY, axes.lookX, axes.lookY, axes.hatX, axes.hatY, axes.attack, axes.use
+    )
 
     internal fun gamepadMotion(
         moveX: Float, moveY: Float, lookX: Float, lookY: Float,
@@ -367,11 +358,27 @@ internal class GameInput(
         event: GameInputEvent, code: Int = 0, action: Int = 0, x: Double = 0.0, y: Double = 0.0
     ) = emit(event, code, action, x, y)
 
-    private fun axis(event: MotionEvent, axis: Int): Float {
-        val value = event.getAxisValue(axis)
-        val flat = event.device?.getMotionRange(axis, event.source)?.flat ?: 0f
+}
+
+internal fun readGamepadAxes(event: MotionEvent): GamepadAxes {
+    val device = event.device
+    fun axis(code: Int): Float {
+        val value = event.getAxisValue(code)
+        val flat = device?.getMotionRange(code, event.source)?.flat ?: 0f
         return if (abs(value) > maxOf(flat, .18f)) value else 0f
     }
+    val useZAxes = device?.getMotionRange(MotionEvent.AXIS_Z, event.source) != null &&
+        device.getMotionRange(MotionEvent.AXIS_RZ, event.source) != null
+    return GamepadAxes(
+        moveX = axis(MotionEvent.AXIS_X),
+        moveY = axis(MotionEvent.AXIS_Y),
+        lookX = axis(if (useZAxes) MotionEvent.AXIS_Z else MotionEvent.AXIS_RX),
+        lookY = axis(if (useZAxes) MotionEvent.AXIS_RZ else MotionEvent.AXIS_RY),
+        hatX = axis(MotionEvent.AXIS_HAT_X),
+        hatY = axis(MotionEvent.AXIS_HAT_Y),
+        attack = maxOf(event.getAxisValue(MotionEvent.AXIS_RTRIGGER), event.getAxisValue(MotionEvent.AXIS_GAS)) > .45f,
+        use = maxOf(event.getAxisValue(MotionEvent.AXIS_LTRIGGER), event.getAxisValue(MotionEvent.AXIS_BRAKE)) > .45f
+    )
 }
 
 private fun keyboardMapping(code: Int): Int = when (code) {
