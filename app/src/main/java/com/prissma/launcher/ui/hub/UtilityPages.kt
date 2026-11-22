@@ -332,6 +332,6 @@ private fun UtilityPanel(title: String, subtitle: String, modifier: Modifier = M
     }
 }
 
-private fun Context.copyText(label: String, content: String) {
+internal fun Context.copyText(label: String, content: String) {
     getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText(label, content))
 }

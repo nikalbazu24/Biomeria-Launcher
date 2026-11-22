@@ -16,6 +16,7 @@ import com.prissma.launcher.engine.java.supportedVersions
 import com.prissma.launcher.engine.java.javaLoaders
 import com.prissma.launcher.engine.java.supportsJavaLoader
 import com.prissma.launcher.engine.java.validCatalogVersion
+import com.prissma.launcher.engine.rust.STARLING_MINECRAFT_VERSION
 import com.prissma.launcher.ui.components.LauncherButton
 import com.prissma.launcher.ui.components.gamepadClick
 import com.prissma.launcher.ui.theme.Prissma
@@ -35,7 +36,7 @@ internal fun InstanceEditor(
     val validVersion = when (engine) {
         EngineType.JAVA -> validCatalogVersion(version)
         EngineType.BEDROCK -> true
-        EngineType.RUST -> version.trim().matches(Regex("[A-Za-z0-9._+-]{1,64}"))
+        EngineType.RUST -> true
     }
     val playable = version in supportedVersions
     AlertDialog(
@@ -63,15 +64,16 @@ internal fun InstanceEditor(
                         EngineType.BEDROCK -> Text("La tarjeta abre la versión de Minecraft instalada en Android.",
                             color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
                         EngineType.RUST -> {
-                            Text("Puedes organizar y exportar esta instancia. Su motor está en preparación.",
+                            Text("Abre Starling para Minecraft $STARLING_MINECRAFT_VERSION. Starling gestiona los perfiles y mundos Rust.",
                                 color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
-                            OutlinedTextField(version, { version = it.take(64) }, modifier = Modifier.fillMaxWidth(),
-                                label = { Text("Versión del juego") }, singleLine = true)
                         }
                     }
                 } else {
-                    Text(if (instance.engine == EngineType.BEDROCK) "Bedrock · Versión instalada en Android"
-                        else "${instance.engine.displayName} · ${instance.version}", color = Prissma.colors.textMuted)
+                    Text(when (instance.engine) {
+                        EngineType.JAVA -> "Java · ${instance.version}"
+                        EngineType.BEDROCK -> "Bedrock · Versión instalada en Android"
+                        EngineType.RUST -> "Rust · Starling"
+                    }, color = Prissma.colors.textMuted)
                     if (onRemove != null) TextButton(onClick = onRemove) {
                         Text("Quitar de la biblioteca", color = Prissma.colors.error)
                     }
@@ -94,7 +96,11 @@ internal fun InstanceEditor(
         confirmButton = {
             LauncherButton(if (instance == null) "Crear" else "Guardar",
                 {
-                    val savedVersion = if (engine == EngineType.BEDROCK) instance?.version ?: "Instalada" else version.trim()
+                    val savedVersion = when (engine) {
+                        EngineType.JAVA -> version.trim()
+                        EngineType.BEDROCK -> instance?.version ?: "Instalada"
+                        EngineType.RUST -> STARLING_MINECRAFT_VERSION
+                    }
                     val savedLoader = if (engine == EngineType.JAVA && playable) loader else engine.defaultLoader
                     onSave(name.trim(), engine, savedVersion, savedLoader)
                 },

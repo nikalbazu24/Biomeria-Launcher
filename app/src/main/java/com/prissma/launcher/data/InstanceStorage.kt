@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.util.AtomicFile
 import java.util.UUID
 import android.net.Uri
+import com.prissma.launcher.engine.rust.STARLING_MINECRAFT_VERSION
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -242,12 +243,10 @@ class InstanceStorage(private val context: Context) {
         ),
         GameInstance(
             id = "rust-120fps",
-            title = "Minecraft Rust 120FPS",
+            title = "Starling",
             engine = EngineType.RUST,
-            version = "26.3",
-            loader = "Starling wgpu",
-            playtimeHours = 18.5f,
-            friendsOnline = 2
+            version = STARLING_MINECRAFT_VERSION,
+            loader = EngineType.RUST.defaultLoader
         ),
         GameInstance(
             id = "crossplay-bedrock",

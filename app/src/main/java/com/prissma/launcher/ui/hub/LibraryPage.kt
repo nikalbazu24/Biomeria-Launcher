@@ -49,6 +49,8 @@ import com.prissma.launcher.data.EngineType
 import com.prissma.launcher.data.GameInstance
 import com.prissma.launcher.engine.bedrock.BedrockInstallation
 import com.prissma.launcher.engine.bedrock.launchProblem
+import com.prissma.launcher.engine.rust.StarlingInstallation
+import com.prissma.launcher.engine.rust.launchProblem as starlingLaunchProblem
 import com.prissma.launcher.ui.components.ControlShape
 import com.prissma.launcher.ui.components.LauncherButton
 import com.prissma.launcher.ui.components.PanelShape
@@ -66,6 +68,7 @@ internal fun LibraryPage(
     order: LibraryOrder,
     query: String,
     bedrock: BedrockInstallation?,
+    starling: StarlingInstallation?,
     onQuery: (String) -> Unit,
     onFilter: (EngineType?) -> Unit,
     onFavoritesFilter: () -> Unit,
@@ -74,6 +77,8 @@ internal fun LibraryPage(
     onNew: () -> Unit,
     onPlay: () -> Unit,
     onBedrockApps: () -> Unit,
+    onGetStarling: () -> Unit,
+    onStarlingDiagnostics: () -> Unit,
     onWorkshop: () -> Unit,
     onEdit: () -> Unit,
     onFavorite: () -> Unit,
@@ -82,11 +87,11 @@ internal fun LibraryPage(
     BoxWithConstraints(modifier) {
         val wide = maxWidth >= 487.dp && maxHeight >= 250.dp
         val hero: @Composable (Modifier) -> Unit = {
-            InstanceHero(selected, bedrock, selected?.id?.let(favorites::contains) == true,
-                onPlay, onBedrockApps, onWorkshop, onEdit, onFavorite, it)
+            InstanceHero(selected, bedrock, starling, selected?.id?.let(favorites::contains) == true,
+                onPlay, onBedrockApps, onGetStarling, onStarlingDiagnostics, onWorkshop, onEdit, onFavorite, it)
         }
         val list: @Composable (Modifier) -> Unit = {
-            LibraryList(instances, selected, favorites, filter, favoritesOnly, order, query, bedrock,
+            LibraryList(instances, selected, favorites, filter, favoritesOnly, order, query, bedrock, starling,
                 onQuery, onFilter, onFavoritesFilter, onOrder, onSelect, onNew, it)
         }
         if (wide) {
@@ -110,9 +115,12 @@ internal fun LibraryPage(
 private fun InstanceHero(
     instance: GameInstance?,
     bedrock: BedrockInstallation?,
+    starling: StarlingInstallation?,
     favorite: Boolean,
     onPlay: () -> Unit,
     onBedrockApps: () -> Unit,
+    onGetStarling: () -> Unit,
+    onStarlingDiagnostics: () -> Unit,
     onWorkshop: () -> Unit,
     onEdit: () -> Unit,
     onFavorite: () -> Unit,
@@ -157,12 +165,12 @@ private fun InstanceHero(
             Spacer(Modifier.height(5.dp))
             Text(
                 if (instance == null) "Selecciona una instancia para ver sus opciones." else when (instance.engine) {
-                    EngineType.RUST -> "Versión ${instance.version} · Motor en preparación"
+                    EngineType.RUST -> starling.starlingLaunchProblem() ?: checkNotNull(starling).label
                     EngineType.BEDROCK -> bedrock.launchProblem() ?: checkNotNull(bedrock).label
                     EngineType.JAVA -> "Minecraft ${instance.version} · ${instance.loader}"
                 },
                 color = palette.textMuted, style = MaterialTheme.typography.bodyMedium,
-                maxLines = if (instance?.engine == EngineType.BEDROCK) 2 else 1, overflow = TextOverflow.Ellipsis
+                maxLines = if (instance?.engine == EngineType.JAVA) 1 else 2, overflow = TextOverflow.Ellipsis
             )
             if (instance != null) {
                 Spacer(Modifier.height(14.dp))
@@ -181,8 +189,12 @@ private fun InstanceHero(
                             }
                             LauncherButton("Taller", onWorkshop)
                         }
-                        EngineType.RUST -> LauncherButton("Preparar juego", onPlay, icon = Icons.Default.PlayArrow,
-                            primary = true, enabled = false)
+                        EngineType.RUST -> {
+                            if (starling?.canOpen == true) {
+                                LauncherButton("Abrir Starling", onPlay, icon = Icons.Default.PlayArrow, primary = true)
+                            } else LauncherButton("Ver Starling ARM64", onGetStarling, primary = true)
+                            LauncherButton("Diagnóstico", onStarlingDiagnostics)
+                        }
                     }
                 }
             }
@@ -212,6 +224,7 @@ private fun LibraryList(
     order: LibraryOrder,
     query: String,
     bedrock: BedrockInstallation?,
+    starling: StarlingInstallation?,
     onQuery: (String) -> Unit,
     onFilter: (EngineType?) -> Unit,
     onFavoritesFilter: () -> Unit,
@@ -273,7 +286,11 @@ private fun LibraryList(
             LazyColumn(state = state, verticalArrangement = Arrangement.spacedBy(5.dp),
                 modifier = Modifier.fillMaxWidth().weight(1f)) {
                 items(instances, key = { it.id }) {
-                    val version = if (it.engine == EngineType.BEDROCK) bedrock?.versionName else it.version
+                    val version = when (it.engine) {
+                        EngineType.JAVA -> it.version
+                        EngineType.BEDROCK -> bedrock?.versionName
+                        EngineType.RUST -> starling?.version
+                    }
                     LibraryEntry(it, version, selected?.id == it.id, it.id in favorites) { onSelect(it) }
                 }
             }

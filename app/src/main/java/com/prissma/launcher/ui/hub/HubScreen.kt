@@ -1,5 +1,6 @@
 package com.prissma.launcher.ui.hub
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -41,6 +42,8 @@ import com.prissma.launcher.engine.bedrock.BedrockLauncher
 import com.prissma.launcher.engine.java.GameDownloads
 import com.prissma.launcher.engine.java.MojangDownloader
 import com.prissma.launcher.engine.java.supportsJavaLoader
+import com.prissma.launcher.engine.rust.StarlingInstallation
+import com.prissma.launcher.engine.rust.StarlingLauncher
 import com.prissma.launcher.ui.components.ControlShape
 import com.prissma.launcher.ui.components.LauncherButton
 import com.prissma.launcher.ui.components.PrissmaMark
@@ -70,6 +73,11 @@ internal fun HubScreen(
     bedrockLauncher: BedrockLauncher,
     onRefreshBedrock: () -> Unit,
     onOpenBedrock: () -> String?,
+    starling: StarlingInstallation?,
+    starlingLauncher: StarlingLauncher,
+    starlingReport: Uri?,
+    onOpenStarling: () -> String?,
+    onConsumeStarlingReport: (Uri) -> Unit,
     externalLaunchInstanceId: String? = null,
     updateSettingsRequest: Int = 0,
     sourceFrontendPackage: String? = null,
@@ -99,6 +107,7 @@ internal fun HubScreen(
 
     var showAccount by rememberSaveable { mutableStateOf(false) }
     var showBedrockApps by rememberSaveable { mutableStateOf(false) }
+    var showStarlingDiagnostics by rememberSaveable { mutableStateOf(false) }
     var savingProfile by remember { mutableStateOf(false) }
     var showNew by rememberSaveable { mutableStateOf(false) }
     var editingId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -147,8 +156,13 @@ internal fun HubScreen(
                 }
             }
             EngineType.RUST -> {
-                notify("El motor Rust está en preparación.")
-                return
+                launchingId = null
+                val problem = onOpenStarling()
+                if (problem != null) {
+                    showStarlingDiagnostics = true
+                    notify(problem)
+                    return
+                }
             }
         }
         recent = (listOf(instance.id) + recent.filterNot { it == instance.id }).take(24)
@@ -169,6 +183,13 @@ internal fun HubScreen(
     }
     LaunchedEffect(updater) { update = updater.checkForUpdate().getOrNull() }
     LaunchedEffect(updater, version) { installedNotes = updater.installedReleaseNotes(version) }
+    LaunchedEffect(starlingReport) {
+        if (starlingReport != null) {
+            launchingId = null
+            page = HubPage.LIBRARY
+            showStarlingDiagnostics = true
+        }
+    }
     LaunchedEffect(externalLaunchInstanceId) {
         val id = externalLaunchInstanceId ?: return@LaunchedEffect
         page = HubPage.LIBRARY
@@ -241,7 +262,7 @@ internal fun HubScreen(
         ) {
             when (page) {
                 HubPage.LIBRARY -> LibraryPage(
-                    visible, selected, favorites, filter, favoritesOnly, order, query, bedrock,
+                    visible, selected, favorites, filter, favoritesOnly, order, query, bedrock, starling,
                     onQuery = { query = it }, onFilter = { filter = it },
                     onFavoritesFilter = { favoritesOnly = !favoritesOnly },
                     onOrder = { order = if (order == LibraryOrder.RECENT) LibraryOrder.NAME else LibraryOrder.RECENT },
@@ -249,6 +270,8 @@ internal fun HubScreen(
                     onNew = { showNew = true },
                     onPlay = { selected?.let(::launchInstance) },
                     onBedrockApps = { showBedrockApps = true },
+                    onGetStarling = { starlingLauncher.openReleases()?.let(::notify) },
+                    onStarlingDiagnostics = { showStarlingDiagnostics = true },
                     onWorkshop = { page = HubPage.WORKSHOP },
                     onEdit = { editingId = selected?.id },
                     onFavorite = {
@@ -276,8 +299,14 @@ internal fun HubScreen(
     if (showBedrockApps) {
         BedrockAppsDialog(bedrock, bedrockLauncher, onRefreshBedrock, onDismiss = { showBedrockApps = false })
     }
+    if (showStarlingDiagnostics) {
+        StarlingDiagnosticsDialog(starling, starlingLauncher, starlingReport, onConsumeStarlingReport) {
+            showStarlingDiagnostics = false
+        }
+    }
 
-    if (!showWorkshopDownloads && !showBedrockApps && !releaseNotesSeen && page == HubPage.LIBRARY && externalLaunchInstanceId == null &&
+    if (!showWorkshopDownloads && !showBedrockApps && !showStarlingDiagnostics && starlingReport == null &&
+        !releaseNotesSeen && page == HubPage.LIBRARY && externalLaunchInstanceId == null &&
         updateSettingsRequest == 0 && !showAccount && !showNew && editingId == null && deleteId == null
     ) {
         installedNotes?.let { ReleaseNotesDialog(version, it, ::acknowledgeReleaseNotes) }

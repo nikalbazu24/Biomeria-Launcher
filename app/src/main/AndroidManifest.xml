@@ -11,6 +11,7 @@
     <queries>
         <package android:name="com.mojang.minecraftpe" />
         <package android:name="com.mojang.minecrafttrialpe" />
+        <package android:name="io.github.juanluci.starling" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
@@ -60,6 +61,18 @@
                 <data android:pathPattern=".*\\.mcinst" />
             </intent-filter>
         </activity>
+
+        <activity-alias
+            android:name=".StarlingReportShare"
+            android:exported="true"
+            android:label="PRISSMA · Diagnóstico de Starling"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/zip" />
+            </intent-filter>
+        </activity-alias>
 
         <activity
             android:name=".engine.java.JavaGameActivity"
