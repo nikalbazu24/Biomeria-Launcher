@@ -2,8 +2,6 @@ package com.prissma.launcher.engine.java
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
-import android.content.Intent
 import android.content.Context
 import android.content.pm.ServiceInfo
 import android.os.Build
@@ -19,7 +17,6 @@ import androidx.work.WorkManager
 import androidx.work.WorkQuery
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
-import com.prissma.launcher.MainActivity
 import com.prissma.launcher.R
 import com.prissma.launcher.data.GameInstance
 import com.prissma.launcher.data.ModrinthRepository
@@ -38,7 +35,6 @@ internal const val RUNTIME_WORK = "download-java-21"
 internal const val DOWNLOAD_MESSAGE = "message"
 internal const val DOWNLOAD_PERCENT = "percent"
 internal const val DOWNLOAD_DETAIL = "detail"
-internal const val OPEN_WORKSHOP_DOWNLOADS = "com.prissma.launcher.OPEN_WORKSHOP_DOWNLOADS"
 internal const val WORKSHOP_PROJECT_TAG = "workshop-project:"
 internal const val WORKSHOP_TITLE_TAG = "workshop-title:"
 internal const val WORKSHOP_INSTANCE_TAG = "workshop-"
@@ -101,7 +97,7 @@ class GameDownloadWorker(context: Context, parameters: WorkerParameters) : Corou
         val isWorkshop = inputData.getString("kind") == "content"
         val background = try {
             setForeground(foreground(title, DownloadUpdate(-1,
-                if (isWorkshop) "Esperando turno de instalación" else "Preparando descarga"), isWorkshop))
+                if (isWorkshop) "Esperando turno de instalación" else "Preparando descarga")))
             true
         } catch (error: IllegalStateException) {
             // If Android blocks foreground startup, keep short jobs eligible for retry.
@@ -114,7 +110,7 @@ class GameDownloadWorker(context: Context, parameters: WorkerParameters) : Corou
                 lastUpdate = update
                 setProgress(workDataOf(DOWNLOAD_PERCENT to update.percent, DOWNLOAD_MESSAGE to update.message,
                     DOWNLOAD_DETAIL to update.detail, "title" to title))
-                if (background) setForeground(foreground(title, update, isWorkshop))
+                if (background) setForeground(foreground(title, update))
             }
         }
         val progress: (Float, String) -> Unit = { fraction, message ->
@@ -167,9 +163,7 @@ class GameDownloadWorker(context: Context, parameters: WorkerParameters) : Corou
         }
     }
 
-    private suspend fun foreground(
-        title: String, update: DownloadUpdate, isWorkshop: Boolean
-    ): ForegroundInfo = withContext(Dispatchers.IO) {
+    private suspend fun foreground(title: String, update: DownloadUpdate): ForegroundInfo = withContext(Dispatchers.IO) {
         val manager = applicationContext.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel("game_downloads", "Descargas", NotificationManager.IMPORTANCE_LOW))
         val summary = if (update.percent < 0) update.message else update.message + " · " + update.percent + " %"
@@ -182,12 +176,6 @@ class GameDownloadWorker(context: Context, parameters: WorkerParameters) : Corou
             .setOnlyAlertOnce(true)
         if (update.detail.isNotBlank()) {
             notification.setStyle(NotificationCompat.BigTextStyle().bigText("$summary\n" + update.detail))
-        }
-        if (isWorkshop) {
-            notification.setContentIntent(PendingIntent.getActivity(applicationContext, 0,
-                Intent(applicationContext, MainActivity::class.java).setAction(OPEN_WORKSHOP_DOWNLOADS)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
         }
         ForegroundInfo(id.hashCode(), notification.build(),
             if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0)

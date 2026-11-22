@@ -65,7 +65,6 @@ private enum class HubPage(val label: String, val icon: ImageVector) {
 fun HubScreen(
     externalLaunchInstanceId: String? = null,
     updateSettingsRequest: Int = 0,
-    workshopDownloadsRequest: Int = 0,
     sourceFrontendPackage: String? = null,
     onConsumeExternalLaunch: () -> Unit = {}
 ) {
@@ -141,13 +140,6 @@ fun HubScreen(
         if (updateSettingsRequest != 0) {
             launchingId = null
             page = HubPage.SETTINGS
-        }
-    }
-    LaunchedEffect(workshopDownloadsRequest) {
-        if (workshopDownloadsRequest != 0) {
-            launchingId = null
-            if (page == HubPage.WORKSHOP) page = HubPage.LIBRARY
-            showWorkshopDownloads = true
         }
     }
     LaunchedEffect(downloads) {
