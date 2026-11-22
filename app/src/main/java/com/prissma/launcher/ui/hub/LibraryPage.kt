@@ -47,6 +47,8 @@ import androidx.compose.ui.unit.dp
 import com.prissma.launcher.R
 import com.prissma.launcher.data.EngineType
 import com.prissma.launcher.data.GameInstance
+import com.prissma.launcher.engine.bedrock.BedrockInstallation
+import com.prissma.launcher.engine.bedrock.launchProblem
 import com.prissma.launcher.ui.components.ControlShape
 import com.prissma.launcher.ui.components.LauncherButton
 import com.prissma.launcher.ui.components.PanelShape
@@ -63,6 +65,7 @@ internal fun LibraryPage(
     favoritesOnly: Boolean,
     order: LibraryOrder,
     query: String,
+    bedrock: BedrockInstallation?,
     onQuery: (String) -> Unit,
     onFilter: (EngineType?) -> Unit,
     onFavoritesFilter: () -> Unit,
@@ -78,10 +81,10 @@ internal fun LibraryPage(
     BoxWithConstraints(modifier) {
         val wide = maxWidth >= 487.dp && maxHeight >= 250.dp
         val hero: @Composable (Modifier) -> Unit = {
-            InstanceHero(selected, selected?.id?.let(favorites::contains) == true, onPlay, onWorkshop, onEdit, onFavorite, it)
+            InstanceHero(selected, bedrock, selected?.id?.let(favorites::contains) == true, onPlay, onWorkshop, onEdit, onFavorite, it)
         }
         val list: @Composable (Modifier) -> Unit = {
-            LibraryList(instances, selected, favorites, filter, favoritesOnly, order, query,
+            LibraryList(instances, selected, favorites, filter, favoritesOnly, order, query, bedrock,
                 onQuery, onFilter, onFavoritesFilter, onOrder, onSelect, onNew, it)
         }
         if (wide) {
@@ -104,6 +107,7 @@ internal fun LibraryPage(
 @Composable
 private fun InstanceHero(
     instance: GameInstance?,
+    bedrock: BedrockInstallation?,
     favorite: Boolean,
     onPlay: () -> Unit,
     onWorkshop: () -> Unit,
@@ -149,21 +153,27 @@ private fun InstanceHero(
                 fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(5.dp))
             Text(
-                when {
-                    instance == null -> "Selecciona una instancia para ver sus opciones."
-                    !instance.engine.canLaunch -> "Versión " + instance.version + " · Motor en preparación"
-                    instance.configuredModLoader != null -> "Minecraft " + instance.version + " · Inicio vanilla"
-                    else -> "Minecraft " + instance.version + " · " + instance.loader
+                if (instance == null) "Selecciona una instancia para ver sus opciones." else when (instance.engine) {
+                    EngineType.RUST -> "Versión ${instance.version} · Motor en preparación"
+                    EngineType.BEDROCK -> bedrock.launchProblem() ?: checkNotNull(bedrock).label
+                    EngineType.JAVA -> "Minecraft ${instance.version} · ${instance.loader}"
                 },
                 color = palette.textMuted, style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1, overflow = TextOverflow.Ellipsis
+                maxLines = if (instance?.engine == EngineType.BEDROCK) 2 else 1, overflow = TextOverflow.Ellipsis
             )
             if (instance != null) {
                 Spacer(Modifier.height(14.dp))
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    LauncherButton("Preparar juego", onPlay, icon = Icons.Default.PlayArrow,
-                        primary = true, enabled = instance.engine.canLaunch)
-                    LauncherButton("Taller", onWorkshop, enabled = instance.engine.canLaunch)
+                    when (instance.engine) {
+                        EngineType.JAVA -> {
+                            LauncherButton("Preparar juego", onPlay, icon = Icons.Default.PlayArrow, primary = true)
+                            LauncherButton("Taller", onWorkshop)
+                        }
+                        EngineType.BEDROCK -> LauncherButton("Abrir Minecraft", onPlay, icon = Icons.Default.PlayArrow,
+                            primary = true, enabled = bedrock?.canOpen == true)
+                        EngineType.RUST -> LauncherButton("Preparar juego", onPlay, icon = Icons.Default.PlayArrow,
+                            primary = true, enabled = false)
+                    }
                 }
             }
         }
@@ -191,6 +201,7 @@ private fun LibraryList(
     favoritesOnly: Boolean,
     order: LibraryOrder,
     query: String,
+    bedrock: BedrockInstallation?,
     onQuery: (String) -> Unit,
     onFilter: (EngineType?) -> Unit,
     onFavoritesFilter: () -> Unit,
@@ -252,7 +263,8 @@ private fun LibraryList(
             LazyColumn(state = state, verticalArrangement = Arrangement.spacedBy(5.dp),
                 modifier = Modifier.fillMaxWidth().weight(1f)) {
                 items(instances, key = { it.id }) {
-                    LibraryEntry(it, selected?.id == it.id, it.id in favorites) { onSelect(it) }
+                    val version = if (it.engine == EngineType.BEDROCK) bedrock?.versionName else it.version
+                    LibraryEntry(it, version, selected?.id == it.id, it.id in favorites) { onSelect(it) }
                 }
             }
         }
@@ -292,7 +304,7 @@ private fun LibrarySearch(query: String, onQuery: (String) -> Unit) {
 }
 
 @Composable
-private fun LibraryEntry(instance: GameInstance, selected: Boolean, favorite: Boolean, onSelect: () -> Unit) {
+private fun LibraryEntry(instance: GameInstance, version: String?, selected: Boolean, favorite: Boolean, onSelect: () -> Unit) {
     val palette = Prissma.colors
     val source = remember { MutableInteractionSource() }
     val focused by source.collectIsFocusedAsState()
@@ -313,7 +325,7 @@ private fun LibraryEntry(instance: GameInstance, selected: Boolean, favorite: Bo
         Column(Modifier.weight(1f)) {
             Text(instance.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(instance.engine.displayName + " · " + instance.version, color = palette.textMuted,
+            Text(listOfNotNull(instance.engine.displayName, version).joinToString(" · "), color = palette.textMuted,
                 style = MaterialTheme.typography.labelSmall, maxLines = 1)
         }
         if (favorite) Icon(Icons.Default.Star, "Favorita", Modifier.size(15.dp), tint = palette.brandAccent)

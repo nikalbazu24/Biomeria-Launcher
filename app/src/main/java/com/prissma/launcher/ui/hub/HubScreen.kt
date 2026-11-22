@@ -36,6 +36,7 @@ import com.prissma.launcher.data.GameInstance
 import com.prissma.launcher.data.InstanceStorage
 import com.prissma.launcher.data.LibraryPreferences
 import com.prissma.launcher.data.UpdateInfo
+import com.prissma.launcher.engine.bedrock.BedrockInstallation
 import com.prissma.launcher.engine.java.GameDownloads
 import com.prissma.launcher.engine.java.MojangDownloader
 import com.prissma.launcher.engine.java.supportedVersions
@@ -62,7 +63,9 @@ private enum class HubPage(val label: String, val icon: ImageVector) {
 }
 
 @Composable
-fun HubScreen(
+internal fun HubScreen(
+    bedrock: BedrockInstallation?,
+    onOpenBedrock: () -> String?,
     externalLaunchInstanceId: String? = null,
     updateSettingsRequest: Int = 0,
     sourceFrontendPackage: String? = null,
@@ -109,8 +112,8 @@ fun HubScreen(
         visibleLibrary(instances, filter, query, favorites, favoritesOnly, recent, order)
     }
     val selected = librarySelection(visible, selectedId)
-    val workshopInstance = selected?.takeIf { it.engine.canLaunch }
-        ?: librarySelection(instances.filter { it.engine.canLaunch }, selectedId)
+    val workshopInstance = selected?.takeIf { it.engine == EngineType.JAVA }
+        ?: librarySelection(instances.filter { it.engine == EngineType.JAVA }, selectedId)
 
     fun notify(message: String) {
         scope.launch {
@@ -126,14 +129,24 @@ fun HubScreen(
             .isSuccess
     }
 
-    fun prepare(instance: GameInstance) {
-        if (!instance.engine.canLaunch) {
-            notify("El motor " + instance.engine.displayName + " está en preparación.")
-            return
+    fun launchInstance(instance: GameInstance) {
+        when (instance.engine) {
+            EngineType.JAVA -> launchingId = instance.id
+            EngineType.BEDROCK -> {
+                launchingId = null
+                val problem = onOpenBedrock()
+                if (problem != null) {
+                    notify(problem)
+                    return
+                }
+            }
+            EngineType.RUST -> {
+                notify("El motor Rust está en preparación.")
+                return
+            }
         }
         recent = (listOf(instance.id) + recent.filterNot { it == instance.id }).take(24)
         preferences.setRecent(recent)
-        launchingId = instance.id
     }
 
     LaunchedEffect(updateSettingsRequest) {
@@ -159,12 +172,12 @@ fun HubScreen(
         val instance = instances.firstOrNull { it.id == id }
         if (instance != null) {
             selectedId = instance.id
-            prepare(instance)
+            launchInstance(instance)
         } else notify("El cartucho apunta a una instancia que no está en la biblioteca.")
         onConsumeExternalLaunch()
     }
 
-    instances.firstOrNull { it.id == launchingId }?.let {
+    instances.firstOrNull { it.id == launchingId && it.engine == EngineType.JAVA }?.let {
         JavaLaunchScreen(it, profile.playerName, profile.accountType, profile.language, onBack = { launchingId = null })
         return
     }
@@ -209,7 +222,7 @@ fun HubScreen(
                         true
                     }
                     page == HubPage.LIBRARY && event.key == Key.ButtonX &&
-                        selected?.engine?.canLaunch == true -> {
+                        selected?.engine == EngineType.JAVA -> {
                         page = HubPage.WORKSHOP
                         true
                     }
@@ -219,13 +232,13 @@ fun HubScreen(
         ) {
             when (page) {
                 HubPage.LIBRARY -> LibraryPage(
-                    visible, selected, favorites, filter, favoritesOnly, order, query,
+                    visible, selected, favorites, filter, favoritesOnly, order, query, bedrock,
                     onQuery = { query = it }, onFilter = { filter = it },
                     onFavoritesFilter = { favoritesOnly = !favoritesOnly },
                     onOrder = { order = if (order == LibraryOrder.RECENT) LibraryOrder.NAME else LibraryOrder.RECENT },
                     onSelect = { selectedId = it.id },
                     onNew = { showNew = true },
-                    onPlay = { selected?.let(::prepare) },
+                    onPlay = { selected?.let(::launchInstance) },
                     onWorkshop = { page = HubPage.WORKSHOP },
                     onEdit = { editingId = selected?.id },
                     onFavorite = {
@@ -269,7 +282,7 @@ fun HubScreen(
     if (showNew) InstanceEditor(onDismiss = { showNew = false }) { title, engine, gameVersion, loader ->
         val item = GameInstance(title = title, engine = engine, version = gameVersion, loader = loader)
         if (saveCatalog(listOf(item) + instances)) {
-            if (item.engine.canLaunch && item.version in supportedVersions) downloads.game(item)
+            if (item.engine == EngineType.JAVA && item.version in supportedVersions) downloads.game(item)
             selectedId = item.id
             filter = null
             query = ""
@@ -287,7 +300,7 @@ fun HubScreen(
         ) { title, _, _, loader ->
             val edited = item.copy(title = title, loader = loader)
             if (saveCatalog(instances.map { if (it.id == item.id) edited else it })) {
-                if (edited.engine.canLaunch && edited.version in supportedVersions && edited.loader != item.loader) downloads.game(edited)
+                if (edited.engine == EngineType.JAVA && edited.version in supportedVersions && edited.loader != item.loader) downloads.game(edited)
                 editingId = null
                 query = ""
             }

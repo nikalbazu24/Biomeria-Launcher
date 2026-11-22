@@ -18,6 +18,7 @@ import androidx.work.WorkQuery
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.prissma.launcher.R
+import com.prissma.launcher.data.EngineType
 import com.prissma.launcher.data.GameInstance
 import com.prissma.launcher.data.InstanceStorage
 import com.prissma.launcher.data.ModrinthRepository
@@ -149,7 +150,7 @@ class GameDownloadWorker(context: Context, parameters: WorkerParameters) : Corou
                         project, id, category, version, configuredLoader, inputData.getString("pins").orEmpty(),
                         validateInstance = {
                             val instance = storage.loadInstances().firstOrNull { it.id == id }
-                            check(instance != null && instance.engine.canLaunch && instance.version == version &&
+                            check(instance != null && instance.engine == EngineType.JAVA && instance.version == version &&
                                 instance.configuredModLoader == configuredLoader) {
                                 "La instancia cambió. Revisa qué mods son compatibles en el Taller."
                             }

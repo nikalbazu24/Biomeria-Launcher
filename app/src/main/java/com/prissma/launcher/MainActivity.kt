@@ -7,8 +7,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import com.prissma.launcher.engine.bedrock.BedrockInstallation
+import com.prissma.launcher.engine.bedrock.BedrockLauncher
 import com.prissma.launcher.engine.java.GameDownloads
 import com.prissma.launcher.data.InstanceStorage
 import com.prissma.launcher.data.OPEN_UPDATE_SETTINGS
@@ -19,6 +21,8 @@ import com.prissma.launcher.ui.theme.PrissmaTheme
 
 class MainActivity : ComponentActivity() {
 
+    private val bedrockLauncher by lazy { BedrockLauncher(this) }
+    private var bedrock by mutableStateOf<BedrockInstallation?>(null)
     private var updateSettingsRequest by mutableStateOf(0)
     private var externalLaunchInstanceId by mutableStateOf<String?>(null)
     private var sourceFrontendPackage by mutableStateOf<String?>(null)
@@ -26,13 +30,18 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        handleIncomingIntent(intent)
+        if (savedInstanceState == null) {
+            handleIncomingIntent(intent)
+        } else {
+            externalLaunchInstanceId = savedInstanceState.getString("pendingExternalLaunch")
+            sourceFrontendPackage = savedInstanceState.getString("sourceFrontendPackage")
+        }
         UpdateNotifications.schedule(applicationContext)
         GameDownloads(applicationContext).runtime()
 
         setContent {
             PrissmaTheme {
-                var showSplash by remember { mutableStateOf(externalLaunchInstanceId == null) }
+                var showSplash by rememberSaveable { mutableStateOf(externalLaunchInstanceId == null) }
 
                 if (showSplash && externalLaunchInstanceId == null && updateSettingsRequest == 0) {
                     PrissmaSplashScreen(
@@ -40,15 +49,33 @@ class MainActivity : ComponentActivity() {
                     )
                 } else {
                     HubScreen(
+                        bedrock = bedrock,
+                        onOpenBedrock = ::openBedrock,
                         externalLaunchInstanceId = externalLaunchInstanceId,
                         updateSettingsRequest = updateSettingsRequest,
                         sourceFrontendPackage = sourceFrontendPackage,
-                        onConsumeExternalLaunch = { externalLaunchInstanceId = null }
+                        onConsumeExternalLaunch = {
+                            showSplash = false
+                            externalLaunchInstanceId = null
+                        }
                     )
                 }
             }
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+        bedrock = bedrockLauncher.detect()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString("pendingExternalLaunch", externalLaunchInstanceId)
+        outState.putString("sourceFrontendPackage", sourceFrontendPackage)
+    }
+
+    private fun openBedrock(): String? = bedrockLauncher.open()?.also { bedrock = bedrockLauncher.detect() }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)

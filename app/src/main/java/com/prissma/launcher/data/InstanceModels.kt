@@ -4,12 +4,11 @@ import java.util.UUID
 
 enum class EngineType(
     val displayName: String,
-    val defaultLoader: String,
-    val canLaunch: Boolean = false
+    val defaultLoader: String
 ) {
-    JAVA("Java", "Vanilla", canLaunch = true),
+    JAVA("Java", "Vanilla"),
     RUST("Rust", "Starling Native"),
-    BEDROCK("Bedrock", "MCPE 26.x")
+    BEDROCK("Bedrock", "Minecraft Android")
 }
 
 data class GameInstance(

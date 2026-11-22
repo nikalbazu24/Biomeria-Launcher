@@ -31,7 +31,11 @@ internal fun InstanceEditor(
     var version by rememberSaveable(instance?.id) { mutableStateOf(instance?.version ?: DEFAULT_GAME_VERSION) }
     var loader by rememberSaveable(instance?.id) { mutableStateOf(instance?.loader ?: "Vanilla") }
     var showVersions by rememberSaveable { mutableStateOf(false) }
-    val validVersion = if (engine.canLaunch) validCatalogVersion(version) else version.trim().matches(Regex("[A-Za-z0-9._+-]{1,64}"))
+    val validVersion = when (engine) {
+        EngineType.JAVA -> validCatalogVersion(version)
+        EngineType.BEDROCK -> true
+        EngineType.RUST -> version.trim().matches(Regex("[A-Za-z0-9._+-]{1,64}"))
+    }
     val playable = version in supportedVersions
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -48,24 +52,30 @@ internal fun InstanceEditor(
                                 modifier = Modifier.gamepadClick(onClick = select))
                         }
                     }
-                    if (!engine.canLaunch) {
-                        Text("Puedes organizar y exportar esta instancia. Su motor está en preparación.",
+                    when (engine) {
+                        EngineType.JAVA -> {
+                            Text("Versión de Minecraft", style = MaterialTheme.typography.titleSmall)
+                            LauncherButton(version + " · Cambiar", { showVersions = true })
+                            if (!playable) Text("Puedes guardar la instancia. Esta versión requiere otro runtime o renderizador.",
+                                color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
+                        }
+                        EngineType.BEDROCK -> Text("La tarjeta abre la versión de Minecraft instalada en Android.",
                             color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
+                        EngineType.RUST -> {
+                            Text("Puedes organizar y exportar esta instancia. Su motor está en preparación.",
+                                color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
+                            OutlinedTextField(version, { version = it.take(64) }, modifier = Modifier.fillMaxWidth(),
+                                label = { Text("Versión del juego") }, singleLine = true)
+                        }
                     }
-                    if (engine.canLaunch) {
-                        Text("Versión de Minecraft", style = MaterialTheme.typography.titleSmall)
-                        LauncherButton(version + " · Cambiar", { showVersions = true })
-                        if (!playable) Text("Puedes guardar la instancia. Esta versión requiere otro runtime o renderizador.",
-                            color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
-                    } else OutlinedTextField(version, { version = it.take(64) }, modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Versión del juego") }, singleLine = true)
                 } else {
-                    Text(instance.engine.displayName + " · " + instance.version, color = Prissma.colors.textMuted)
+                    Text(if (instance.engine == EngineType.BEDROCK) "Bedrock · Versión instalada en Android"
+                        else "${instance.engine.displayName} · ${instance.version}", color = Prissma.colors.textMuted)
                     if (onRemove != null) TextButton(onClick = onRemove) {
                         Text("Quitar de la biblioteca", color = Prissma.colors.error)
                     }
                 }
-                if (engine.canLaunch && playable) {
+                if (engine == EngineType.JAVA && playable) {
                     Text("Cargador", style = MaterialTheme.typography.titleSmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                         val loaders = if (supportsFabric(version)) listOf("Vanilla", "Fabric") else listOf("Vanilla")
@@ -82,7 +92,11 @@ internal fun InstanceEditor(
         },
         confirmButton = {
             LauncherButton(if (instance == null) "Crear" else "Guardar",
-                { onSave(name.trim(), engine, version.trim(), if (engine.canLaunch && playable) loader else engine.defaultLoader) },
+                {
+                    val savedVersion = if (engine == EngineType.BEDROCK) instance?.version ?: "Instalada" else version.trim()
+                    val savedLoader = if (engine == EngineType.JAVA && playable) loader else engine.defaultLoader
+                    onSave(name.trim(), engine, savedVersion, savedLoader)
+                },
                 enabled = name.isNotBlank() && (instance != null || validVersion), primary = true)
         },
         dismissButton = { LauncherButton("Cancelar", onDismiss) }
