@@ -11,6 +11,9 @@ import java.util.concurrent.atomic.AtomicLong
 internal const val DUAL_SNAPSHOT_MAGIC = 0x50525336
 internal const val DUAL_MAP_SIZE = 128
 internal const val DUAL_SCREEN_MOD = "DUAL_SCREEN_MOD"
+private const val SNAPSHOT_MAX_AGE_MS = 1800L
+private const val SNAPSHOT_CLOCK_TOLERANCE_MS = 150L
+private const val SNAPSHOT_GAP_GRACE_MS = 400L
 
 internal fun supportsDualInventory(version: String, loader: String?) = version == "1.21.4" && loader == "fabric"
 
@@ -71,6 +74,23 @@ internal data class PanelInventory(
     val furnace: PanelFurnace?
 )
 
+internal data class PanelSnapshot(val inventory: PanelInventory?)
+
+internal class PanelSnapshotHistory {
+    private var lastInventory: PanelInventory? = null
+    private var lastRead = 0L
+
+    fun update(snapshot: PanelSnapshot?, elapsedMillis: Long): PanelInventory? {
+        if (snapshot != null) {
+            lastInventory = snapshot.inventory
+            lastRead = elapsedMillis
+        } else if (elapsedMillis - lastRead >= SNAPSHOT_GAP_GRACE_MS) {
+            lastInventory = null
+        }
+        return lastInventory
+    }
+}
+
 internal enum class PanelCommand(val wireName: String) {
     PICK("pick"), SPLIT("split"), QUICK_MOVE("quick"), SELECT_HOTBAR("hotbar"),
     CLOSE_MENU("close"), INSPECT_RECIPE("inspect"), PLACE_RECIPE("recipe")
@@ -79,11 +99,18 @@ internal enum class PanelCommand(val wireName: String) {
 internal class DualScreenBridge(val directory: File, val terrainDirectory: File? = null) {
     private val sequence = AtomicLong()
 
-    fun readInventory(nowMillis: Long = System.currentTimeMillis()): PanelInventory? {
+    fun readInventory(nowMillis: Long? = null): PanelInventory? = readSnapshot(nowMillis)?.inventory
+
+    /** Null is an unavailable read. A valid snapshot with empty inventory means the world closed. */
+    fun readSnapshot(nowMillis: Long? = null): PanelSnapshot? {
         val file = File(directory, "snapshot")
-        if (!file.isFile || nowMillis - file.lastModified() !in 0L..1800L || file.length() > 65_536L) return null
+        val stamp = file.lastModified()
+        val age = (nowMillis ?: System.currentTimeMillis()) - stamp
+        if (stamp == 0L || age !in -SNAPSHOT_CLOCK_TOLERANCE_MS..SNAPSHOT_MAX_AGE_MS || file.length() !in 13L..65_536L) {
+            return null
+        }
         return try {
-            DataInputStream(file.inputStream().buffered()).use(::decodePanelInventory)
+            DataInputStream(file.inputStream().buffered()).use(::decodePanelSnapshot)
         } catch (error: IOException) {
             null
         }
@@ -123,6 +150,8 @@ internal class DualScreenBridge(val directory: File, val terrainDirectory: File?
 
     fun routeMenu(generation: Long?) = setGenerationMarker("routed-menu", generation)
 
+    fun prepareMenus(mask: Int) = setGenerationMarker("menu-policy", mask.toLong().takeIf { it != 0L })
+
     fun viewRecipes(generation: Long?) = setGenerationMarker("recipes-open", generation)
 
     fun collectTerrain(tiles: Boolean, position: Boolean) {
@@ -158,6 +187,7 @@ internal class DualScreenBridge(val directory: File, val terrainDirectory: File?
         } else {
             marker.delete()
             routeMenu(null)
+            prepareMenus(0)
             viewRecipes(null)
             directory.listFiles()?.filter { it.name.startsWith("command-") }?.forEach { it.delete() }
         }
@@ -169,10 +199,11 @@ internal class DualScreenBridge(val directory: File, val terrainDirectory: File?
     }
 }
 
-internal fun decodePanelInventory(input: DataInputStream): PanelInventory? {
+private fun decodePanelSnapshot(input: DataInputStream): PanelSnapshot? {
     if (input.readInt() != DUAL_SNAPSHOT_MAGIC) return null
     val generation = input.readLong()
-    if (!input.readBoolean() || generation <= 0L) return null
+    if (!input.readBoolean()) return if (generation >= 0L && input.read() == -1) PanelSnapshot(null) else null
+    if (generation <= 0L) return null
     val interactive = input.readBoolean()
     val layout = PanelLayout.entries.getOrNull(input.readUnsignedByte()) ?: return null
     val selected = input.readInt()
@@ -203,6 +234,7 @@ internal fun decodePanelInventory(input: DataInputStream): PanelInventory? {
         if (!cook.isFinite() || !fuel.isFinite()) return null
         PanelFurnace(cook.coerceIn(0f, 1f), fuel.coerceIn(0f, 1f), input.readBoolean())
     } else null
-    return PanelInventory(generation, interactive, layout, selected, kotlin.math.floor(x).toInt(), kotlin.math.floor(y).toInt(),
-        kotlin.math.floor(z).toInt(), held, slots, mapRevision, recipeBookAvailable, menuTitle, furnace)
+    return PanelSnapshot(PanelInventory(generation, interactive, layout, selected,
+        kotlin.math.floor(x).toInt(), kotlin.math.floor(y).toInt(), kotlin.math.floor(z).toInt(),
+        held, slots, mapRevision, recipeBookAvailable, menuTitle, furnace))
 }

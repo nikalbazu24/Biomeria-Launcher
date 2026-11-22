@@ -12,6 +12,6 @@ abstract class RoutedScreenMixin {
     @Inject(method = "method_47413(Lnet/minecraft/class_332;IIF)V", at = @At("HEAD"),
             cancellable = true, remap = false, require = 0)
     private void prissma$renderRoutedMenu(@Coerce Object draw, int x, int y, float delta, CallbackInfo callback) {
-        if (GamePanelBridge.renderRoutedScreen(this, draw, delta)) callback.cancel();
+        if (GamePanelBridge.hidesRoutedScreen(this)) callback.cancel();
     }
 }

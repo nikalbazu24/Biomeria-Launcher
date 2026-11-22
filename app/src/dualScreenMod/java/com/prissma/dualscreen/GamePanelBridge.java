@@ -20,6 +20,7 @@ public final class GamePanelBridge {
     private static final String SESSION = System.getProperty("prissma.dualscreen.session", "");
     private static final String TERRAIN = System.getProperty("prissma.map.directory", "");
     private static final int SNAPSHOT_TICKS = 4;
+    private static final long MENU_OPEN_GRACE_NS = 550_000_000L;
     private static Access game;
     private static boolean disabled;
     private static int ticks;
@@ -31,6 +32,9 @@ public final class GamePanelBridge {
     private static Object clientInstance;
     private static Object routedScreen;
     private static Layout routedLayout = Layout.PERSONAL;
+    private static Object openingScreen;
+    private static long openingDeadline;
+    private static int preparedMenus;
     private static TerrainMap terrain;
     private static boolean terrainFailed;
     private static RecipeBookPanel recipeBook;
@@ -60,7 +64,11 @@ public final class GamePanelBridge {
                 (mapVisible || Files.isRegularFile(root.resolve("terrain-position")));
         if (!panelVisible) {
             clearRoute();
+            preparedMenus = 0;
+            openingDeadline = 0;
             if (!trackPosition && !shareRequested) return;
+        } else {
+            preparedMenus = readMenuPolicy(root.resolve("menu-policy"));
         }
         try {
             if (game == null) {
@@ -85,13 +93,21 @@ public final class GamePanelBridge {
                 }
                 writeAtomically(root.resolve("lan-result"), Integer.toString(port).getBytes(StandardCharsets.US_ASCII));
             }
-            if (trackPosition && ticks % SNAPSHOT_TICKS == 0) updateTerrain(root, client, world, player, mapVisible);
-            if (!panelVisible) return;
+            boolean snapshotTick = ticks % SNAPSHOT_TICKS == 0;
+            if (!panelVisible) {
+                if (trackPosition && snapshotTick) updateTerrain(root, client, world, player, mapVisible);
+                return;
+            }
             Object screen = game.currentScreen.get(client);
+            if (screen == null) {
+                openingScreen = null;
+                openingDeadline = 0;
+            }
             Object personal = player == null ? null : game.playerHandler.get(player);
             Object active = player == null ? null : game.currentHandler.get(player);
             Layout layout = game.layout(screen, active);
             Object handler = layout == Layout.PERSONAL ? personal : active;
+            long before = generation;
             if (world != previousWorld || player != previousPlayer) {
                 previousWorld = world;
                 previousPlayer = player;
@@ -119,7 +135,7 @@ public final class GamePanelBridge {
                 clearRoute();
                 return;
             }
-            if (ticks % SNAPSHOT_TICKS == 0) {
+            if (snapshotTick || generation != before) {
                 if (recipeBook != null && routedLayout == Layout.CRAFTING_TABLE && hasGenerationMarker(root.resolve("recipes-open"))) {
                     try {
                         recipeBook.publish(root.resolve("recipes"), generation, player, world, handler);
@@ -129,6 +145,7 @@ public final class GamePanelBridge {
                 }
                 publishSnapshot(root, player, world, handler, canUse, layout, screen);
             }
+            if (trackPosition && snapshotTick) updateTerrain(root, client, world, player, mapVisible);
         } catch (ReflectiveOperationException | LinkageError error) {
             disabled = true;
             clearRoute();
@@ -138,19 +155,32 @@ public final class GamePanelBridge {
         }
     }
 
-    private static void updateTerrain(Path root, Object client, Object world, Object player, boolean mapVisible) throws IOException {
-        if (world == null || player == null) {
-            Files.deleteIfExists(root.resolve("terrain-state"));
-            return;
-        }
+    private static void updateTerrain(Path root, Object client, Object world, Object player, boolean mapVisible) {
         try {
+            if (world == null || player == null) {
+                Files.deleteIfExists(root.resolve("terrain-state"));
+                return;
+            }
             if (terrain == null) terrain = new TerrainMap(client.getClass().getClassLoader(), Path.of(TERRAIN));
             terrain.update(root, client, world, player, (double) game.x.invoke(player),
                     (double) game.y.invoke(player), (double) game.z.invoke(player), ticks, mapVisible);
         } catch (ReflectiveOperationException | RuntimeException | LinkageError error) {
             terrainFailed = true;
             System.err.println("[PRISSMA] Mapa de terreno no disponible: " + error);
+        } catch (IOException ignored) {
+            // A tile write failure must not interrupt the container handoff.
         }
+    }
+
+    private static int readMenuPolicy(Path marker) {
+        try {
+            if (Files.isRegularFile(marker) && Files.size(marker) <= 2) {
+                return Integer.parseInt(Files.readString(marker, StandardCharsets.US_ASCII));
+            }
+        } catch (IOException | NumberFormatException ignored) {
+            // Keep Minecraft's regular screen if the lower display is unavailable.
+        }
+        return 0;
     }
 
     private static boolean hasGenerationMarker(Path marker) {
@@ -172,14 +202,41 @@ public final class GamePanelBridge {
         routedLayout = Layout.PERSONAL;
     }
 
-    public static boolean renderRoutedScreen(Object screen, Object draw, float delta) {
-        return routedScreen == screen;
+    public static boolean hidesRoutedScreen(Object screen) {
+        if (screen == null || disabled) return false;
+        if (routedScreen == screen) {
+            openingScreen = screen;
+            openingDeadline = 0;
+            return true;
+        }
+        if (openingScreen != screen) {
+            openingScreen = screen;
+            openingDeadline = 0;
+            if (preparedMenus != 0 && isPreparedContainer(screen)) {
+                // Avoid drawing the vanilla menu while Android presents its first frame.
+                openingDeadline = System.nanoTime() + MENU_OPEN_GRACE_NS;
+            }
+        }
+        return preparedMenus != 0 && openingDeadline != 0 && System.nanoTime() - openingDeadline < 0;
+    }
+
+    private static boolean isPreparedContainer(Object screen) {
+        try {
+            if (screen != game.currentScreen.get(clientInstance)) return false;
+            Object player = game.player.get(clientInstance);
+            if (player == null || game.world.get(clientInstance) == null ||
+                    game.interactions.get(clientInstance) == null || (boolean) game.spectator.invoke(player)) return false;
+            Layout layout = game.layout(screen, game.currentHandler.get(player));
+            return layout != Layout.PERSONAL && (preparedMenus & (1 << layout.ordinal())) != 0;
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return false;
+        }
     }
 
     public static boolean blocksRoutedMouse() {
-        if (routedScreen == null) return false;
+        if (game == null || (routedScreen == null && preparedMenus == 0)) return false;
         try {
-            return routedScreen == game.currentScreen.get(clientInstance);
+            return hidesRoutedScreen(game.currentScreen.get(clientInstance));
         } catch (IllegalAccessException ignored) {
             return false;
         }

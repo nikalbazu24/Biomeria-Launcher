@@ -44,6 +44,47 @@ class DualScreenBridgeTest {
     }
 
     @Test
+    fun acceptsAnAtomicReplacementThatArrivesJustAfterTheReadersClockSample() {
+        val bridge = DualScreenBridge.create(temporary.root)
+        val stamp = writeSnapshot(bridge.directory, layout = PanelLayout.CRAFTING_TABLE)
+        assertEquals(PanelLayout.CRAFTING_TABLE, bridge.readInventory(stamp - 10)?.layout)
+        assertNull(bridge.readInventory(stamp - 151))
+    }
+
+    @Test
+    fun aBriefReadGapKeepsTheTableButDropsCommandsUntilAFreshSnapshotArrives() {
+        val bridge = DualScreenBridge.create(temporary.root)
+        val history = PanelSnapshotHistory()
+        bridge.visibility(true)
+        bridge.routeMenu(7)
+        val stamp = writeSnapshot(bridge.directory, layout = PanelLayout.CRAFTING_TABLE)
+        val table = requireNotNull(history.update(bridge.readSnapshot(stamp), 1000L))
+
+        val malformed = writeSnapshot(bridge.directory, layout = PanelLayout.CRAFTING_TABLE, selectedSlot = 9)
+        assertSame(table, history.update(bridge.readSnapshot(malformed), 1120L))
+        assertSame(table, history.update(null, 1360L))
+        assertFalse(bridge.send(table, PanelCommand.PICK, 1))
+        assertNull(history.update(null, 1400L))
+
+        val fresh = writeSnapshot(bridge.directory, layout = PanelLayout.CRAFTING_TABLE)
+        assertEquals(table, history.update(bridge.readSnapshot(fresh), 1450L))
+        val closed = writeSnapshot(bridge.directory, ready = false, generation = 8)
+        assertNotNull(bridge.readSnapshot(closed))
+        assertNull(history.update(bridge.readSnapshot(closed), 1460L))
+    }
+
+    @Test
+    fun closingTheLowerDisplayRemovesTheOpeningPolicy() {
+        val bridge = DualScreenBridge.create(temporary.root)
+        val policy = File(bridge.directory, "menu-policy")
+        bridge.visibility(true)
+        bridge.prepareMenus(1 shl PanelLayout.CRAFTING_TABLE.ordinal)
+        assertEquals("2", policy.readText())
+        bridge.visibility(false)
+        assertFalse(policy.exists())
+    }
+
+    @Test
     fun recipeCommandsRequireTheLiveCraftingTableAndAnEmptyCursorForPlacement() {
         val bridge = DualScreenBridge.create(temporary.root)
         bridge.visibility(true)
@@ -210,6 +251,7 @@ class DualScreenBridgeTest {
             out.writeInt(magic)
             out.writeLong(generation)
             out.writeBoolean(ready)
+            if (!ready) return@use
             out.writeBoolean(interactive)
             out.writeByte(layout.ordinal)
             out.writeInt(selectedSlot)

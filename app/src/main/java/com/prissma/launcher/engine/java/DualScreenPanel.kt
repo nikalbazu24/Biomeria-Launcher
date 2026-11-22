@@ -6,6 +6,7 @@ import android.hardware.display.DisplayManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.WindowManager
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -155,11 +156,17 @@ private fun DualScreenPanel(
 
     LaunchedEffect(bridge) {
         if (bridge == null) return@LaunchedEffect
+        val history = PanelSnapshotHistory()
         while (true) {
-            inventory = withContext(Dispatchers.IO) { bridge.readInventory() }
+            val snapshot = withContext(Dispatchers.IO) { bridge.readSnapshot() }
+            inventory = history.update(snapshot, SystemClock.elapsedRealtime())
             delay(120L)
         }
     }
+    val menuPolicy = if (!allowMenus) 0 else PanelLayout.entries
+        .filter { it.menuPage != null && hud.routes(it) }
+        .fold(0) { mask, layout -> mask or (1 shl layout.ordinal) }
+    LaunchedEffect(bridge, menuPolicy) { bridge?.prepareMenus(menuPolicy) }
 
     val live = inventory
     val table = live?.layout == PanelLayout.CRAFTING_TABLE
@@ -183,10 +190,7 @@ private fun DualScreenPanel(
         }
     }
     val routed = menuSession?.takeIf { page == menuPage && allowMenus && live?.interactive == true }
-    DisposableEffect(bridge, routed) {
-        bridge?.routeMenu(routed)
-        onDispose { if (routed != null) bridge?.routeMenu(null) }
-    }
+    LaunchedEffect(bridge, routed) { bridge?.routeMenu(routed) }
 
     val revision = live?.mapRevision ?: -1
     LaunchedEffect(bridge, page, hud.panelMap, revision) {
