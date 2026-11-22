@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "prissma_dual_screen",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "name": "PRISSMA Dual Screen",
   "environment": "client",
   "mixins": ["prissma-dual-screen.mixins.json"],

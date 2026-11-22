@@ -3,6 +3,6 @@
   "package": "com.prissma.dualscreen.mixin",
   "minVersion": "0.8",
   "compatibilityLevel": "JAVA_17",
-  "client": ["MinecraftClientMixin", "RoutedScreenMixin", "RoutedMouseMixin", "XaeroWorldRenderMixin"],
+  "client": ["MinecraftClientMixin", "RoutedScreenMixin", "RoutedMouseMixin"],
   "injectors": { "defaultRequire": 0 }
 }

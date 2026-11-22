@@ -85,7 +85,7 @@ internal fun decodeRecipeBook(input: DataInputStream, generation: Long, modified
 private val recipeAccents = Regex("\\p{M}+")
 private val recipeSpaces = Regex("\\s+")
 
-private fun recipeSearchText(value: String): String =
+internal fun panelSearchText(value: String): String =
     recipeAccents.replace(Normalizer.normalize(value, Normalizer.Form.NFD), "").lowercase(Locale.ROOT)
 
 internal fun filterPanelRecipes(
@@ -93,9 +93,9 @@ internal fun filterPanelRecipes(
     query: String,
     onlyCraftable: Boolean
 ): List<PanelRecipe> {
-    val words = recipeSearchText(query).trim().split(recipeSpaces).filter(String::isNotEmpty)
+    val words = panelSearchText(query).trim().split(recipeSpaces).filter(String::isNotEmpty)
     return recipes.filter { recipe ->
         (!onlyCraftable || recipe.state == PanelRecipeState.READY) &&
-            (words.isEmpty() || recipeSearchText(recipe.name).let { name -> words.all(name::contains) })
+            (words.isEmpty() || panelSearchText(recipe.name).let { name -> words.all(name::contains) })
     }
 }

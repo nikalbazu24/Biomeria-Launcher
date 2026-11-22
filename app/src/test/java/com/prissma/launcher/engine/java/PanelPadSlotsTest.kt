@@ -5,6 +5,20 @@ import org.junit.Test
 
 class PanelPadSlotsTest {
     @Test
+    fun inventorySearchKeepsSlotNumbersAndSkipsEmptyOrUnmatchedSlots() {
+        val rows = panelPadRows(PanelLayout.DOUBLE_CHEST, PanelPage.STORAGE)
+        val items = MutableList(90) { PanelStack("", 0) }.apply {
+            this[4] = PanelStack("Tablón de abeto", 19)
+            this[53] = PanelStack("Tablón de roble", 4)
+            this[88] = PanelStack("Roble, tablón", 6)
+        }
+        val matches = filterPanelSlotRows(rows, items, "ROBLE tablon")
+        assertEquals(listOf(53, 88), matches.flatten().map { it.number })
+        assertEquals(PanelPadSlot(88), movePanelPadSlot(matches, PanelPadSlot(53), PanelPadAction.DOWN))
+        assertTrue(filterPanelSlotRows(rows, items, "Diamante").isEmpty())
+    }
+
+    @Test
     fun aDoubleChestReachesTheLastStorageSlotAndContinuesToPlayerInventory() {
         val rows = panelPadRows(PanelLayout.DOUBLE_CHEST, PanelPage.STORAGE)
         assertEquals((0 until 90).toList(), rows.flatten().map { it.number })

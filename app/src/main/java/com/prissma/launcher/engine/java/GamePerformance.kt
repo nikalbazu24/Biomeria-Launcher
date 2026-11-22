@@ -1,6 +1,12 @@
 package com.prissma.launcher.engine.java
 
 internal const val DEFAULT_JAVA_HEAP_MB = 1536
+internal val javaFpsLimits = listOf(0, 30, 45, 60, 90, 120)
+internal fun normalizeFpsLimit(value: Int): Int = value.takeIf { it in javaFpsLimits } ?: 0
+internal fun javaFrameLimit(limit: Int, saver: Boolean, foreground: Boolean): Int {
+    val chosen = normalizeFpsLimit(limit)
+    return if (saver && !foreground) minOf(if (chosen == 0) 15 else chosen, 15) else chosen
+}
 private val javaHeapSizes = listOf(768, 1024, 1536, 2048, 3072, 4096, 6144, 8192)
 
 internal enum class RenderScale(val percent: Int) {

@@ -5,6 +5,15 @@ import org.junit.Test
 
 class GamePerformanceTest {
     @Test
+    fun backgroundLimitRestoresThePreferredForegroundCap() {
+        assertEquals(15, javaFrameLimit(0, saver = true, foreground = false))
+        assertEquals(15, javaFrameLimit(60, saver = true, foreground = false))
+        assertEquals(60, javaFrameLimit(60, saver = true, foreground = true))
+        assertEquals(90, javaFrameLimit(90, saver = false, foreground = false))
+        assertEquals(0, javaFrameLimit(-5, saver = false, foreground = true))
+    }
+
+    @Test
     fun resolutionScaleUsesRealBufferDimensions() {
         assertEquals(1920, RenderScale.FULL.pixels(1920))
         assertEquals(1440, RenderScale.REDUCED.pixels(1920))

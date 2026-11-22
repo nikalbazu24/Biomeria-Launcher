@@ -12,6 +12,7 @@ __attribute__((visibility("default"))) void prissmaGlfwInput(int kind, int code,
 __attribute__((visibility("default"))) int prissmaGlfwCursorCaptured(void);
 __attribute__((visibility("default"))) int prissmaGlfwHasPresentedFrame(void);
 __attribute__((visibility("default"))) unsigned int prissmaGlfwPresentedFrames(void);
+__attribute__((visibility("default"))) void prissmaGlfwSetFrameLimit(int fps);
 
 #ifdef __cplusplus
 }

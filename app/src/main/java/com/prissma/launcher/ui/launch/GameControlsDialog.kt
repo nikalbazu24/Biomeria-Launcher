@@ -15,6 +15,7 @@ import com.prissma.launcher.engine.java.PanelMapSource
 import com.prissma.launcher.engine.java.PanelPage
 import com.prissma.launcher.engine.java.defaultGamepadActions
 import com.prissma.launcher.engine.java.remappableGamepadButtons
+import com.prissma.launcher.engine.java.javaFpsLimits
 import com.prissma.launcher.ui.components.LauncherButton
 
 @Composable
@@ -73,7 +74,6 @@ internal fun PanelPreferenceControls(settings: GameHudSettings, onChange: (GameH
         PanelSwitch("Mesa de crafteo abajo", settings.routeCrafting) { onChange(settings.copy(routeCrafting = it)) }
         PanelSwitch("Cofres abajo", settings.routeChests) { onChange(settings.copy(routeChests = it)) }
         PanelSwitch("Hornos abajo", settings.routeFurnaces) { onChange(settings.copy(routeFurnaces = it)) }
-        PanelSwitch("Mapa de Xaero abajo", settings.routeXaeroMap) { onChange(settings.copy(routeXaeroMap = it)) }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Ranuras compactas", Modifier.weight(1f))
             Switch(settings.compactPanel, { onChange(settings.copy(compactPanel = it)) })
@@ -114,6 +114,28 @@ internal fun GameHudControls(settings: GameHudSettings, onChange: (GameHudSettin
             Text("Contador de FPS", Modifier.weight(1f))
             Switch(settings.showFps, { onChange(settings.copy(showFps = it)) })
         }
+        PanelSwitch("Minimapa en el juego (Fabric 1.21.4)", settings.showMinimap) {
+            onChange(settings.copy(showMinimap = it))
+        }
+        PanelSwitch("Coordenadas (Fabric 1.21.4)", settings.showCoordinates) { onChange(settings.copy(showCoordinates = it)) }
+        PanelSwitch("Nivel de batería", settings.showBattery) { onChange(settings.copy(showBattery = it)) }
+        if (settings.dualScreen) {
+            PanelSwitch("Indicadores en la pantalla inferior", settings.widgetsBelow) { onChange(settings.copy(widgetsBelow = it)) }
+        }
+        if (settings.showFps || settings.showCoordinates || settings.showBattery) {
+            Text("Tamaño de indicadores", style = MaterialTheme.typography.bodySmall)
+            Slider(settings.widgetScale, { onChange(settings.copy(widgetScale = it)) }, valueRange = .75f..1.5f, steps = 5)
+            Text("Opacidad de indicadores", style = MaterialTheme.typography.bodySmall)
+            Slider(settings.widgetOpacity, { onChange(settings.copy(widgetOpacity = it)) }, valueRange = .25f..1f, steps = 5)
+        }
+        Text("Límite de FPS", style = MaterialTheme.typography.bodySmall)
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            javaFpsLimits.forEach { fps ->
+                FilterChip(settings.fpsLimit == fps, { onChange(settings.copy(fpsLimit = fps)) },
+                    label = { Text(if (fps == 0) "Del juego" else fps.toString()) })
+            }
+        }
+        PanelSwitch("Limitar a 15 FPS en segundo plano", settings.batterySaver) { onChange(settings.copy(batterySaver = it)) }
         Text("Opacidad de pausa · " + (settings.pauseOpacity * 100).toInt() + " %", style = MaterialTheme.typography.bodySmall)
         Slider(settings.pauseOpacity, { onChange(settings.copy(pauseOpacity = it)) }, valueRange = .15f..1f, steps = 16)
     }

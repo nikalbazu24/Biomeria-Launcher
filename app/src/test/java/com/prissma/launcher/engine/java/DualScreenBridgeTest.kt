@@ -84,7 +84,6 @@ class DualScreenBridgeTest {
         assertEquals(37, table.layout.hotbarStart)
         assertFalse(bridge.send(personal, PanelCommand.PICK, 9))
         assertFalse(bridge.send(table, PanelCommand.SELECT_HOTBAR, 0))
-        assertFalse(bridge.send(table, PanelCommand.OPEN_XAERO))
         assertFalse(bridge.send(table, PanelCommand.PICK, 9))
 
         bridge.routeMenu(table.generation)
@@ -139,49 +138,13 @@ class DualScreenBridgeTest {
     }
 
     @Test
-    fun xaeroGesturesRequireARoutedSupportedMapAndBoundedArguments() {
-        val bridge = DualScreenBridge.create(temporary.root)
-        bridge.visibility(true)
-        bridge.routeMenu(7)
-        val unsupported = requireNotNull(bridge.readInventory(writeSnapshot(bridge.directory, layout = PanelLayout.XAERO)))
-        assertFalse(bridge.send(unsupported, PanelCommand.MAP_ZOOM, 1))
-        val map = requireNotNull(bridge.readInventory(writeSnapshot(
-            bridge.directory, layout = PanelLayout.XAERO, xaeroLowerAvailable = true
-        )))
-        assertTrue(map.slots.isEmpty())
-        assertTrue(bridge.send(map, PanelCommand.MAP_DOWN, 0x00ffffff))
-        assertTrue(bridge.send(map, PanelCommand.MAP_ZOOM, -1))
-        assertFalse(bridge.send(map, PanelCommand.MAP_MOVE, 0x01000000))
-        assertFalse(bridge.send(map, PanelCommand.MAP_ZOOM, 2))
-        assertFalse(bridge.send(map, PanelCommand.PICK, 0))
-    }
-
-    @Test
-    fun xaeroMapRequiresSupportedModAndReadsBoundedWaypointList() {
-        val bridge = DualScreenBridge.create(temporary.root)
-        bridge.visibility(true)
-        val withoutMods = requireNotNull(bridge.readInventory(writeSnapshot(bridge.directory)))
-        assertFalse(bridge.send(withoutMods, PanelCommand.OPEN_XAERO))
-
-        val mark = PanelWaypoint("Base", -20, 69, 12)
-        val withMods = requireNotNull(bridge.readInventory(writeSnapshot(
-            bridge.directory, xaeroWorldMap = true, xaeroMinimap = true, waypoints = listOf(mark)
-        )))
-        assertTrue(withMods.xaeroWorldMap)
-        assertEquals(listOf(mark), withMods.waypoints)
-        assertTrue(bridge.send(withMods, PanelCommand.OPEN_XAERO))
-        assertNull(bridge.readInventory(writeSnapshot(bridge.directory, waypoints = listOf(mark))))
-        assertNull(bridge.readInventory(writeSnapshot(bridge.directory, xaeroMinimap = true, waypoints = List(25) { mark })))
-    }
-
-    @Test
     fun preferencesKeepLegacyDefaultsAndRecoverInvalidValues() {
         assertEquals(PanelPage.CRAFT, PanelPage.fromPreference("CRAFT"))
         assertEquals(PanelPage.INVENTORY, PanelPage.fromPreference("OPTIONS"))
         assertEquals(PanelPage.INVENTORY, PanelPage.fromPreference("STORAGE"))
         assertEquals(PanelPage.INVENTORY, PanelPage.fromPreference(null))
-        assertEquals(PanelMapSource.XAERO, PanelMapSource.fromPreference("XAERO"))
-        assertEquals(PanelMapSource.MINECRAFT, PanelMapSource.fromPreference("unavailable"))
+        assertEquals(PanelMapSource.PRISSMA, PanelMapSource.fromPreference("XAERO"))
+        assertEquals(PanelMapSource.MINECRAFT, PanelMapSource.fromPreference("MINECRAFT"))
     }
 
     @Test
@@ -237,14 +200,10 @@ class DualScreenBridgeTest {
         selectedSlot: Int = 3,
         magic: Int = DUAL_SNAPSHOT_MAGIC,
         layout: PanelLayout = PanelLayout.PERSONAL,
-        xaeroWorldMap: Boolean = false,
-        xaeroMinimap: Boolean = false,
-        waypoints: List<PanelWaypoint> = emptyList(),
         recipeBookAvailable: Boolean = false,
         heldCount: Int = 8,
         menuTitle: String = "",
         furnace: PanelFurnace = PanelFurnace(0f, 0f, false),
-        xaeroLowerAvailable: Boolean = false
     ): Long {
         val file = File(dir, "snapshot")
         DataOutputStream(file.outputStream()).use { out ->
@@ -264,15 +223,6 @@ class DualScreenBridgeTest {
                 out.writeInt(if (slot == 0) 4 else 0)
             }
             out.writeInt(15)
-            out.writeBoolean(xaeroWorldMap)
-            out.writeBoolean(xaeroMinimap)
-            out.writeByte(waypoints.size)
-            for (mark in waypoints) {
-                out.writeUTF(mark.name)
-                out.writeInt(mark.x)
-                out.writeInt(mark.y)
-                out.writeInt(mark.z)
-            }
             out.writeBoolean(recipeBookAvailable)
             out.writeUTF(menuTitle)
             if (layout == PanelLayout.FURNACE) {
@@ -280,7 +230,6 @@ class DualScreenBridgeTest {
                 out.writeFloat(furnace.fuel)
                 out.writeBoolean(furnace.burning)
             }
-            out.writeBoolean(xaeroLowerAvailable)
         }
         return file.lastModified()
     }

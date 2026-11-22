@@ -2,6 +2,20 @@ package com.prissma.launcher.engine.java
 
 internal data class PanelPadSlot(val number: Int, val selectsHotbar: Boolean = false)
 
+internal fun filterPanelSlotRows(
+    rows: List<List<PanelPadSlot>>, items: List<PanelStack>, query: String
+): List<List<PanelPadSlot>> {
+    val words = panelSearchText(query).trim().split(Regex("\\s+")).filter(String::isNotEmpty)
+    if (words.isEmpty()) return rows
+    return rows.map { row ->
+        row.filter { slot ->
+            val item = items.getOrNull(slot.number)
+            !slot.selectsHotbar && item != null && item.count > 0 &&
+                panelSearchText(item.name).let { name -> words.all(name::contains) }
+        }
+    }.filter { it.isNotEmpty() }
+}
+
 internal fun panelPadRows(layout: PanelLayout?, page: PanelPage): List<List<PanelPadSlot>> {
     if (layout == null) {
         return if (page == PanelPage.INVENTORY) listOf((0..8).map { PanelPadSlot(it, selectsHotbar = true) }) else emptyList()

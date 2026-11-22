@@ -6,6 +6,7 @@
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 enum InputKind { Pointer, RelativePointer, MouseButton, Key, Scroll, ResetInput, Character };
 
@@ -28,6 +29,7 @@ static unsigned int inputCount;
 static PFN_eglSwapBuffers swapBuffersEgl;
 static atomic_int firstFramePresented;
 static atomic_uint presentedFrames;
+static atomic_int frameLimit;
 static atomic_int cursorCaptured;
 static _GLFWwindow* focusedWindow;
 
@@ -83,6 +85,25 @@ int prissmaGlfwCursorCaptured(void)
 
 static EGLBoolean APIENTRY reportSwapBuffers(EGLDisplay display, EGLSurface surface)
 {
+    static _Thread_local long long lastSwap;
+    int fps = atomic_load_explicit(&frameLimit, memory_order_relaxed);
+    if (fps > 0)
+    {
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        long long time = now.tv_sec * 1000000000LL + now.tv_nsec;
+        long long remaining = 1000000000LL / fps - (time - lastSwap);
+        if (remaining > 0)
+        {
+            struct timespec pause = { 0, (long) remaining };
+            nanosleep(&pause, NULL);
+            clock_gettime(CLOCK_MONOTONIC, &now);
+            time = now.tv_sec * 1000000000LL + now.tv_nsec;
+        }
+        lastSwap = time;
+    }
+    else
+        lastSwap = 0;
     const EGLBoolean result = swapBuffersEgl(display, surface);
     if (result)
         atomic_fetch_add_explicit(&presentedFrames, 1, memory_order_relaxed);
@@ -94,6 +115,11 @@ static EGLBoolean APIENTRY reportSwapBuffers(EGLDisplay display, EGLSurface surf
         fflush(stdout);
     }
     return result;
+}
+
+void prissmaGlfwSetFrameLimit(int fps)
+{
+    atomic_store_explicit(&frameLimit, fps >= 15 && fps <= 120 ? fps : 0, memory_order_relaxed);
 }
 
 int prissmaGlfwHasPresentedFrame(void)

@@ -34,18 +34,24 @@ internal data class GameHudSettings(
     val dualScreen: Boolean = false,
     val routeCrafting: Boolean = true,
     val panelHome: PanelPage = PanelPage.INVENTORY,
-    val panelMap: PanelMapSource = PanelMapSource.MINECRAFT,
+    val panelMap: PanelMapSource = PanelMapSource.PRISSMA,
     val compactPanel: Boolean = false,
     val routeChests: Boolean = true,
     val routeFurnaces: Boolean = true,
-    val routeXaeroMap: Boolean = true
+    val showMinimap: Boolean = false,
+    val showCoordinates: Boolean = false,
+    val showBattery: Boolean = false,
+    val widgetsBelow: Boolean = false,
+    val widgetScale: Float = 1f,
+    val widgetOpacity: Float = .65f,
+    val fpsLimit: Int = 0,
+    val batterySaver: Boolean = false
 ) {
     fun routes(layout: PanelLayout) = when (layout) {
         PanelLayout.PERSONAL -> false
         PanelLayout.CRAFTING_TABLE -> routeCrafting
         PanelLayout.CHEST, PanelLayout.DOUBLE_CHEST -> routeChests
         PanelLayout.FURNACE -> routeFurnaces
-        PanelLayout.XAERO -> routeXaeroMap
     }
 
     fun toBundle() = Bundle().apply {
@@ -59,7 +65,14 @@ internal data class GameHudSettings(
         putBoolean("compactPanel", compactPanel)
         putBoolean("routeChests", routeChests)
         putBoolean("routeFurnaces", routeFurnaces)
-        putBoolean("routeXaeroMap", routeXaeroMap)
+        putBoolean("minimap", showMinimap)
+        putBoolean("coordinates", showCoordinates)
+        putBoolean("battery", showBattery)
+        putBoolean("widgetsBelow", widgetsBelow)
+        putFloat("widgetScale", widgetScale)
+        putFloat("widgetOpacity", widgetOpacity)
+        putInt("fpsLimit", fpsLimit)
+        putBoolean("batterySaver", batterySaver)
     }
 
     companion object {
@@ -74,7 +87,14 @@ internal data class GameHudSettings(
             bundle?.getBoolean("compactPanel", false) ?: false,
             bundle?.getBoolean("routeChests", true) ?: true,
             bundle?.getBoolean("routeFurnaces", true) ?: true,
-            bundle?.getBoolean("routeXaeroMap", true) ?: true
+            bundle?.getBoolean("minimap", false) ?: false,
+            bundle?.getBoolean("coordinates", false) ?: false,
+            bundle?.getBoolean("battery", false) ?: false,
+            bundle?.getBoolean("widgetsBelow", false) ?: false,
+            bundle?.getFloat("widgetScale", 1f)?.coerceIn(.75f, 1.5f) ?: 1f,
+            bundle?.getFloat("widgetOpacity", .65f)?.coerceIn(.25f, 1f) ?: .65f,
+            normalizeFpsLimit(bundle?.getInt("fpsLimit") ?: 0),
+            bundle?.getBoolean("batterySaver", false) ?: false
         )
     }
 }

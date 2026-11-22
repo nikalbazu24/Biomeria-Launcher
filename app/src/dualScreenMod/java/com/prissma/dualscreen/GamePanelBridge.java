@@ -15,9 +15,10 @@ import java.util.stream.Stream;
 
 /** Runs at the tail of the Fabric client tick so inventory changes follow Minecraft's own protocol. */
 public final class GamePanelBridge {
-    private static final int MAGIC = 0x50525335;
+    private static final int MAGIC = 0x50525336;
     private static final int MAP_PIXELS = 128 * 128;
     private static final String SESSION = System.getProperty("prissma.dualscreen.session", "");
+    private static final String TERRAIN = System.getProperty("prissma.map.directory", "");
     private static final int SNAPSHOT_TICKS = 4;
     private static Access game;
     private static boolean disabled;
@@ -30,8 +31,8 @@ public final class GamePanelBridge {
     private static Object clientInstance;
     private static Object routedScreen;
     private static Layout routedLayout = Layout.PERSONAL;
-    private static XaeroPanel xaero;
-    private static XaeroMapView xaeroView;
+    private static TerrainMap terrain;
+    private static boolean terrainFailed;
     private static RecipeBookPanel recipeBook;
     private static byte[] previousMap;
     private static int mapRevision;
@@ -41,7 +42,7 @@ public final class GamePanelBridge {
 
     // Ordinals and slot counts match Android's PanelLayout.
     private enum Layout {
-        PERSONAL(46), CRAFTING_TABLE(46), CHEST(63), DOUBLE_CHEST(90), FURNACE(39), XAERO(0);
+        PERSONAL(46), CRAFTING_TABLE(46), CHEST(63), DOUBLE_CHEST(90), FURNACE(39);
         final int slots;
         Layout(int slots) { this.slots = slots; }
     }
@@ -51,16 +52,18 @@ public final class GamePanelBridge {
     public static void tick(Object client) {
         if (SESSION.isEmpty() || disabled || ++ticks % 2 != 0) return;
         Path root = Path.of(SESSION);
-        if (!Files.isRegularFile(root.resolve("visible"))) {
+        boolean panelVisible = Files.isRegularFile(root.resolve("visible"));
+        boolean mapVisible = !TERRAIN.isEmpty() && !terrainFailed && Files.isRegularFile(root.resolve("terrain-enabled"));
+        boolean trackPosition = !TERRAIN.isEmpty() && !terrainFailed &&
+                (mapVisible || Files.isRegularFile(root.resolve("terrain-position")));
+        if (!panelVisible) {
             clearRoute();
-            return;
+            if (!trackPosition) return;
         }
         try {
             if (game == null) {
                 ClassLoader loader = client.getClass().getClassLoader();
                 game = new Access(loader);
-                xaero = new XaeroPanel(loader);
-                xaeroView = XaeroMapView.create(loader, client);
                 try {
                     recipeBook = new RecipeBookPanel(loader);
                 } catch (ReflectiveOperationException | LinkageError error) {
@@ -70,15 +73,13 @@ public final class GamePanelBridge {
             }
             Object player = game.player.get(client);
             Object world = game.world.get(client);
+            if (trackPosition && ticks % SNAPSHOT_TICKS == 0) updateTerrain(root, client, world, player, mapVisible);
+            if (!panelVisible) return;
             Object screen = game.currentScreen.get(client);
             Object personal = player == null ? null : game.playerHandler.get(player);
             Object active = player == null ? null : game.currentHandler.get(player);
             Layout layout = game.layout(screen, active);
-            if (layout == Layout.PERSONAL && xaeroView != null && xaeroView.isMap(screen) && personal == active) {
-                layout = Layout.XAERO;
-            }
-            boolean screenControlsSlots = layout != Layout.PERSONAL && layout != Layout.XAERO;
-            Object handler = screenControlsSlots ? active : personal;
+            Object handler = layout == Layout.PERSONAL ? personal : active;
             if (world != previousWorld || player != previousPlayer) {
                 previousWorld = world;
                 previousPlayer = player;
@@ -96,7 +97,6 @@ public final class GamePanelBridge {
                     && (layout != Layout.PERSONAL || (screen == null && active == personal))
                     && !(boolean) game.spectator.invoke(player);
             boolean route = canUse && layout != Layout.PERSONAL
-                    && (layout != Layout.XAERO || xaeroView.available())
                     && hasGenerationMarker(root.resolve("routed-menu"));
             if (!route || routedScreen != screen) clearRoute();
             if (route) {
@@ -126,6 +126,21 @@ public final class GamePanelBridge {
         }
     }
 
+    private static void updateTerrain(Path root, Object client, Object world, Object player, boolean mapVisible) throws IOException {
+        if (world == null || player == null) {
+            Files.deleteIfExists(root.resolve("terrain-state"));
+            return;
+        }
+        try {
+            if (terrain == null) terrain = new TerrainMap(client.getClass().getClassLoader(), Path.of(TERRAIN));
+            terrain.update(root, client, world, player, (double) game.x.invoke(player),
+                    (double) game.y.invoke(player), (double) game.z.invoke(player), ticks, mapVisible);
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError error) {
+            terrainFailed = true;
+            System.err.println("[PRISSMA] Mapa de terreno no disponible: " + error);
+        }
+    }
+
     private static boolean hasGenerationMarker(Path marker) {
         try {
             return Files.isRegularFile(marker) && Files.size(marker) <= 20
@@ -141,23 +156,16 @@ public final class GamePanelBridge {
     }
 
     private static void clearRoute() {
-        if (routedLayout == Layout.XAERO && xaeroView != null) xaeroView.detach(routedScreen);
         routedScreen = null;
         routedLayout = Layout.PERSONAL;
     }
 
     public static boolean renderRoutedScreen(Object screen, Object draw, float delta) {
-        if (routedScreen != screen) return false;
-        if (routedLayout != Layout.XAERO) return true;
-        return xaeroView.render(screen, draw, delta, Path.of(SESSION).resolve("xaero-frame"), generation);
-    }
-
-    public static boolean keepsWorldVisibleUnderXaero() {
-        return routedLayout == Layout.XAERO && blocksRoutedMouse();
+        return routedScreen == screen;
     }
 
     public static boolean blocksRoutedMouse() {
-        if (routedScreen == null || routedLayout == Layout.XAERO && !xaeroView.available()) return false;
+        if (routedScreen == null) return false;
         try {
             return routedScreen == game.currentScreen.get(clientInstance);
         } catch (IllegalAccessException ignored) {
@@ -193,15 +201,6 @@ public final class GamePanelBridge {
                         if (layout != Layout.PERSONAL && slot == 0) {
                             game.closeScreen.invoke(screen);
                             return true;
-                        }
-                    }
-                    case "xaero" -> {
-                        if (layout == Layout.PERSONAL && slot == 0 && xaero.openWorldMap()) return true;
-                    }
-                    case "map-down", "map-move", "map-up", "map-zoom", "map-pan" -> {
-                        if (layout == Layout.XAERO) {
-                            xaeroView.input(screen, parts[1], slot);
-                            if (game.currentScreen.get(clientInstance) != screen) return true;
                         }
                     }
                     case "inspect", "recipe" -> {
@@ -253,7 +252,6 @@ public final class GamePanelBridge {
                 List<?> slots = (List<?>) game.slots.get(handler);
                 for (int i = 0; i < layout.slots; i++) writeStack(data, i < slots.size() ? game.slotStack.invoke(slots.get(i)) : null);
                 data.writeInt(publishHeldMap(root, player, world));
-                xaero.write(data);
                 data.writeBoolean(layout == Layout.CRAFTING_TABLE && recipeBook != null);
                 String title = layout == Layout.PERSONAL ? "" : (String) game.text.invoke(game.title.invoke(screen));
                 data.writeUTF(title.substring(0, Math.min(title.length(), 96)));
@@ -262,7 +260,6 @@ public final class GamePanelBridge {
                     data.writeFloat((float) game.fuelProgress.invoke(handler));
                     data.writeBoolean((boolean) game.furnaceBurning.invoke(handler));
                 }
-                data.writeBoolean(xaeroView != null && xaeroView.available());
             }
         }
         byte[] snapshot = bytes.toByteArray();

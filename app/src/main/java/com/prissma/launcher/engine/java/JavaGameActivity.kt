@@ -19,6 +19,8 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -57,6 +59,8 @@ import com.prissma.launcher.data.accounts.AccountError
 import com.prissma.launcher.data.accounts.JavaAccountMode
 import com.prissma.launcher.data.accounts.MinecraftAccounts
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.system.exitProcess
 import kotlin.math.roundToInt
@@ -68,11 +72,15 @@ class JavaGameActivity : ComponentActivity() {
     private lateinit var gameInput: GameInput
     private var controlsActive = false
     private var togglePanel: (() -> Unit)? = null
+    private var toggleQuickMenu: (() -> Unit)? = null
     private var dualScreenBridge: DualScreenBridge? = null
-    private var lowerPanelVisible = false
+    internal var lowerPanelVisible by mutableStateOf(false)
+        private set
     private var lowerPanelInput: ((PanelPadAction) -> Unit)? = null
     private var lowerPanelPan: ((Float, Float) -> Unit)? = null
     private var resumed = false
+    private var foregroundFpsLimit = 0
+    private var saveBattery = false
     private var hostFocused = false
     private var inputManager: InputManager? = null
     internal var lowerGamepadFocused by mutableStateOf(false)
@@ -107,6 +115,11 @@ class JavaGameActivity : ComponentActivity() {
             val routed = padRouter.button(event.deviceId, event.keyCode, lowerPanelAction(event.keyCode),
                 down, event.repeatCount > 0, event.eventTime)
             if (routed) return true
+            val quickMenu = toggleQuickMenu
+            if (quickMenu != null && gameInput.opensQuickMenu(event.keyCode)) {
+                if (up && !event.isCanceled) quickMenu()
+                return true
+            }
         }
         return (controlsActive && gameInput.keyEvent(event)) || super.dispatchKeyEvent(event)
     }
@@ -145,6 +158,16 @@ class JavaGameActivity : ComponentActivity() {
 
     internal fun tickLowerGamepad() = padRouter.tick(SystemClock.uptimeMillis())
 
+    internal fun setFrameLimits(limit: Int, saver: Boolean) {
+        foregroundFpsLimit = limit
+        saveBattery = saver
+        refreshFrameLimit()
+    }
+
+    private fun refreshFrameLimit() {
+        NativeJavaBridge.nativeSetFrameLimit(javaFrameLimit(foregroundFpsLimit, saveBattery, resumed))
+    }
+
     private fun reconcilePadFocus() {
         padRouter.setAvailable(controlsActive && resumed && hostFocused && lowerPanelVisible && lowerPanelInput != null)
     }
@@ -152,12 +175,14 @@ class JavaGameActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         resumed = true
+        refreshFrameLimit()
         reconcilePadFocus()
     }
 
     override fun onPause() {
         val wasLowerFocused = lowerGamepadFocused
         resumed = false
+        refreshFrameLimit()
         reconcilePadFocus()
         if (controlsActive && !wasLowerFocused) gameInput.reset()
         super.onPause()
@@ -188,13 +213,16 @@ class JavaGameActivity : ComponentActivity() {
         val renderScale = RenderScale.fromPercent(intent.getIntExtra("RENDER_SCALE", 100))
         val renderer = JavaRenderer.fromName(intent.getStringExtra("JAVA_RENDERER"))
         val hud = GameHudSettings.fromBundle(intent.getBundleExtra("GAME_HUD"))
-        val panelMod = intent.getStringExtra(DUAL_SCREEN_MOD)?.let(::File)?.takeIf { hud.dualScreen && it.isFile }
-        val panelBridge = panelMod?.let { runCatching { DualScreenBridge.create(cacheDir) }.getOrNull() }
+        val panelMod = intent.getStringExtra(DUAL_SCREEN_MOD)?.let(::File)?.takeIf { it.isFile }
+        val panelBridge = panelMod?.let {
+            runCatching { DualScreenBridge.create(cacheDir, File(gameDirPath, "prissma-map")) }.getOrNull()
+        }
         dualScreenBridge = panelBridge
         val jvmArguments = if (panelMod != null && panelBridge != null) {
             baseJvmArguments + arrayOf(
                 "-Dfabric.addMods=" + panelMod.absolutePath,
-                "-Dprissma.dualscreen.session=" + panelBridge.directory.absolutePath
+                "-Dprissma.dualscreen.session=" + panelBridge.directory.absolutePath,
+                "-Dprissma.map.directory=" + checkNotNull(panelBridge.terrainDirectory).absolutePath
             )
         } else baseJvmArguments
         gameInput = GameInput(
@@ -250,6 +278,7 @@ class JavaGameActivity : ComponentActivity() {
                         reconcilePadFocus()
                     },
                     onTogglePanel = { togglePanel = it },
+                    onToggleQuickMenu = { toggleQuickMenu = it },
                     onExitGame = { finish() }
                 )
             }
@@ -293,6 +322,8 @@ private fun lowerPanelAction(code: Int): PanelPadAction? = when (code) {
     AndroidKeyEvent.KEYCODE_BUTTON_B -> PanelPadAction.BACK
     AndroidKeyEvent.KEYCODE_BUTTON_L1 -> PanelPadAction.PREVIOUS_TAB
     AndroidKeyEvent.KEYCODE_BUTTON_R1 -> PanelPadAction.NEXT_TAB
+    AndroidKeyEvent.KEYCODE_BUTTON_THUMBR -> PanelPadAction.MARK
+    AndroidKeyEvent.KEYCODE_BUTTON_START -> PanelPadAction.SEARCH
     else -> null
 }
 
@@ -327,6 +358,7 @@ private fun JavaNativeViewportScreen(
     onHudChanged: (GameHudSettings) -> Unit,
     onControls: (Boolean) -> Unit,
     onTogglePanel: ((() -> Unit)?) -> Unit,
+    onToggleQuickMenu: ((() -> Unit)?) -> Unit,
     onExitGame: () -> Unit
 ) {
     var gpuStatus by remember { mutableStateOf("Inicializando superficie EGL…") }
@@ -337,6 +369,8 @@ private fun JavaNativeViewportScreen(
     var hud by remember(initialHud) { mutableStateOf(initialHud) }
     var showHudDialog by remember { mutableStateOf(false) }
     var showKeyboard by remember { mutableStateOf(false) }
+    var showQuickMenu by remember { mutableStateOf(false) }
+    var pendingGameKey by remember { mutableStateOf<Int?>(null) }
     var fps by remember { mutableStateOf<Int?>(null) }
     var jvmStarted by remember { mutableStateOf(false) }
     var viewportSize by remember { mutableStateOf("0x0") }
@@ -346,6 +380,7 @@ private fun JavaNativeViewportScreen(
     fun handleBack() {
         when {
             showKeyboard -> showKeyboard = false
+            showQuickMenu -> showQuickMenu = false
             libJvmPath.isBlank() -> onExitGame()
             else -> showOverlay = !showOverlay
         }
@@ -353,17 +388,32 @@ private fun JavaNativeViewportScreen(
 
     BackHandler { handleBack() }
     val toggle by rememberUpdatedState({ handleBack() })
+    val quickToggle by rememberUpdatedState {
+        if (!showOverlay && !showKeyboard && !showHudDialog && hasPresentedFrame) showQuickMenu = !showQuickMenu
+    }
     DisposableEffect(Unit) {
         onTogglePanel { toggle() }
-        onDispose { onTogglePanel(null) }
+        onToggleQuickMenu { quickToggle() }
+        onDispose {
+            onTogglePanel(null)
+            onToggleQuickMenu(null)
+        }
     }
-    val canSendInput = jvmStarted && !showOverlay && !showKeyboard
+    val canSendInput = jvmStarted && !showOverlay && !showKeyboard && !showQuickMenu && !showHudDialog
+    val collectTerrain = hud.showMinimap || (hud.dualScreen && hud.panelMap == PanelMapSource.PRISSMA)
+    LaunchedEffect(panelBridge, collectTerrain, hud.showCoordinates) {
+        withContext(Dispatchers.IO) { panelBridge?.collectTerrain(collectTerrain, hud.showCoordinates) }
+    }
+    LaunchedEffect(hud.fpsLimit, hud.batterySaver) {
+        activity.setFrameLimits(hud.fpsLimit, hud.batterySaver)
+    }
     DualScreenHost(
         activity = activity,
         enabled = hud.dualScreen && hasPresentedFrame,
         bridge = panelBridge,
         title = instanceTitle,
         hud = hud,
+        fps = fps,
         allowGameInput = canSendInput && captured,
         allowMenus = canSendInput,
         onHud = { hud = it; onHudChanged(it) },
@@ -373,6 +423,8 @@ private fun JavaNativeViewportScreen(
         onControls(canSendInput)
         input.reset()
         if (canSendInput) {
+            pendingGameKey?.let { input.tapKey(it) }
+            pendingGameKey = null
             while (true) {
                 captured = NativeJavaBridge.nativeCursorCaptured()
                 input.setCaptured(captured)
@@ -514,14 +566,14 @@ private fun JavaNativeViewportScreen(
                     }
                 }
             }
-            if (hud.showFps) {
-                Text(
-                    (fps?.toString() ?: "—") + " FPS",
-                    Modifier.align(Alignment.TopStart).windowInsetsPadding(WindowInsets.displayCutout)
-                        .padding(9.dp).background(Color.Black.copy(alpha = .55f), PanelShape)
-                        .padding(horizontal = 9.dp, vertical = 5.dp),
-                    color = Color.White, fontSize = 12.sp, fontFamily = FontFamily.Monospace
-                )
+            if (!hud.widgetsBelow || !activity.lowerPanelVisible) {
+                GameWidgets(hud, fps, panelBridge,
+                    Modifier.align(Alignment.TopStart).windowInsetsPadding(WindowInsets.displayCutout).padding(9.dp))
+            }
+            if (hud.showMinimap && captured && panelBridge != null) {
+                TerrainMapPane(panelBridge,
+                    Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.displayCutout)
+                        .padding(8.dp).size(114.dp), compact = true)
             }
             Row(
                 modifier = Modifier.align(Alignment.TopEnd)
@@ -529,6 +581,7 @@ private fun JavaNativeViewportScreen(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 if (hasPresentedFrame) {
+                    LauncherButton("Atajos", { showQuickMenu = true })
                     LauncherButton("Teclado", {
                         if (captured) input.tapKey(84) // GLFW_KEY_T abre el chat con los controles predeterminados.
                         showKeyboard = true
@@ -639,8 +692,29 @@ private fun JavaNativeViewportScreen(
         AlertDialog(
             onDismissRequest = { showHudDialog = false },
             title = { Text("HUD de partida") },
-            text = { GameHudControls(hud) { hud = it; onHudChanged(it) } },
+            text = {
+                Column(Modifier.heightIn(max = 330.dp).verticalScroll(rememberScrollState())) {
+                    GameHudControls(hud) { hud = it; onHudChanged(it) }
+                }
+            },
             confirmButton = { LauncherButton("Listo", { showHudDialog = false }, primary = true) }
+        )
+    }
+    if (showQuickMenu) {
+        GameQuickMenu(
+            canOpenInventory = captured,
+            hasMap = panelBridge != null,
+            mapVisible = hud.showMinimap,
+            onClose = { showQuickMenu = false },
+            onInventory = { showQuickMenu = false; pendingGameKey = 69 },
+            onCapture = { showQuickMenu = false; pendingGameKey = 291 },
+            onMap = {
+                hud = hud.copy(showMinimap = !hud.showMinimap)
+                onHudChanged(hud)
+                showQuickMenu = false
+            },
+            onHud = { showQuickMenu = false; showHudDialog = true },
+            onPause = { showQuickMenu = false; showOverlay = true }
         )
     }
 }

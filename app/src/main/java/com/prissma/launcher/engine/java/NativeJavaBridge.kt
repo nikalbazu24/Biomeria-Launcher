@@ -25,6 +25,8 @@ object NativeJavaBridge {
 
     external fun nativePresentedFrames(): Long
 
+    external fun nativeSetFrameLimit(fps: Int)
+
     external fun nativeLaunchJvm(
         libJvmPath: String,
         javaHomePath: String,

@@ -462,6 +462,11 @@ Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativePresentedFrames(JNI
     return prissmaGlfwPresentedFrames();
 }
 
+JNIEXPORT void JNICALL
+Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativeSetFrameLimit(JNIEnv*, jobject, jint fps) {
+    prissmaGlfwSetFrameLimit(fps);
+}
+
 JNIEXPORT jint JNICALL
 Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativeLaunchJvm(
     JNIEnv* env,

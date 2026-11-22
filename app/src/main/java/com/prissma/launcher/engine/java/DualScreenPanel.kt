@@ -21,6 +21,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ComposeView
@@ -49,13 +50,14 @@ internal fun DualScreenHost(
     bridge: DualScreenBridge?,
     title: String,
     hud: GameHudSettings,
+    fps: Int?,
     allowGameInput: Boolean,
     allowMenus: Boolean,
     onHud: (GameHudSettings) -> Unit,
     onHotbar: (Int) -> Unit
 ) {
     val content by rememberUpdatedState<@Composable () -> Unit>({
-        PrissmaTheme { DualScreenPanel(activity, title, bridge, hud, allowGameInput, allowMenus, onHud, onHotbar) }
+        PrissmaTheme { DualScreenPanel(activity, title, bridge, hud, fps, allowGameInput, allowMenus, onHud, onHotbar) }
     })
     DisposableEffect(activity, enabled, bridge) {
         val manager = activity.getSystemService(DisplayManager::class.java)
@@ -138,6 +140,7 @@ private fun DualScreenPanel(
     title: String,
     bridge: DualScreenBridge?,
     hud: GameHudSettings,
+    fps: Int?,
     allowGameInput: Boolean,
     allowMenus: Boolean,
     onHud: (GameHudSettings) -> Unit,
@@ -162,7 +165,7 @@ private fun DualScreenPanel(
     val table = live?.layout == PanelLayout.CRAFTING_TABLE
     val menuPage = live?.layout?.menuPage
     val menuSession = live?.takeIf {
-        hud.routes(it.layout) && (it.layout != PanelLayout.XAERO || it.xaeroLowerAvailable)
+        hud.routes(it.layout)
     }?.generation
     var showRecipes by remember(menuSession) { mutableStateOf(false) }
     var recipePadInput by remember(menuSession) { mutableStateOf<((PanelPadAction) -> Unit)?>(null) }
@@ -195,15 +198,28 @@ private fun DualScreenPanel(
 
     val interactive = live?.interactive == true && if (menuPage != null) routed != null else allowGameInput
     val controllerActive = activity.lowerGamepadFocused
-    val showingMap = routed != null && live?.layout == PanelLayout.XAERO
+    val showingMap = bridge != null && page == PanelPage.MAP && hud.panelMap == PanelMapSource.PRISSMA
+    var mapPadInput by remember { mutableStateOf<TerrainPadInput?>(null) }
+    val searchable = live != null && interactive &&
+        (page == PanelPage.INVENTORY || page == PanelPage.STORAGE && live.layout.chestRows > 0)
+    var editingSearch by remember(live?.generation, page) { mutableStateOf(false) }
+    var slotQuery by remember(live?.generation, page) { mutableStateOf("") }
+    var searchKey by remember(live?.generation, page) { mutableStateOf(PanelPadSlot(0)) }
     val canShowRecipes = table && routed != null && live?.recipeBookAvailable == true
     val showingRecipes = showRecipes && canShowRecipes
-    val padRows = remember(bridge, live?.layout, page, showingRecipes) {
+    val unfilteredRows = remember(bridge, live?.layout, page, showingRecipes) {
         when {
             showingRecipes || (bridge != null && live == null) -> emptyList()
             else -> panelPadRows(live?.layout, page)
         }
     }
+    val matches = remember(unfilteredRows, live?.slots, slotQuery, searchable) {
+        if (searchable && slotQuery.isNotBlank()) {
+            filterPanelSlotRows(unfilteredRows, live?.slots.orEmpty(), slotQuery)
+        } else null
+    }
+    val padRows = matches ?: unfilteredRows
+    val matchingSlots = remember(matches) { matches?.flatten()?.map(PanelPadSlot::number)?.toSet() }
     var padSlot by remember(live?.generation, page) { mutableStateOf<PanelPadSlot?>(null) }
     val currentPadSlot = padSlot?.takeIf { slot -> padRows.any { slot in it } } ?: padRows.firstOrNull()?.firstOrNull()
     val padFocus = currentPadSlot.takeIf { controllerActive }
@@ -213,10 +229,25 @@ private fun DualScreenPanel(
     }
 
     val actionPage = page
+    fun applySearchKey(key: Int) {
+        when (key) {
+            SEARCH_SPACE -> if (slotQuery.length < 48) slotQuery += " "
+            SEARCH_ERASE -> slotQuery = slotQuery.dropLast(1)
+            SEARCH_DONE -> editingSearch = false
+            else -> if (slotQuery.length < 48) slotQuery += inventorySearchCharacters[key]
+        }
+    }
     val panelAction by rememberUpdatedState<(PanelPadAction) -> Unit>({ action ->
         val target = padSlot?.takeIf { slot -> padRows.any { slot in it } } ?: padRows.firstOrNull()?.firstOrNull()
         when {
             canShowRecipes && showRecipes -> recipePadInput?.invoke(action)
+            editingSearch && searchable && page == actionPage -> when {
+                action == PanelPadAction.BACK || action == PanelPadAction.SEARCH -> editingSearch = false
+                action == PanelPadAction.PICK -> applySearchKey(searchKey.number)
+                action.directional -> searchKey = movePanelPadSlot(inventorySearchRows, searchKey, action) ?: searchKey
+                else -> Unit
+            }
+            action == PanelPadAction.BACK && searchable && slotQuery.isNotBlank() -> slotQuery = ""
             action == PanelPadAction.BACK -> {
                 if (routed == null || live == null || bridge?.send(live, PanelCommand.CLOSE_MENU) == true) {
                     activity.releaseLowerGamepad()
@@ -224,11 +255,7 @@ private fun DualScreenPanel(
             }
             page != actionPage -> Unit
             showingRecipes -> Unit
-            showingMap && bridge != null && live != null -> when (action) {
-                PanelPadAction.SPLIT -> bridge.send(live, PanelCommand.MAP_ZOOM, -1)
-                PanelPadAction.TRANSFER -> bridge.send(live, PanelCommand.MAP_ZOOM, 1)
-                else -> Unit
-            }
+            action == PanelPadAction.SEARCH && searchable -> editingSearch = true
             action == PanelPadAction.NEXT_TAB && canShowRecipes -> showRecipes = true
             action == PanelPadAction.NEXT_TAB || action == PanelPadAction.PREVIOUS_TAB -> {
                 if (menuPage == null && bridge != null) {
@@ -239,9 +266,8 @@ private fun DualScreenPanel(
                     click = PanelCommand.PICK
                 }
             }
+            showingMap -> mapPadInput?.action?.invoke(action)
             action.directional -> padSlot = movePanelPadSlot(padRows, target, action)
-            page == PanelPage.MAP && action == PanelPadAction.PICK && live != null && interactive &&
-                hud.panelMap == PanelMapSource.XAERO -> bridge?.send(live, PanelCommand.OPEN_XAERO)
             target != null -> {
                 val command = panelPadCommand(action, target)
                 if (command != null) {
@@ -256,9 +282,7 @@ private fun DualScreenPanel(
         Unit
     })
     val panelPan by rememberUpdatedState<(Float, Float) -> Unit>({ x, y ->
-        if (showingMap && page == actionPage && live != null) {
-            bridge?.send(live, PanelCommand.MAP_PAN, xaeroPanVector(x, y))
-        }
+        if (showingMap && page == actionPage) mapPadInput?.pan?.invoke(x, y)
     })
     DisposableEffect(activity) {
         val detach = activity.attachLowerPanelInput({ panelAction(it) }, { x, y -> panelPan(x, y) })
@@ -267,7 +291,7 @@ private fun DualScreenPanel(
 
     val sendSlot: (Int) -> Unit = { slot ->
         if (controllerActive) padSlot = PanelPadSlot(slot)
-        if (interactive && live != null) bridge?.send(live, click, slot)
+        if (interactive && live != null && (matchingSlots == null || slot in matchingSlots)) bridge?.send(live, click, slot)
     }
 
     Column(
@@ -279,14 +303,17 @@ private fun DualScreenPanel(
         val controls = when {
             !controllerActive -> "Mantén Select para usar el mando aquí"
             showingRecipes -> "↑/↓ · Recorrer    A · Elegir    B · Atrás"
-            showingMap -> "Stick derecho · Mover mapa    X/Y · Zoom    B · Cerrar"
+            editingSearch && searchable -> "Cruceta · Teclado    A · Elegir    B · Aplicar"
+            showingMap -> "Stick derecho · Mover    X/Y · Zoom    A · Centrar    R3 · Marca"
+            matchingSlots != null -> "Cruceta · Coincidencias    A · Tomar o colocar    B · Limpiar"
+            searchable -> "Start · Buscar    A · Tomar o colocar    X · Dividir    Y · Mover rápido"
             padFocus != null && !padFocus.selectsHotbar -> "A · Tomar o colocar    X · Dividir    Y · Mover rápido    B · Volver"
             padFocus?.selectsHotbar == true -> "A · Seleccionar en mano    B · Volver"
-            page == PanelPage.MAP && hud.panelMap == PanelMapSource.XAERO -> "A · Abrir Xaero    L1/R1 · Pestañas    B · Volver"
             else -> "L1/R1 · Pestañas    B · Devolver mando"
         }
         Text(controls, color = if (controllerActive) MaterialTheme.colorScheme.primary else Prissma.colors.textMuted,
             style = MaterialTheme.typography.labelMedium)
+        if (hud.widgetsBelow) GameWidgets(hud, fps, bridge, Modifier.fillMaxWidth())
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             PanelPage.entries.filter { it != PanelPage.STORAGE || menuPage == PanelPage.STORAGE }.forEach { tab ->
                 FilterChip(selected = page == tab, onClick = { page = tab; click = PanelCommand.PICK },
@@ -294,8 +321,13 @@ private fun DualScreenPanel(
             }
         }
         HorizontalDivider(color = Prissma.colors.borderSubtle)
-        if (showingMap && bridge != null && live != null) {
-            XaeroMapPane(bridge, live, Modifier.weight(1f).fillMaxWidth())
+        if (editingSearch && searchable) {
+            InventorySearchKeyboard(slotQuery, searchKey.takeIf { controllerActive }, ::applySearchKey,
+                { slotQuery = "" }, Modifier.weight(1f))
+            return@Column
+        }
+        if (showingMap && bridge != null) {
+            TerrainMapPane(bridge, Modifier.weight(1f).fillMaxWidth(), onPadInput = { mapPadInput = it })
             return@Column
         }
         if (showingRecipes && bridge != null && live != null) {
@@ -333,23 +365,12 @@ private fun DualScreenPanel(
                         "Acceso rápido", padFocus = padFocus, selectsHotbar = true, onSlot = onHotbar)
                 }
                 live == null -> Text("Entra a un mundo para conectar el panel.", style = MaterialTheme.typography.bodyMedium)
-                live.layout == PanelLayout.XAERO -> {
-                    Text(if (menuSession != null && page == PanelPage.MAP) "El mapa se abrirá al volver al juego."
-                        else "Mapa abierto en la pantalla del juego.")
-                    if (menuSession != null && page != PanelPage.MAP) {
-                        OutlinedButton(onClick = { page = PanelPage.MAP }) { Text("Mostrar mapa aquí") }
-                    }
-                }
                 page == PanelPage.MAP -> {
                     Text("X ${live.x}    Y ${live.y}    Z ${live.z}", style = MaterialTheme.typography.titleSmall)
                     val image = remember(pixels) {
                         pixels?.let { Bitmap.createBitmap(it, DUAL_MAP_SIZE, DUAL_MAP_SIZE, Bitmap.Config.ARGB_8888).asImageBitmap() }
                     }
-                    if (hud.panelMap == PanelMapSource.XAERO) {
-                        XaeroMapPanel(live, interactive && menuPage == null, hud.routeXaeroMap) {
-                            bridge.send(live, PanelCommand.OPEN_XAERO)
-                        }
-                    } else if (image == null) Text("Equipa un mapa explorado en una mano para verlo aquí.")
+                    if (image == null) Text("Equipa un mapa explorado en una mano para verlo aquí.")
                     else Image(image, contentDescription = "Mapa equipado",
                         modifier = Modifier.size(192.dp), contentScale = ContentScale.Fit)
                 }
@@ -362,6 +383,12 @@ private fun DualScreenPanel(
                     if (!interactive) Text("Vuelve a la vista de juego para mover objetos.", style = MaterialTheme.typography.bodySmall)
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically) {
+                        if (searchable) {
+                            FilterChip(slotQuery.isNotBlank(), { editingSearch = true }, label = {
+                                Text(if (slotQuery.isBlank()) "Buscar objetos" else "$slotQuery · ${matchingSlots?.size ?: 0}")
+                            })
+                            if (matchingSlots != null) TextButton(onClick = { slotQuery = "" }) { Text("Limpiar") }
+                        }
                         FilterChip(click == PanelCommand.SPLIT, {
                             click = if (click == PanelCommand.SPLIT) PanelCommand.PICK else PanelCommand.SPLIT
                         }, label = { Text("Dividir / colocar uno") }, enabled = interactive)
@@ -371,7 +398,7 @@ private fun DualScreenPanel(
                         if (live.held.count > 0) Text("En cursor · ${live.held.name} ×${live.held.count}")
                     }
                     if (menuPage == PanelPage.STORAGE) {
-                        ContainerSlots(live, interactive, hud.compactPanel, padFocus, sendSlot) {
+                        ContainerSlots(live, interactive, hud.compactPanel, padFocus, matchingSlots, sendSlot) {
                             bridge.send(live, PanelCommand.CLOSE_MENU)
                         }
                     } else if (page == PanelPage.CRAFT) {
@@ -397,29 +424,32 @@ private fun DualScreenPanel(
                         }
                     } else {
                         SlotRow(listOf(5, 6, 7, 8, 45), live, interactive, "Armadura y mano secundaria",
-                            compact = hud.compactPanel, padFocus = padFocus, onSlot = sendSlot)
+                            compact = hud.compactPanel, padFocus = padFocus, matchingSlots = matchingSlots, onSlot = sendSlot)
                     }
                     val hotbarStart = live.layout.hotbarStart
                     val inventoryStart = live.layout.inventoryStart
                     if (page == PanelPage.INVENTORY) {
                         SlotRow((hotbarStart until hotbarStart + 9).toList(), live, interactive,
-                            "Barra rápida", live.selectedSlot + hotbarStart, hud.compactPanel, padFocus = padFocus, onSlot = sendSlot)
+                            "Barra rápida", live.selectedSlot + hotbarStart, hud.compactPanel, padFocus = padFocus,
+                            matchingSlots = matchingSlots, onSlot = sendSlot)
                     }
                     for (start in inventoryStart until hotbarStart step 9) {
                         SlotRow((start until start + 9).toList(), live, interactive,
                             if (start == inventoryStart) "Inventario" else null, compact = hud.compactPanel,
-                            fit = menuPage == PanelPage.STORAGE, padFocus = padFocus, onSlot = sendSlot)
+                            fit = menuPage == PanelPage.STORAGE, padFocus = padFocus,
+                            matchingSlots = matchingSlots, onSlot = sendSlot)
                     }
                     if (page == PanelPage.CRAFT || menuPage == PanelPage.STORAGE) {
                         SlotRow((hotbarStart until hotbarStart + 9).toList(), live, interactive,
                             "Barra rápida", live.selectedSlot + hotbarStart, hud.compactPanel,
-                            fit = menuPage == PanelPage.STORAGE, padFocus = padFocus, onSlot = sendSlot)
+                            fit = menuPage == PanelPage.STORAGE, padFocus = padFocus,
+                            matchingSlots = matchingSlots, onSlot = sendSlot)
                     }
                 }
             }
         }
 
-        if (live != null && live.layout == PanelLayout.PERSONAL && page == PanelPage.INVENTORY) {
+        if (live != null && live.layout == PanelLayout.PERSONAL && page == PanelPage.INVENTORY && matchingSlots == null) {
             SlotRow((0..8).toList(), null, interactive, "Seleccionar en mano", live.selectedSlot,
                 padFocus = padFocus, selectsHotbar = true) { slot ->
                 if (controllerActive) padSlot = PanelPadSlot(slot, selectsHotbar = true)
@@ -435,6 +465,7 @@ private fun ContainerSlots(
     interactive: Boolean,
     compact: Boolean,
     padFocus: PanelPadSlot?,
+    matchingSlots: Set<Int>?,
     onSlot: (Int) -> Unit,
     onClose: () -> Unit
 ) {
@@ -457,7 +488,8 @@ private fun ContainerSlots(
         }
     } else {
         repeat(live.layout.chestRows) { row ->
-            SlotRow((row * 9 until (row + 1) * 9).toList(), live, interactive, fit = true, padFocus = padFocus, onSlot = onSlot)
+            SlotRow((row * 9 until (row + 1) * 9).toList(), live, interactive, fit = true, padFocus = padFocus,
+                matchingSlots = matchingSlots, onSlot = onSlot)
         }
     }
 }
@@ -467,27 +499,6 @@ private fun FurnaceMeter(label: String, progress: Float, modifier: Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text("$label · ${(progress * 100).toInt()} %", style = MaterialTheme.typography.labelMedium)
         LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-    }
-}
-
-@Composable
-private fun XaeroMapPanel(live: PanelInventory, canOpen: Boolean, preferBelow: Boolean, onOpen: () -> Unit) {
-    if (live.xaeroWorldMap) {
-        val target = if (preferBelow && live.xaeroLowerAvailable) "abajo" else "arriba"
-        OutlinedButton(onClick = onOpen, enabled = canOpen) { Text("Abrir World Map $target") }
-    }
-    if (live.xaeroMinimap) {
-        Text("Marcadores de Xaero’s Minimap", style = MaterialTheme.typography.titleSmall)
-        if (live.waypoints.isEmpty()) Text("El conjunto activo no tiene marcadores visibles.")
-        live.waypoints.forEach { mark ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(mark.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("X ${mark.x} · Y ${mark.y} · Z ${mark.z}", color = Prissma.colors.textMuted,
-                    style = MaterialTheme.typography.bodySmall)
-            }
-        }
-    } else if (!live.xaeroWorldMap) {
-        Text("Instala Xaero’s World Map o Xaero’s Minimap para Fabric 1.21.4 desde el Taller.")
     }
 }
 
@@ -503,6 +514,7 @@ private fun SlotRow(
     fit: Boolean = false,
     padFocus: PanelPadSlot? = null,
     selectsHotbar: Boolean = false,
+    matchingSlots: Set<Int>? = null,
     onSlot: (Int) -> Unit
 ) {
     Column(if (fit) Modifier.fillMaxWidth() else Modifier) {
@@ -511,6 +523,7 @@ private fun SlotRow(
             horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             slots.forEach { number ->
                 val padSelected = padFocus == PanelPadSlot(number, selectsHotbar)
+                val matches = matchingSlots == null || number in matchingSlots
                 val bringIntoView = remember { BringIntoViewRequester() }
                 LaunchedEffect(padSelected) {
                     if (padSelected) bringIntoView.bringIntoView()
@@ -529,10 +542,15 @@ private fun SlotRow(
                         else -> 66.dp
                     }))
                         .bringIntoViewRequester(bringIntoView)
+                        .alpha(if (matches) 1f else .33f)
                         .semantics { contentDescription = description },
-                    enabled = enabled,
+                    enabled = enabled && matches,
                     colors = colors,
-                    border = if (padSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+                    border = when {
+                        padSelected -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                        matchingSlots != null && matches -> BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .55f))
+                        else -> null
+                    },
                     contentPadding = PaddingValues(horizontal = 3.dp)
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {

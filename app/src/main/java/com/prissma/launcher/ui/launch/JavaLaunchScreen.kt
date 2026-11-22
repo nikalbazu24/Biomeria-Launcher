@@ -36,6 +36,7 @@ import com.prissma.launcher.engine.java.DEFAULT_JAVA_HEAP_MB
 import com.prissma.launcher.engine.java.JavaRenderer
 import com.prissma.launcher.engine.java.RenderScale
 import com.prissma.launcher.engine.java.selectedHeapSize
+import com.prissma.launcher.engine.java.normalizeFpsLimit
 import com.prissma.launcher.engine.java.decodeGamepadActions
 import com.prissma.launcher.engine.java.encodeGamepadActions
 import com.prissma.launcher.engine.java.JavaGameActivity
@@ -109,7 +110,14 @@ fun JavaLaunchScreen(
             settings.getBoolean("panel-compact-" + instance.id, false),
             settings.getBoolean("panel-chests-" + instance.id, true),
             settings.getBoolean("panel-furnaces-" + instance.id, true),
-            settings.getBoolean("panel-xaero-map-" + instance.id, true)))
+            settings.getBoolean("minimap-" + instance.id, false),
+            settings.getBoolean("coordinates-" + instance.id, false),
+            settings.getBoolean("battery-" + instance.id, false),
+            settings.getBoolean("widgets-below-" + instance.id, false),
+            settings.getFloat("widget-scale-" + instance.id, 1f).coerceIn(.75f, 1.5f),
+            settings.getFloat("widget-opacity-" + instance.id, .65f).coerceIn(.25f, 1f),
+            normalizeFpsLimit(settings.getInt("fps-limit-" + instance.id, 0)),
+            settings.getBoolean("battery-saver-" + instance.id, false)))
     }
     val supported = supportsJavaLoader(instance.version, instance.loader)
 
@@ -125,7 +133,14 @@ fun JavaLaunchScreen(
             .putBoolean("panel-compact-" + instance.id, updated.compactPanel)
             .putBoolean("panel-chests-" + instance.id, updated.routeChests)
             .putBoolean("panel-furnaces-" + instance.id, updated.routeFurnaces)
-            .putBoolean("panel-xaero-map-" + instance.id, updated.routeXaeroMap).apply()
+            .putBoolean("minimap-" + instance.id, updated.showMinimap)
+            .putBoolean("coordinates-" + instance.id, updated.showCoordinates)
+            .putBoolean("battery-" + instance.id, updated.showBattery)
+            .putBoolean("widgets-below-" + instance.id, updated.widgetsBelow)
+            .putFloat("widget-scale-" + instance.id, updated.widgetScale)
+            .putFloat("widget-opacity-" + instance.id, updated.widgetOpacity)
+            .putInt("fps-limit-" + instance.id, updated.fpsLimit)
+            .putBoolean("battery-saver-" + instance.id, updated.batterySaver).apply()
     }
     val gameActivity = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         result.data?.getBundleExtra("GAME_HUD")?.let { saveHud(GameHudSettings.fromBundle(it)) }
@@ -163,7 +178,7 @@ fun JavaLaunchScreen(
                 val gameDir = File(context.filesDir, "instances/" + instance.id)
                 val scrollScale = withContext(Dispatchers.IO) { applyMinecraftOptions(gameDir, language) }
                 val classpath = runtimeManager.buildClasspath(ready)
-                val dualScreenMod = if (hud.dualScreen && supportsDualInventory(instance.version, instance.configuredModLoader)) {
+                val dualScreenMod = if (supportsDualInventory(instance.version, instance.configuredModLoader)) {
                     runtimeManager.dualScreenMod().absolutePath
                 } else null
                 val playerUuid = UUID.nameUUIDFromBytes("OfflinePlayer:$playerName".toByteArray(Charsets.UTF_8))
