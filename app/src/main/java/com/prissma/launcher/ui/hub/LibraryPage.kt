@@ -193,7 +193,6 @@ private fun InstanceHero(
                             if (starling?.canOpen == true) {
                                 LauncherButton("Abrir Starling", onPlay, icon = Icons.Default.PlayArrow, primary = true)
                             } else LauncherButton("Ver Starling ARM64", onGetStarling, primary = true)
-                            LauncherButton("Taller", onWorkshop)
                             LauncherButton("Diagnóstico", onStarlingDiagnostics)
                         }
                     }

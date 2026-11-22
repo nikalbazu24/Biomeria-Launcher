@@ -2,5 +2,4 @@
 <paths>
     <cache-path name="updates" path="updates/" />
     <cache-path name="bedrock-imports" path="bedrock-imports/" />
-    <cache-path name="starling-imports" path="starling-imports/" />
 </paths>

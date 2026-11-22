@@ -248,7 +248,6 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("org.apache.commons:commons-compress:1.26.2")
     implementation("org.tukaani:xz:1.9")
-    implementation("org.tomlj:tomlj:1.1.1")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }

@@ -1,7 +1,5 @@
 package com.prissma.launcher.engine.bedrock
 
-import com.prissma.launcher.engine.imports.safeArchivePath
-import com.prissma.launcher.engine.imports.verifyEntries
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -10,6 +8,8 @@ import java.io.File
 import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
+import java.util.zip.CRC32
+import java.util.zip.CheckedInputStream
 import java.util.zip.ZipFile
 import java.util.zip.ZipInputStream
 
@@ -27,7 +27,17 @@ internal fun validateBedrockArchive(file: File, type: BedrockArchive, checkCance
     val contents = BedrockContents(type, checkCancelled)
     try {
         ZipFile(file).use { zip ->
-            zip.verifyEntries(checkCancelled) { _, name, input -> contents.inspect(name, input) }
+            for (entry in zip.entries().asSequence()) {
+                checkCancelled()
+                val name = archivePath(entry.name)
+                if (entry.isDirectory) continue
+                val checksum = CRC32()
+                CheckedInputStream(zip.getInputStream(entry), checksum).use { input ->
+                    contents.inspect(name, input)
+                    contents.drain(input)
+                }
+                if (entry.crc != checksum.value) throw InvalidBedrockArchive("El archivo contiene datos dañados.")
+            }
         }
         contents.requireContent()
     } catch (error: InvalidBedrockArchive) {
@@ -68,7 +78,7 @@ private class BedrockContents(private val type: BedrockArchive, private val chec
             while (true) {
                 checkCancelled()
                 val entry = zip.nextEntry ?: break
-                val name = safeArchivePath(entry.name)
+                val name = archivePath(entry.name)
                 if (!entry.isDirectory) inner.inspect(name, zip)
                 inner.drain(zip)
                 zip.closeEntry()
@@ -112,6 +122,15 @@ private class BedrockContents(private val type: BedrockArchive, private val chec
         }
         throw InvalidBedrockArchive("El archivo .${type.extension} no contiene $expected.")
     }
+}
+
+private fun archivePath(path: String): String {
+    val normalized = path.replace('\\', '/')
+    val parts = normalized.split('/')
+    if (normalized.startsWith('/') || ':' in parts.first() || '\u0000' in normalized || ".." in parts) {
+        throw InvalidBedrockArchive("El archivo contiene una ruta inválida.")
+    }
+    return parts.filter { it.isNotEmpty() && it != "." }.joinToString("/")
 }
 
 internal enum class BedrockImportDelivery { SENT, NO_GAME, NO_IMPORTER }
