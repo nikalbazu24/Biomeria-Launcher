@@ -24,6 +24,7 @@ import com.prissma.launcher.data.ModrinthItem
 import com.prissma.launcher.data.ModrinthRepository
 import com.prissma.launcher.data.WorkshopIncompatibility
 import com.prissma.launcher.data.WorkshopInstallPlan
+import com.prissma.launcher.data.workshopModLoaderName
 import com.prissma.launcher.ui.components.LauncherButton
 import com.prissma.launcher.ui.theme.Prissma
 import kotlinx.coroutines.CancellationException
@@ -60,7 +61,8 @@ internal fun WorkshopCompatibilityDialog(
                 verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 when {
                     plan != null -> {
-                        Text("Compatible con Minecraft ${instance.version} · Fabric", color = Prissma.colors.brandAccent)
+                        Text("Compatible con Minecraft ${instance.version} · ${workshopModLoaderName(instance.configuredModLoader)}",
+                            color = Prissma.colors.brandAccent)
                         Text("Versión ${plan.root.versionLabel}", style = MaterialTheme.typography.titleSmall)
                         Text(plan.root.filename)
                         val dependencies = plan.artifacts.drop(1)

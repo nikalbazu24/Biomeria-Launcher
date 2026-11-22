@@ -136,6 +136,7 @@ namespace {
         std::string nativeLibraryDir;
         std::string classpath;
         std::string mainClass;
+        std::vector<std::string> jvmArguments;
         std::vector<std::string> gameArgs;
         int javaHeapMb;
     };
@@ -236,6 +237,7 @@ namespace {
         optionStrings.push_back("-Dorg.lwjgl.opengl.libname=" + cfg->nativeLibraryDir + "/libmobileglues.so");
         optionStrings.push_back("-Xmx" + std::to_string(cfg->javaHeapMb) + "M");
         optionStrings.push_back("-Xms" + std::to_string(std::min(512, cfg->javaHeapMb / 3)) + "M");
+        optionStrings.insert(optionStrings.end(), cfg->jvmArguments.begin(), cfg->jvmArguments.end());
         pushLogLine("[PRISSMA] Memoria máxima de Java: " + std::to_string(cfg->javaHeapMb) + " MiB.");
 
         std::vector<JavaVMOption> options(optionStrings.size());
@@ -463,6 +465,7 @@ Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativeLaunchJvm(
     jstring nativeLibraryDir,
     jstring classpath,
     jstring mainClass,
+    jobjectArray jvmArguments,
     jobjectArray gameArgs,
     jint javaHeapMb
 ) {
@@ -490,12 +493,16 @@ Java_com_prissma_launcher_engine_java_NativeJavaBridge_nativeLaunchJvm(
     cfg->mainClass = toStdString(mainClass);
     cfg->javaHeapMb = std::max(768, std::min(8192, static_cast<int>(javaHeapMb)));
 
-    jsize argCount = env->GetArrayLength(gameArgs);
-    for (jsize i = 0; i < argCount; ++i) {
-        auto item = static_cast<jstring>(env->GetObjectArrayElement(gameArgs, i));
-        cfg->gameArgs.push_back(toStdString(item));
-        env->DeleteLocalRef(item);
-    }
+    auto readArguments = [&](jobjectArray arguments, std::vector<std::string>& destination) {
+        const jsize count = env->GetArrayLength(arguments);
+        for (jsize i = 0; i < count; ++i) {
+            auto item = static_cast<jstring>(env->GetObjectArrayElement(arguments, i));
+            destination.push_back(toStdString(item));
+            env->DeleteLocalRef(item);
+        }
+    };
+    readArguments(jvmArguments, cfg->jvmArguments);
+    readArguments(gameArgs, cfg->gameArgs);
 
     pthread_t worker;
     if (pthread_create(&worker, nullptr, jvmWorkerThread, cfg) != 0) {

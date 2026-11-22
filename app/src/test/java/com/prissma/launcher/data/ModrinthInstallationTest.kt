@@ -65,6 +65,22 @@ class ModrinthInstallationTest {
     }
 
     @Test
+    fun neoforgeSelectsAndInstallsOnlyItsOwnVersionsAndDependencies() = runBlocking {
+        publish(version("Example", "FabricA"), version("Example", "NeoA", loader = "neoforge",
+            dependencies = listOf(dependency("Library"))))
+        publish(version("Library", "ForgeLib", loader = "forge"), version("Library", "NeoLib", loader = "neoforge"))
+        val repository = repository()
+
+        val plan = repository.checkCompatibility("Example", mods, gameVersion, "neoforge")
+        assertEquals(listOf("NeoA", "NeoLib"), plan.artifacts.map { it.versionId })
+        assertEquals(2, repository.install("Example", "neoforge", mods, gameVersion, "neoforge", plan.pins))
+        val installed = repository.getInstalledFiles("neoforge", gameVersion, "neoforge")
+        assertEquals(setOf("NeoA.jar", "NeoLib.jar"), installed.map { it.fileName }.toSet())
+        assertTrue(installed.all { it.compatibility == "Compatible con 1.21.4 · NeoForge" })
+        assertFalse(requests.any { it == "/mod/FabricA.jar" || it == "/mod/ForgeLib.jar" })
+    }
+
+    @Test
     fun interruptedDownloadDoesNotPublishAndRetryReusesVerifiedDependency() = runBlocking {
         val dependency = version("Core", "CoreA")
         val root = version("Root", "RootA", dependencies = listOf(dependency("Core")))

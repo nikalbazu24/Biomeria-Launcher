@@ -13,7 +13,8 @@ import com.prissma.launcher.data.EngineType
 import com.prissma.launcher.data.GameInstance
 import com.prissma.launcher.engine.java.DEFAULT_GAME_VERSION
 import com.prissma.launcher.engine.java.supportedVersions
-import com.prissma.launcher.engine.java.supportsFabric
+import com.prissma.launcher.engine.java.javaLoaders
+import com.prissma.launcher.engine.java.supportsJavaLoader
 import com.prissma.launcher.engine.java.validCatalogVersion
 import com.prissma.launcher.ui.components.LauncherButton
 import com.prissma.launcher.ui.components.gamepadClick
@@ -78,14 +79,14 @@ internal fun InstanceEditor(
                 if (engine == EngineType.JAVA && playable) {
                     Text("Cargador", style = MaterialTheme.typography.titleSmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        val loaders = if (supportsFabric(version)) listOf("Vanilla", "Fabric") else listOf("Vanilla")
+                        val loaders = javaLoaders(version)
                         loaders.forEach { choice ->
                             val select = { loader = choice }
                             FilterChip(loader.substringBefore(' ') == choice, select, { Text(choice) },
                                 modifier = Modifier.gamepadClick(onClick = select))
                         }
                     }
-                    if (loader.startsWith("Fabric")) Text("Descarga mods compatibles desde el Taller.",
+                    if (loader != "Vanilla") Text("Descarga mods compatibles desde el Taller.",
                         color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
                 }
             }
@@ -103,7 +104,7 @@ internal fun InstanceEditor(
     )
     if (showVersions) MinecraftVersionPicker({ showVersions = false }) { selected ->
         version = selected.version
-        if (!supportsFabric(selected.version)) loader = "Vanilla"
+        if (!supportsJavaLoader(selected.version, loader)) loader = "Vanilla"
         showVersions = false
     }
 }

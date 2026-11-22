@@ -204,6 +204,7 @@ class ModrinthRepository internal constructor(
 
     fun getInstalledFiles(instanceId: String, gameVersion: String, loader: String?): List<InstalledFileItem> {
         val instanceRoot = File(filesDir, "instances/$instanceId")
+        val loaderLabel = workshopModLoaderName(loader)
         if (!instanceRoot.exists()) return emptyList()
 
         val list = mutableListOf<InstalledFileItem>()
@@ -220,11 +221,11 @@ class ModrinthRepository internal constructor(
                         sizeKb = (file.length() / 1024L).coerceAtLeast(1L),
                         file = file,
                         compatibility = when {
-                            cat == WorkshopCategory.MODS && loader != "fabric" -> "Requiere Fabric"
+                            cat == WorkshopCategory.MODS && loaderLabel == null -> "Requiere Fabric o NeoForge"
                             cat != WorkshopCategory.MODS -> null
                             metadata[file.name] == null -> "Compatibilidad sin verificar"
-                            metadata.getValue(file.name).matchesGame(gameVersion, cat, loader) -> "Compatible con $gameVersion · Fabric"
-                            else -> "Incompatible con esta versión de Minecraft"
+                            metadata.getValue(file.name).matchesGame(gameVersion, cat, loader) -> "Compatible con $gameVersion · $loaderLabel"
+                            else -> "Incompatible con la versión o el cargador de la instancia"
                         }
                     )
                 )

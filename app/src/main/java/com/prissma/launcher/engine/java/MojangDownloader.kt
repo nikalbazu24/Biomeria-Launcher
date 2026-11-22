@@ -27,6 +27,20 @@ internal fun validCatalogVersion(version: String) = version.trim().matches(Regex
 
 internal fun supportsFabric(version: String) = version in supportedVersions && version !in experimentalVersions
 
+internal fun javaLoaders(version: String): List<String> = buildList {
+    add("Vanilla")
+    if (supportsFabric(version)) add("Fabric")
+    if (version == NEOFORGE_GAME_VERSION) add("NeoForge")
+}
+
+internal fun supportsJavaLoader(version: String, loader: String): Boolean = version in supportedVersions && when {
+    loader == "Vanilla" -> true
+    loader == "NeoForge" || loader == "NeoForge $NEOFORGE_VERSION" -> version == NEOFORGE_GAME_VERSION
+    loader.matches(Regex("Fabric(?: [0-9][A-Za-z0-9._+-]{0,49})?")) -> supportsFabric(version)
+    else -> false
+}
+
+
 internal data class MinecraftCatalogEntry(val version: String, val channel: String) {
     val playable: Boolean get() = channel == "release" && version in supportedVersions
 }
@@ -44,7 +58,10 @@ internal data class PreparedJavaGame(
     val clientJar: File,
     val libraries: List<File>,
     val assetsDir: File,
-    val assetIndexId: String
+    val assetIndexId: String,
+    val jvmArguments: List<String> = emptyList(),
+    val additionalGameArguments: List<String> = emptyList(),
+    val neoForgePlan: File? = null
 )
 
 internal class MojangDownloader(context: Context) {
@@ -94,7 +111,14 @@ internal class MojangDownloader(context: Context) {
         val assetIndexId = ready.getString("assetIndexId")
         check(client.isFile && libraries.isNotEmpty() && libraries.all { it.isFile })
         check(File(assetsDir, "indexes/$assetIndexId.json").isFile)
-        PreparedJavaGame(ready.getString("mainClass"), client, libraries, assetsDir, assetIndexId)
+        val mainClass = ready.getString("mainClass")
+        val plan = ready.optString("neoForgePlan").takeIf { it.isNotBlank() }?.let(::File)
+        if (mainClass == NEOFORGE_MAIN_CLASS) {
+            check(plan?.isFile == true && ready.getJSONArray("installerInputs").strings().all { File(it).isFile })
+        }
+        PreparedJavaGame(mainClass, client, libraries, assetsDir, assetIndexId,
+            ready.optJSONArray("jvmArguments")?.strings().orEmpty(),
+            ready.optJSONArray("gameArguments")?.strings().orEmpty(), plan)
     }.getOrNull()
 
     suspend fun prepare(
@@ -126,7 +150,19 @@ internal class MojangDownloader(context: Context) {
             artifacts.removeAll { it.coordinate.startsWith("org.lwjgl:") }
             artifacts.addAll(lwjgl)
         }
-        val mainClass = if (loader.startsWith("Fabric")) {
+        val neoForge = if (loader.startsWith("NeoForge")) {
+            progress(.06f, "Descargando el instalador de NeoForge")
+            val root = File(shared, "neoforge/$NEOFORGE_VERSION")
+            val installer = File(root, "installer.jar")
+            verifiedDownload(NEOFORGE_INSTALLER_URL, installer, NEOFORGE_INSTALLER_SHA256)
+            neoForgeInstall(installer, root, client, File(marker.parentFile, marker.nameWithoutExtension + ".properties"), versionMeta)
+        } else null
+        val mainClass = if (neoForge != null) {
+            val replaced = neoForge.launchLibraries.map { mavenModule(it.coordinate) }.toSet()
+            artifacts.removeAll { mavenModule(it.coordinate) in replaced }
+            artifacts.addAll(0, neoForge.launchLibraries)
+            NEOFORGE_MAIN_CLASS
+        } else if (loader.startsWith("Fabric")) {
             val pinned = loader.substringAfter(' ', "").takeIf { it.isNotBlank() }
             val fabricVersion = pinned ?: JSONArray(httpText("$fabricMeta/$version")).objects()
                 .map { it.getJSONObject("loader") }.first { it.optBoolean("stable") }.getString("version")
@@ -150,8 +186,8 @@ internal class MojangDownloader(context: Context) {
             profile.getString("mainClass")
         } else versionMeta.getString("mainClass")
 
-        val downloads = artifacts + Artifact(clientInfo.getString("url"), client, clientInfo.getString("sha1"),
-            File(instanceRoot, "versions/$version/$version.jar"))
+        val downloads = (artifacts + neoForge?.downloads.orEmpty() + Artifact(clientInfo.getString("url"), client,
+            clientInfo.getString("sha1"), File(instanceRoot, "versions/$version/$version.jar"))).distinctBy { it.file }
         progress(.10f, "Descargando cliente y bibliotecas")
         var completed = 0
         for (batch in downloads.chunked(8)) {
@@ -173,6 +209,13 @@ internal class MojangDownloader(context: Context) {
             .put("client", client.absolutePath)
             .put("libraries", JSONArray(libraries.map { it.absolutePath }))
             .put("assetIndexId", index)
+        neoForge?.let {
+            it.writePlan()
+            ready.put("jvmArguments", JSONArray(it.jvmArguments))
+                .put("gameArguments", JSONArray(it.gameArguments))
+                .put("neoForgePlan", it.planFile.absolutePath)
+                .put("installerInputs", JSONArray(it.downloads.map { artifact -> artifact.file.absolutePath } + it.patch.absolutePath))
+        }
         val temporary = File.createTempFile("ready-", ".json", checkNotNull(marker.parentFile).apply { mkdirs() })
         try {
             temporary.writeText(ready.toString())
@@ -181,7 +224,8 @@ internal class MojangDownloader(context: Context) {
             temporary.delete()
         }
         progress(1f, "Minecraft listo")
-        PreparedJavaGame(mainClass, client, libraries, assetsDir, index)
+        PreparedJavaGame(mainClass, client, libraries, assetsDir, index,
+            neoForge?.jvmArguments.orEmpty(), neoForge?.gameArguments.orEmpty(), neoForge?.planFile)
     }
 
     private fun libraries(metadata: JSONObject, instanceRoot: File): List<Artifact> =
@@ -197,25 +241,22 @@ internal class MojangDownloader(context: Context) {
 
     private fun descriptor(instanceId: String, version: String, loader: String): File {
         require(safeId.matches(instanceId))
-        require(version in supportedVersions) { "Elige una versión compatible con el runtime de Android." }
-        require(loader == "Vanilla" || loader.matches(Regex("Fabric(?: [0-9][A-Za-z0-9._+-]{0,49})?"))) {
-            "PRISSMA admite Vanilla y Fabric para estas versiones."
-        }
-        require(loader == "Vanilla" || supportsFabric(version)) { "Esta versión está en pruebas con Vanilla." }
+        require(supportsJavaLoader(version, loader)) { "La versión o el cargador de la instancia todavía no es compatible." }
         // Key the cache by both launcher settings, even for older instances with a pinned loader.
         return File(shared, "prepared/$instanceId/$version-" + loader.replace(' ', '-') + ".json")
     }
 
-    private suspend fun verifiedDownload(url: String, file: File, sha1: String, previous: File? = null) {
-        require(sha1.matches(Regex("(?i)[a-f0-9]{40}"))) { "La fuente devolvió una suma inválida." }
-        if (sameSha1(file, sha1)) return
+    private suspend fun verifiedDownload(url: String, file: File, checksum: String, previous: File? = null) {
+        require(checksum.matches(Regex("(?i)(?:[a-f0-9]{40}|[a-f0-9]{64})"))) { "La fuente devolvió una suma inválida." }
+        val algorithm = if (checksum.length == 64) "SHA-256" else "SHA-1"
+        if (matchesChecksum(file, checksum, algorithm)) return
         val parent = checkNotNull(file.parentFile).apply { mkdirs() }
         repeat(3) { attempt ->
             val partial = File.createTempFile("download-", ".part", parent)
             try {
-                if (previous != null && sameSha1(previous, sha1)) previous.copyTo(partial, overwrite = true)
+                if (previous != null && matchesChecksum(previous, checksum, algorithm)) previous.copyTo(partial, overwrite = true)
                 else download(url, partial)
-                if (!sameSha1(partial, sha1)) throw IOException("La descarga de " + file.name + " está dañada.")
+                if (!matchesChecksum(partial, checksum, algorithm)) throw IOException("La descarga de " + file.name + " está dañada.")
                 Files.move(partial.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
                 return
             } catch (failure: IOException) {
@@ -262,18 +303,21 @@ internal class MojangDownloader(context: Context) {
     }
 }
 
-private data class Artifact(
+internal data class Artifact(
     val url: String, val file: File, val sha1: String, val previous: File? = null, val coordinate: String = ""
 )
 
 internal fun mavenModule(coordinate: String) = coordinate.split(':', limit = 3).take(2).joinToString(":")
 
 internal fun mavenPath(coordinate: String): String {
-    val parts = coordinate.split(':')
-    require(parts.size == 3 && parts.all { safeCoordinate.matches(it) && !it.startsWith('.') })
+    val parts = coordinate.substringBefore('@').split(':')
+    val extension = coordinate.substringAfter('@', "jar")
+    require(parts.size in 3..4 && parts.all { safeCoordinate.matches(it) && !it.startsWith('.') })
+    require(extension.matches(Regex("[a-zA-Z0-9]+")))
     val (group, artifact, version) = parts
     require(group.split('.').all { it.isNotEmpty() })
-    return group.replace('.', '/') + "/$artifact/$version/$artifact-$version.jar"
+    val classifier = parts.getOrNull(3)?.let { "-$it" }.orEmpty()
+    return group.replace('.', '/') + "/$artifact/$version/$artifact-$version$classifier.$extension"
 }
 
 private fun isLibraryAllowedOnLinux(library: JSONObject): Boolean {
@@ -284,9 +328,11 @@ private fun isLibraryAllowedOnLinux(library: JSONObject): Boolean {
     }?.getString("action") == "allow"
 }
 
-internal fun sameSha1(file: File, sha1: String): Boolean {
+internal fun sameSha1(file: File, sha1: String): Boolean = matchesChecksum(file, sha1, "SHA-1")
+
+private fun matchesChecksum(file: File, checksum: String, algorithm: String): Boolean {
     if (!file.isFile) return false
-    val digest = MessageDigest.getInstance("SHA-1")
+    val digest = MessageDigest.getInstance(algorithm)
     file.inputStream().buffered().use { input ->
         val buffer = ByteArray(32 * 1024)
         while (true) {
@@ -295,7 +341,8 @@ internal fun sameSha1(file: File, sha1: String): Boolean {
             digest.update(buffer, 0, count)
         }
     }
-    return digest.digest().joinToString("") { "%02x".format(it) }.equals(sha1, ignoreCase = true)
+    return digest.digest().joinToString("") { "%02x".format(it) }.equals(checksum, ignoreCase = true)
 }
 
-private fun JSONArray.objects() = (0 until length()).map(::getJSONObject)
+internal fun JSONArray.objects() = (0 until length()).map(::getJSONObject)
+internal fun JSONArray.strings() = (0 until length()).map(::getString)

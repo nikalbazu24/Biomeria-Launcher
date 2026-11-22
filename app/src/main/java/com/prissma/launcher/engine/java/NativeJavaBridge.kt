@@ -33,6 +33,7 @@ object NativeJavaBridge {
         nativeLibraryDir: String,
         classpath: String,
         mainClass: String,
+        jvmArguments: Array<String>,
         gameArgs: Array<String>,
         javaHeapMb: Int
     ): Int

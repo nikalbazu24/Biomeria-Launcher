@@ -40,7 +40,7 @@ import com.prissma.launcher.engine.bedrock.BedrockInstallation
 import com.prissma.launcher.engine.bedrock.BedrockLauncher
 import com.prissma.launcher.engine.java.GameDownloads
 import com.prissma.launcher.engine.java.MojangDownloader
-import com.prissma.launcher.engine.java.supportedVersions
+import com.prissma.launcher.engine.java.supportsJavaLoader
 import com.prissma.launcher.ui.components.ControlShape
 import com.prissma.launcher.ui.components.LauncherButton
 import com.prissma.launcher.ui.components.PrissmaMark
@@ -296,7 +296,7 @@ internal fun HubScreen(
     if (showNew) InstanceEditor(onDismiss = { showNew = false }) { title, engine, gameVersion, loader ->
         val item = GameInstance(title = title, engine = engine, version = gameVersion, loader = loader)
         if (saveCatalog(listOf(item) + instances)) {
-            if (item.engine == EngineType.JAVA && item.version in supportedVersions) downloads.game(item)
+            if (item.engine == EngineType.JAVA && supportsJavaLoader(item.version, item.loader)) downloads.game(item)
             selectedId = item.id
             filter = null
             query = ""
@@ -314,7 +314,9 @@ internal fun HubScreen(
         ) { title, _, _, loader ->
             val edited = item.copy(title = title, loader = loader)
             if (saveCatalog(instances.map { if (it.id == item.id) edited else it })) {
-                if (edited.engine == EngineType.JAVA && edited.version in supportedVersions && edited.loader != item.loader) downloads.game(edited)
+                if (edited.engine == EngineType.JAVA && supportsJavaLoader(edited.version, edited.loader) && edited.loader != item.loader) {
+                    downloads.game(edited)
+                }
                 editingId = null
                 query = ""
             }

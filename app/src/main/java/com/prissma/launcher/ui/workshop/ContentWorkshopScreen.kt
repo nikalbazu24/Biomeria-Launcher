@@ -34,6 +34,7 @@ import com.prissma.launcher.data.InstalledFileItem
 import com.prissma.launcher.data.ModrinthItem
 import com.prissma.launcher.data.ModrinthRepository
 import com.prissma.launcher.data.WorkshopCategory
+import com.prissma.launcher.data.workshopModLoaderName
 import com.prissma.launcher.engine.java.GameDownloads
 import com.prissma.launcher.ui.components.ControlShape
 import com.prissma.launcher.ui.components.LauncherButton
@@ -64,6 +65,7 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
     val finished = jobs.filter { it.state.isFinished }.map { it.id }
     val focus = LocalFocusManager.current
     val loader = instance.configuredModLoader
+    val supportsMods = workshopModLoaderName(loader) != null
 
     var tab by rememberSaveable(instance.id) {
         mutableStateOf(if (loader == null) WorkshopTab.PACKS else WorkshopTab.MODS)
@@ -145,12 +147,12 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
                     keyboardActions = KeyboardActions(onSearch = { search() }))
                 LauncherButton("Buscar", ::search, icon = Icons.Default.Search, enabled = !loading)
             }
-            if (tab == WorkshopTab.MODS && loader == "fabric") {
+            if (tab == WorkshopTab.MODS && supportsMods) {
                 val toggle = { includeOtherMods = !includeOtherMods }
                 FilterChip(includeOtherMods, toggle, { Text("Incluir otras versiones y cargadores") },
                     modifier = Modifier.gamepadClick(onClick = toggle))
             } else if (tab == WorkshopTab.MODS) {
-                Text("Selecciona Fabric en la instancia para instalar mods.",
+                Text("Selecciona Fabric o NeoForge en la instancia para instalar mods.",
                     style = MaterialTheme.typography.bodySmall, color = Prissma.colors.textMuted)
             }
         }
@@ -189,7 +191,7 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
                     val job = latestJobs.firstOrNull { it.workshopProject == item.projectId || item.projectId in it.tags }
                     ProjectCard(
                         item, job,
-                        enabled = job?.state?.isFinished != false && (item.category != WorkshopCategory.MODS || loader == "fabric")
+                        enabled = job?.state?.isFinished != false && (item.category != WorkshopCategory.MODS || supportsMods)
                     ) {
                         if (item.category == WorkshopCategory.MODS) checkMod = item
                         else downloads.mod(instance, item.projectId, item.title, item.category)
@@ -214,7 +216,7 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
             title = { Text("Agregar mods") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("1. Crea una instancia Java, elige la versión de Minecraft y selecciona Fabric.")
+                    Text("1. Crea una instancia Java, elige la versión de Minecraft y selecciona Fabric o NeoForge.")
                     Text("2. Abre el Taller de esa instancia, entra en Mods y busca lo que quieres instalar.")
                     Text("3. Pulsa Comprobar. Revisa qué versión del mod y qué dependencias se instalarán, y confirma la descarga.")
                     Text("4. Revisa los archivos en Guardados. Cuando termine la descarga, vuelve a la instancia y pulsa Jugar.")

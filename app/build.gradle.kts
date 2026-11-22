@@ -148,8 +148,20 @@ val prepareLwjglJars by tasks.registering {
         patched.copyTo(core, overwrite = true)
     }
 }
+val neoForgeAssets = layout.buildDirectory.dir("generated/neoforge/assets")
+val neoForgeBootstrapClasses = tasks.register<JavaCompile>("compileNeoForgeBootstrap") {
+    source = fileTree("src/jvmBootstrap/java") { include("**/*.java") }
+    classpath = files()
+    destinationDirectory.set(layout.buildDirectory.dir("generated/neoforge/classes"))
+    options.release.set(17)
+}
+val neoForgeBootstrapJar = tasks.register<Jar>("neoForgeBootstrapJar") {
+    from(neoForgeBootstrapClasses.flatMap { it.destinationDirectory })
+    archiveFileName.set("neoforge-bootstrap.jar")
+    destinationDirectory.set(neoForgeAssets.map { it.dir("neoforge") })
+}
 tasks.named("preBuild") {
-    dependsOn(unpackJnaAndroid, unpackLwjglAndroid, unpackMobileGlues, prepareLwjglJars)
+    dependsOn(unpackJnaAndroid, unpackLwjglAndroid, unpackMobileGlues, prepareLwjglJars, neoForgeBootstrapJar)
 }
 
 android {
@@ -202,6 +214,7 @@ android {
     sourceSets.getByName("main").jniLibs.srcDir(lwjglJniLibs)
     sourceSets.getByName("main").jniLibs.srcDir(rendererJniLibs)
     sourceSets.getByName("main").assets.srcDir(lwjglAssets)
+    sourceSets.getByName("main").assets.srcDir(neoForgeAssets)
     // La JVM de Minecraft carga las bibliotecas desde applicationInfo.nativeLibraryDir.
     packaging.jniLibs.useLegacyPackaging = true
     packaging.jniLibs.keepDebugSymbols.addAll(

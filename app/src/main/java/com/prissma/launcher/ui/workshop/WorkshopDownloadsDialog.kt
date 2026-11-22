@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import androidx.work.WorkInfo
 import com.prissma.launcher.data.GameInstance
 import com.prissma.launcher.data.WorkshopCategory
+import com.prissma.launcher.data.workshopModLoaderName
 import com.prissma.launcher.engine.java.DOWNLOAD_DETAIL
 import com.prissma.launcher.engine.java.DOWNLOAD_MESSAGE
 import com.prissma.launcher.engine.java.DOWNLOAD_PERCENT
@@ -84,7 +85,7 @@ internal fun WorkshopDownloadsDialog(
                         WorkshopJobProgress(job)
                         if ((job.state == WorkInfo.State.FAILED || job.state == WorkInfo.State.CANCELLED) &&
                             instance != null && project != null && category != null &&
-                            (category != WorkshopCategory.MODS || instance.configuredModLoader == "fabric")
+                            (category != WorkshopCategory.MODS || workshopModLoaderName(instance.configuredModLoader) != null)
                         ) {
                             LauncherButton("Reintentar", {
                                 downloads.mod(instance, project, title, category, job.workshopTag(WORKSHOP_PLAN_TAG).orEmpty())

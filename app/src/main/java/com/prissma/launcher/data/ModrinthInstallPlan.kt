@@ -25,6 +25,12 @@ private data class RequiredMod(val projectId: String?, val versionId: String?)
 
 internal val modrinthId = Regex("[A-Za-z0-9]{1,64}")
 
+internal fun workshopModLoaderName(loader: String?): String? = when (loader) {
+    "fabric" -> "Fabric"
+    "neoforge" -> "NeoForge"
+    else -> null
+}
+
 internal class ModrinthInstallPlanner(
     private val category: WorkshopCategory,
     private val gameVersion: String,
@@ -34,7 +40,7 @@ internal class ModrinthInstallPlanner(
 ) {
     private val versions = mutableMapOf<String, List<JSONObject>>()
     private val exactVersions = mutableMapOf<String, JSONObject>()
-    private val loaderLabel = if (loader == "fabric") "Fabric" else loader.orEmpty()
+    private val loaderLabel = workshopModLoaderName(loader)
     private val pins = if (confirmedPins.isBlank()) emptyMap() else confirmedPins.split(',').associate { pin ->
         val (project, version) = pin.split(':', limit = 2)
         require(modrinthId.matches(project) && modrinthId.matches(version))
@@ -43,8 +49,8 @@ internal class ModrinthInstallPlanner(
     private var attempts = 0
 
     fun plan(projectId: String): WorkshopInstallPlan {
-        if (category == WorkshopCategory.MODS && loader != "fabric") {
-            throw WorkshopIncompatibility("Selecciona Fabric en la instancia para instalar mods de este Taller.")
+        if (category == WorkshopCategory.MODS && loaderLabel == null) {
+            throw WorkshopIncompatibility("Selecciona Fabric o NeoForge en la instancia para instalar mods de este Taller.")
         }
         val selected = resolve(listOf(RequiredMod(projectId, pins[projectId])), emptyMap())
         if (pins.isNotEmpty() && selected.mapValues { it.value.versionId } != pins) {
@@ -146,7 +152,7 @@ internal class ModrinthInstallPlanner(
             ?: throw WorkshopIncompatibility("La versión $version no tiene un archivo para descargar.")
         val name = file.getString("filename")
         if (category == WorkshopCategory.MODS && !name.endsWith(".jar", ignoreCase = true)) {
-            throw WorkshopIncompatibility("La versión $version no ofrece un archivo JAR de Fabric.")
+            throw WorkshopIncompatibility("La versión $version no ofrece un archivo JAR para $loaderLabel.")
         }
         require(safeWorkshopFilename(name)) { "Modrinth devolvió un nombre de archivo inválido." }
         val url = file.getString("url")

@@ -39,8 +39,8 @@ import com.prissma.launcher.engine.java.PreparedJavaGame
 import com.prissma.launcher.engine.java.RUNTIME_WORK
 import com.prissma.launcher.engine.java.applyMinecraftOptions
 import com.prissma.launcher.engine.java.gameLanguages
-import com.prissma.launcher.engine.java.supportedVersions
-import com.prissma.launcher.engine.java.supportsFabric
+import com.prissma.launcher.engine.java.supportsJavaLoader
+import com.prissma.launcher.engine.java.NEOFORGE_VERSION
 import com.prissma.launcher.engine.java.experimentalVersions
 import com.prissma.launcher.ui.components.LauncherButton
 import com.prissma.launcher.ui.components.PageHeader
@@ -94,8 +94,7 @@ fun JavaLaunchScreen(
             settings.getBoolean("fps-" + instance.id, false),
             settings.getFloat("pause-opacity-" + instance.id, .65f).coerceIn(.15f, 1f)))
     }
-    val supported = instance.version in supportedVersions &&
-        (instance.loader == "Vanilla" || (instance.configuredModLoader == "fabric" && supportsFabric(instance.version)))
+    val supported = supportsJavaLoader(instance.version, instance.loader)
 
     fun saveHud(updated: GameHudSettings) {
         hud = updated
@@ -136,7 +135,8 @@ fun JavaLaunchScreen(
                 val classpath = runtimeManager.buildClasspath(ready)
                 val playerUuid = UUID.nameUUIDFromBytes("OfflinePlayer:$playerName".toByteArray(Charsets.UTF_8))
                 val gameArgs = runtimeManager.buildMinecraftArgs(
-                    instance.id, instance.version, playerName, playerUuid.toString(), ready.assetsDir,
+                    instance.id, if (ready.neoForgePlan == null) instance.version else "neoforge-$NEOFORGE_VERSION",
+                    playerName, playerUuid.toString(), ready.assetsDir,
                     ready.assetIndexId, accountType
                 )
                 gameActivity.launch(Intent(context, JavaGameActivity::class.java).apply {
@@ -145,7 +145,8 @@ fun JavaLaunchScreen(
                     putExtra("MAIN_CLASS", ready.mainClass)
                     putExtra("GAME_DIR_PATH", gameDir.absolutePath)
                     putExtra("CLASSPATH", classpath)
-                    putExtra("GAME_ARGS", gameArgs)
+                    putExtra("GAME_ARGS", gameArgs + ready.additionalGameArguments)
+                    putExtra("JVM_ARGS", ready.jvmArguments.toTypedArray())
                     putExtra("LIBJVM_PATH", installed.libJvmFile.absolutePath)
                     putExtra("JAVA_HOME_PATH", installed.javaHomeDir.absolutePath)
                     putExtra("JAVA_HEAP_MB", heapMb)
@@ -181,6 +182,8 @@ fun JavaLaunchScreen(
                 DownloadRow("Java 21 · ARM64", runtime != null, runtimeTask) { downloads.runtime() }
                 HorizontalDivider(color = Prissma.colors.borderSubtle)
                 if (instance.version in experimentalVersions) Text("Vanilla con Java 21 · En pruebas",
+                    color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
+                if (instance.configuredModLoader == "neoforge") Text("NeoForge $NEOFORGE_VERSION · El primer arranque prepara el cliente.",
                     color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
                 if (supported) DownloadRow("Minecraft " + instance.version, game != null, gameTask) { downloads.game(instance) }
                 else Text("La versión o el cargador de esta instancia requiere otro runtime.", color = Prissma.colors.error)

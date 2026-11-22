@@ -85,6 +85,7 @@ class JavaGameActivity : ComponentActivity() {
         val gameDirPath = intent.getStringExtra("GAME_DIR_PATH") ?: filesDir.absolutePath
         val classpath = intent.getStringExtra("CLASSPATH") ?: ""
         val gameArgs = intent.getStringArrayExtra("GAME_ARGS") ?: emptyArray()
+        val jvmArguments = intent.getStringArrayExtra("JVM_ARGS") ?: emptyArray()
         val libJvmPath = intent.getStringExtra("LIBJVM_PATH") ?: ""
         val javaHomePath = intent.getStringExtra("JAVA_HOME_PATH") ?: ""
         val javaHeapMb = intent.getIntExtra("JAVA_HEAP_MB", DEFAULT_JAVA_HEAP_MB)
@@ -105,6 +106,7 @@ class JavaGameActivity : ComponentActivity() {
                     gameDirPath = gameDirPath,
                     classpath = classpath,
                     gameArgs = gameArgs,
+                    jvmArguments = jvmArguments,
                     libJvmPath = libJvmPath,
                     javaHomePath = javaHomePath,
                     javaHeapMb = javaHeapMb,
@@ -160,6 +162,7 @@ private fun JavaNativeViewportScreen(
     gameDirPath: String,
     classpath: String,
     gameArgs: Array<String>,
+    jvmArguments: Array<String>,
     libJvmPath: String,
     javaHomePath: String,
     javaHeapMb: Int,
@@ -304,6 +307,7 @@ private fun JavaNativeViewportScreen(
                                 nativeLibraryDir = ctx.applicationInfo.nativeLibraryDir,
                                 classpath = classpath,
                                 mainClass = mainClass,
+                                jvmArguments = jvmArguments,
                                 gameArgs = gameArgs + arrayOf("--width", width.toString(), "--height", height.toString()),
                                 javaHeapMb = javaHeapMb
                             )

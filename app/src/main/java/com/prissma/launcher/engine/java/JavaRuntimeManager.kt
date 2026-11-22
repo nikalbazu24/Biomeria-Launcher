@@ -310,8 +310,7 @@ class JavaRuntimeManager(private val context: Context) {
         return count
     }
 
-    private fun bundledLwjglJar(name: String): File {
-        val relativePath = "lwjgl/$ANDROID_LWJGL_VERSION/$name"
+    private fun bundledJvmJar(relativePath: String): File {
         // Android vacía codeCacheDir al actualizar la app.
         val target = File(context.codeCacheDir, relativePath)
         if (target.isFile && target.length() > 0) return target
@@ -332,8 +331,8 @@ class JavaRuntimeManager(private val context: Context) {
         val bundled = setOf("lwjgl", "lwjgl-opengl", "lwjgl-stb", "lwjgl-freetype", "lwjgl-tinyfd")
             .map { "$it-$ANDROID_LWJGL_VERSION.jar" }.toSet()
         val jars = game.libraries.map { file ->
-            if (file.name in bundled) bundledLwjglJar(file.name) else file
-        } + game.clientJar
+            if (file.name in bundled) bundledJvmJar("lwjgl/$ANDROID_LWJGL_VERSION/${file.name}") else file
+        } + if (game.neoForgePlan == null) game.clientJar else bundledJvmJar("neoforge/neoforge-bootstrap.jar")
         jars.distinctBy { it.name }.joinToString(File.pathSeparator) { it.absolutePath }
     }
 
