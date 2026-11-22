@@ -1,0 +1,87 @@
+name: Transport PRISSMA beta 113 for signing
+on:
+  push:
+    branches: [ops/transfer-prissma-113]
+permissions:
+  actions: read
+  contents: read
+jobs:
+  split:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for the verified build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for attempt in {1..30}; do
+            result="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/45060213870" --jq '[.status,.conclusion] | join(" ")')"
+            if [ "$result" = 'completed success' ]; then exit 0; fi
+            if [[ "$result" == 'completed '* ]]; then printf '%s\n' "$result"; exit 1; fi
+            sleep 12
+          done
+          exit 1
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: '45060213870'
+          name: PRISSMA-APK
+          path: input
+      - name: Split the APK and record its digest
+        run: |
+          apk=input/PRISSMA-Launcher-v1.0.0-beta.113.apk
+          mkdir -p transfer
+          sha256sum "$apk" | cut -d ' ' -f 1 > transfer/sha256.txt
+          split -b 20m "$apk" transfer/part-
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk-aa
+          path: transfer/part-aa
+          if-no-files-found: ignore
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk-ab
+          path: transfer/part-ab
+          if-no-files-found: ignore
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk-ac
+          path: transfer/part-ac
+          if-no-files-found: ignore
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk-ad
+          path: transfer/part-ad
+          if-no-files-found: ignore
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk-ae
+          path: transfer/part-ae
+          if-no-files-found: ignore
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk-af
+          path: transfer/part-af
+          if-no-files-found: ignore
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk-ag
+          path: transfer/part-ag
+          if-no-files-found: ignore
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk-ah
+          path: transfer/part-ah
+          if-no-files-found: ignore
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk-digest
+          path: transfer/sha256.txt
+          if-no-files-found: error
