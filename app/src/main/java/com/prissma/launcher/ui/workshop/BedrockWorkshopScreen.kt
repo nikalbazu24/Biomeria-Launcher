@@ -117,7 +117,7 @@ internal fun BedrockWorkshopScreen(
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
             pending?.let { archive ->
-                Text("${archive.type.label} verificado", style = MaterialTheme.typography.titleSmall, color = Prissma.colors.brandAccent)
+                Text("${archive.content.label} verificado", style = MaterialTheme.typography.titleSmall, color = Prissma.colors.brandAccent)
                 Text(archive.name, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 val target = installation?.takeIf { it.canOpen }
                 if (target != null) {
@@ -132,7 +132,7 @@ internal fun BedrockWorkshopScreen(
                                 report("Minecraft dejó de estar disponible. Vuelve a elegir la aplicación.", error = true)
                             }
                             BedrockImportDelivery.NO_IMPORTER -> {
-                                report("Android no pudo abrir un importador de .${archive.type.extension} en ${target.title}.", error = true)
+                                report("Android no pudo abrir un importador de .${archive.content.extension} en ${target.title}.", error = true)
                             }
                         }
                     }, primary = true)

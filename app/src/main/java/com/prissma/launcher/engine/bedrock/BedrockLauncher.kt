@@ -99,7 +99,7 @@ internal class BedrockLauncher(private val activity: Activity) {
 
     fun importArchive(archive: PreparedBedrockImport, selectedPackage: String): BedrockImportDelivery {
         val target = detect()?.takeIf { it.canOpen && it.packageName == selectedPackage }
-        return deliverBedrockArchive(archive.type, target?.packageName) { packageName, mime ->
+        return deliverBedrockArchive(archive.content, target?.packageName) { packageName, mime ->
             start(Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(archive.uri, mime)
                 setPackage(packageName)

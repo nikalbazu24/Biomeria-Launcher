@@ -2,9 +2,11 @@ package com.prissma.launcher.engine.rust
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.ClipData
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import com.prissma.launcher.engine.imports.PreparedArchive
 
 internal const val STARLING_PACKAGE = "io.github.juanluci.starling"
 internal const val STARLING_MINECRAFT_VERSION = "26.3"
@@ -45,6 +47,16 @@ internal class StarlingLauncher(private val activity: Activity) {
     fun openDiagnostics(): String? {
         val launch = Intent(Intent.ACTION_VIEW).setClassName(STARLING_PACKAGE, STARLING_DIAGNOSTICS_ACTIVITY)
         return if (start(launch)) null else "Android no pudo abrir el diagnóstico. Comprueba que Starling esté instalado y actualizado."
+    }
+
+    fun importMod(archive: PreparedArchive<StarlingMod>): String? {
+        detect().launchProblem()?.let { return it }
+        val launch = Intent(Intent.ACTION_VIEW)
+            .setDataAndType(archive.uri, "application/zip")
+            .setPackage(STARLING_PACKAGE)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        launch.clipData = ClipData.newRawUri(archive.name, archive.uri)
+        return if (start(launch)) null else "Android no pudo abrir el importador de mods de Starling."
     }
 
     fun openReleases(): String? =
