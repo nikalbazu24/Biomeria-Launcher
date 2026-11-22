@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "prissma_dual_screen",
+  "version": "1.0.0",
+  "name": "PRISSMA Dual Screen",
+  "environment": "client",
+  "mixins": ["prissma-dual-screen.mixins.json"],
+  "depends": {
+    "minecraft": "1.21.4",
+    "fabricloader": ">=0.15.0"
+  }
+}

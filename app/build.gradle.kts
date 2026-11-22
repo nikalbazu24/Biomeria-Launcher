@@ -202,9 +202,35 @@ val neoForgeBootstrapJar = tasks.register<Jar>("neoForgeBootstrapJar") {
     archiveFileName.set("neoforge-bootstrap.jar")
     destinationDirectory.set(neoForgeAssets.map { it.dir("neoforge") })
 }
+val dualScreenAssets = layout.buildDirectory.dir("generated/dualscreen/assets")
+val fabricMixinCompiler = layout.buildDirectory.file("downloads/dual-screen-mixin.jar")
+val downloadFabricMixinCompiler by tasks.registering {
+    val version = "0.15.4+mixin.0.8.7"
+    val sha256 = "4631f67da980ae2ac9e6e285a7df4680645e2f37a6a14acc775f97982162c2a2"
+    inputs.property("sha256", sha256)
+    outputs.file(fabricMixinCompiler)
+    doLast {
+        val source = "https://maven.fabricmc.net/net/fabricmc/sponge-mixin/$version/sponge-mixin-$version.jar"
+        fabricMixinCompiler.get().asFile.apply { parentFile.mkdirs() }.writeBytes(verifiedDownload(source, sha256))
+    }
+}
+val dualScreenClasses = tasks.register<JavaCompile>("compileDualScreenMod") {
+    dependsOn(downloadFabricMixinCompiler)
+    source = fileTree("src/dualScreenMod/java") { include("**/*.java") }
+    classpath = files(fabricMixinCompiler)
+    destinationDirectory.set(layout.buildDirectory.dir("generated/dualscreen/classes"))
+    options.release.set(17)
+    options.compilerArgs.add("-proc:none")
+}
+val dualScreenMod = tasks.register<Jar>("dualScreenMod") {
+    from(dualScreenClasses.flatMap { it.destinationDirectory })
+    from("src/dualScreenMod/resources")
+    archiveFileName.set("prissma-dual-screen.jar")
+    destinationDirectory.set(dualScreenAssets.map { it.dir("dualscreen") })
+}
 tasks.named("preBuild") {
     dependsOn(unpackJnaAndroid, unpackLwjglAndroid, unpackMobileGlues, unpackStarlingArm64, prepareLwjglJars,
-        neoForgeBootstrapJar, prepareElyAgent)
+        neoForgeBootstrapJar, prepareElyAgent, dualScreenMod)
 }
 
 android {
@@ -260,6 +286,7 @@ android {
     sourceSets.getByName("main").assets.srcDir(lwjglAssets)
     sourceSets.getByName("main").assets.srcDir(neoForgeAssets)
     sourceSets.getByName("main").assets.srcDir(elyAgentAssets)
+    sourceSets.getByName("main").assets.srcDir(dualScreenAssets)
     sourceSets.getByName("main").apply {
         java.srcDir("src/starling/java")
         res.srcDir("src/starling/res")

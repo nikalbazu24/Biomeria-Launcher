@@ -30,19 +30,22 @@ internal fun encodeGamepadActions(bindings: Map<Int, GamepadAction>): String =
 internal data class GameHudSettings(
     val showTouch: Boolean = true,
     val showFps: Boolean = false,
-    val pauseOpacity: Float = .65f
+    val pauseOpacity: Float = .65f,
+    val dualScreen: Boolean = false
 ) {
     fun toBundle() = Bundle().apply {
         putBoolean("touch", showTouch)
         putBoolean("fps", showFps)
         putFloat("opacity", pauseOpacity)
+        putBoolean("dualScreen", dualScreen)
     }
 
     companion object {
         fun fromBundle(bundle: Bundle?) = GameHudSettings(
             bundle?.getBoolean("touch", true) ?: true,
             bundle?.getBoolean("fps", false) ?: false,
-            bundle?.getFloat("opacity", .65f)?.coerceIn(.15f, 1f) ?: .65f
+            bundle?.getFloat("opacity", .65f)?.coerceIn(.15f, 1f) ?: .65f,
+            bundle?.getBoolean("dualScreen", false) ?: false
         )
     }
 }

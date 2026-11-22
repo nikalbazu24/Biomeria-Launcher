@@ -31,6 +31,14 @@ internal fun GameControlsDialog(
                 Text("En menús, mueve el cursor con un stick, pulsa A para confirmar y B para volver.")
                 Text("En partida, el stick izquierdo mueve al jugador y el derecho controla la cámara. Select abre PRISSMA.")
                 GameHudControls(hud, onHud)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Doble pantalla", Modifier.weight(1f))
+                    Switch(hud.dualScreen, { onHud(hud.copy(dualScreen = it)) })
+                }
+                if (hud.dualScreen) Text(
+                    "En una pantalla secundaria compatible podrás usar el panel táctil. Java 1.21.4 con Fabric habilita el inventario, el crafteo y el mapa.",
+                    style = MaterialTheme.typography.bodySmall
+                )
                 HorizontalDivider()
                 Text("Botones en partida", style = MaterialTheme.typography.titleSmall)
                 remappableGamepadButtons.forEach { (code, button) ->

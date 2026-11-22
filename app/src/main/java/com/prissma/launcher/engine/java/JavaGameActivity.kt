@@ -53,6 +53,7 @@ import com.prissma.launcher.data.accounts.AccountError
 import com.prissma.launcher.data.accounts.JavaAccountMode
 import com.prissma.launcher.data.accounts.MinecraftAccounts
 import kotlinx.coroutines.delay
+import java.io.File
 import kotlin.system.exitProcess
 import kotlin.math.roundToInt
 
@@ -63,6 +64,7 @@ class JavaGameActivity : ComponentActivity() {
     private lateinit var gameInput: GameInput
     private var controlsActive = false
     private var togglePanel: (() -> Unit)? = null
+    private var dualScreenBridge: DualScreenBridge? = null
 
     override fun dispatchKeyEvent(event: AndroidKeyEvent): Boolean {
         if (event.keyCode == AndroidKeyEvent.KEYCODE_BUTTON_SELECT && togglePanel != null) {
@@ -98,13 +100,22 @@ class JavaGameActivity : ComponentActivity() {
             profileId != null -> JavaAccountMode.MICROSOFT
             else -> JavaAccountMode.OFFLINE
         }
-        val jvmArguments = intent.getStringArrayExtra("JVM_ARGS") ?: emptyArray()
+        val baseJvmArguments = intent.getStringArrayExtra("JVM_ARGS") ?: emptyArray()
         val libJvmPath = intent.getStringExtra("LIBJVM_PATH") ?: ""
         val javaHomePath = intent.getStringExtra("JAVA_HOME_PATH") ?: ""
         val javaHeapMb = intent.getIntExtra("JAVA_HEAP_MB", DEFAULT_JAVA_HEAP_MB)
         val renderScale = RenderScale.fromPercent(intent.getIntExtra("RENDER_SCALE", 100))
         val renderer = JavaRenderer.fromName(intent.getStringExtra("JAVA_RENDERER"))
         val hud = GameHudSettings.fromBundle(intent.getBundleExtra("GAME_HUD"))
+        val panelMod = intent.getStringExtra(DUAL_SCREEN_MOD)?.let(::File)?.takeIf { hud.dualScreen && it.isFile }
+        val panelBridge = panelMod?.let { runCatching { DualScreenBridge.create(cacheDir) }.getOrNull() }
+        dualScreenBridge = panelBridge
+        val jvmArguments = if (panelMod != null && panelBridge != null) {
+            baseJvmArguments + arrayOf(
+                "-Dfabric.addMods=" + panelMod.absolutePath,
+                "-Dprissma.dualscreen.session=" + panelBridge.directory.absolutePath
+            )
+        } else baseJvmArguments
         gameInput = GameInput(
             decodeGamepadActions(intent.getStringExtra("GAMEPAD_BINDINGS").orEmpty()),
             intent.getDoubleExtra("HOTBAR_SCROLL_SCALE", 1.0)
@@ -133,6 +144,7 @@ class JavaGameActivity : ComponentActivity() {
                     return@PrissmaTheme
                 }
                 JavaNativeViewportScreen(
+                    activity = this@JavaGameActivity,
                     instanceTitle = title,
                     version = version,
                     mainClass = mainClass,
@@ -147,6 +159,7 @@ class JavaGameActivity : ComponentActivity() {
                     renderer = renderer,
                     input = gameInput,
                     initialHud = hud,
+                    panelBridge = panelBridge,
                     onHudChanged = { setResult(RESULT_OK, Intent().putExtra("GAME_HUD", it.toBundle())) },
                     onControls = { controlsActive = it },
                     onTogglePanel = { togglePanel = it },
@@ -163,6 +176,7 @@ class JavaGameActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        dualScreenBridge?.directory?.deleteRecursively()
         super.onDestroy()
         exitProcess(0)
     }
@@ -189,6 +203,7 @@ private class ScaledGameSurface(context: Context, private val scale: RenderScale
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun JavaNativeViewportScreen(
+    activity: JavaGameActivity,
     instanceTitle: String,
     version: String,
     mainClass: String,
@@ -203,6 +218,7 @@ private fun JavaNativeViewportScreen(
     renderer: JavaRenderer,
     input: GameInput,
     initialHud: GameHudSettings,
+    panelBridge: DualScreenBridge?,
     onHudChanged: (GameHudSettings) -> Unit,
     onControls: (Boolean) -> Unit,
     onTogglePanel: ((() -> Unit)?) -> Unit,
@@ -237,6 +253,16 @@ private fun JavaNativeViewportScreen(
         onDispose { onTogglePanel(null) }
     }
     val canSendInput = jvmStarted && !showOverlay && !showKeyboard
+    DualScreenHost(
+        activity = activity,
+        enabled = hud.dualScreen && hasPresentedFrame,
+        bridge = panelBridge,
+        title = instanceTitle,
+        hud = hud,
+        allowGameInput = canSendInput && captured,
+        onHud = { hud = it; onHudChanged(it) },
+        onHotbar = { slot -> input.selectHotbarSlot(slot + 1) }
+    )
     LaunchedEffect(canSendInput) {
         onControls(canSendInput)
         input.reset()

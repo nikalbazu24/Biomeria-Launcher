@@ -329,6 +329,10 @@ class JavaRuntimeManager(private val context: Context) {
         return target
     }
 
+    internal suspend fun dualScreenMod(): File = withContext(Dispatchers.IO) {
+        bundledJvmJar("dualscreen/prissma-dual-screen.jar")
+    }
+
     internal suspend fun buildClasspath(game: PreparedJavaGame): String = withContext(Dispatchers.IO) {
         val bundled = setOf("lwjgl", "lwjgl-opengl", "lwjgl-stb", "lwjgl-freetype", "lwjgl-tinyfd")
             .map { "$it-$ANDROID_LWJGL_VERSION.jar" }.toSet()

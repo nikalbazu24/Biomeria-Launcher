@@ -118,6 +118,27 @@ jobs:
           unzip -p "PRISSMA-Launcher-${RELEASE_TAG}.apk" assets/authlib/authlib-injector-1.2.8.jar > "$RUNNER_TEMP/ely-authlib-injector.jar"
           printf '%s  %s\n' '9c7f4343e6c82034958ffb48c14a2cb0c85928be7283103ce17da00c6d5a7b10' "$RUNNER_TEMP/ely-authlib-injector.jar" | sha256sum -c -
 
+      - name: Verificar el panel Fabric de doble pantalla
+        run: |
+          python3 - "PRISSMA-Launcher-${RELEASE_TAG}.apk" <<'PY'
+          import io
+          import json
+          import sys
+          import zipfile
+
+          with zipfile.ZipFile(sys.argv[1]) as apk:
+              module = apk.read("assets/dualscreen/prissma-dual-screen.jar")
+          with zipfile.ZipFile(io.BytesIO(module)) as mod:
+              metadata = json.loads(mod.read("fabric.mod.json"))
+              assert metadata["id"] == "prissma_dual_screen"
+              assert metadata["environment"] == "client"
+              assert metadata["depends"]["minecraft"] == "1.21.4"
+              mixins = json.loads(mod.read(metadata["mixins"][0]))
+              assert mixins["client"] == ["MinecraftClientMixin"]
+              for name in ("MinecraftClientMixin", "GamePanelBridge", "GamePanelBridge$Access"):
+                  assert mod.read(f"com/prissma/dualscreen/{name}.class").startswith(bytes.fromhex("CAFEBABE"))
+          PY
+
       - name: Verificar motor Rust dentro de la APK
         run: python3 scripts/verify_starling_apk.py "PRISSMA-Launcher-${RELEASE_TAG}.apk" app/build/downloads/starling-0.9.0-arm64.apk
 

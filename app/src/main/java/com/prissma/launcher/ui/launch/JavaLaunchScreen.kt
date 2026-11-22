@@ -28,6 +28,8 @@ import com.prissma.launcher.engine.java.DOWNLOAD_MESSAGE
 import com.prissma.launcher.engine.java.DOWNLOAD_PERCENT
 import com.prissma.launcher.engine.java.GameDownloads
 import com.prissma.launcher.engine.java.GameHudSettings
+import com.prissma.launcher.engine.java.DUAL_SCREEN_MOD
+import com.prissma.launcher.engine.java.supportsDualInventory
 import com.prissma.launcher.engine.java.DEFAULT_JAVA_HEAP_MB
 import com.prissma.launcher.engine.java.JavaRenderer
 import com.prissma.launcher.engine.java.RenderScale
@@ -97,7 +99,8 @@ fun JavaLaunchScreen(
     var hud by remember(instance.id) {
         mutableStateOf(GameHudSettings(settings.getBoolean("touch-" + instance.id, true),
             settings.getBoolean("fps-" + instance.id, false),
-            settings.getFloat("pause-opacity-" + instance.id, .65f).coerceIn(.15f, 1f)))
+            settings.getFloat("pause-opacity-" + instance.id, .65f).coerceIn(.15f, 1f),
+            settings.getBoolean("dual-screen-" + instance.id, false)))
     }
     val supported = supportsJavaLoader(instance.version, instance.loader)
 
@@ -105,7 +108,8 @@ fun JavaLaunchScreen(
         hud = updated
         settings.edit().putBoolean("touch-" + instance.id, updated.showTouch)
             .putBoolean("fps-" + instance.id, updated.showFps)
-            .putFloat("pause-opacity-" + instance.id, updated.pauseOpacity).apply()
+            .putFloat("pause-opacity-" + instance.id, updated.pauseOpacity)
+            .putBoolean("dual-screen-" + instance.id, updated.dualScreen).apply()
     }
     val gameActivity = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         result.data?.getBundleExtra("GAME_HUD")?.let { saveHud(GameHudSettings.fromBundle(it)) }
@@ -143,6 +147,9 @@ fun JavaLaunchScreen(
                 val gameDir = File(context.filesDir, "instances/" + instance.id)
                 val scrollScale = withContext(Dispatchers.IO) { applyMinecraftOptions(gameDir, language) }
                 val classpath = runtimeManager.buildClasspath(ready)
+                val dualScreenMod = if (hud.dualScreen && supportsDualInventory(instance.version, instance.configuredModLoader)) {
+                    runtimeManager.dualScreenMod().absolutePath
+                } else null
                 val playerUuid = UUID.nameUUIDFromBytes("OfflinePlayer:$playerName".toByteArray(Charsets.UTF_8))
                 val gameArgs = runtimeManager.buildMinecraftArgs(
                     instance.id, if (ready.neoForgePlan == null) instance.version else "neoforge-$NEOFORGE_VERSION",
@@ -170,6 +177,7 @@ fun JavaLaunchScreen(
                     putExtra("GAMEPAD_BINDINGS", encodeGamepadActions(bindings))
                     putExtra("HOTBAR_SCROLL_SCALE", scrollScale)
                     putExtra("GAME_HUD", hud.toBundle())
+                    if (dualScreenMod != null) putExtra(DUAL_SCREEN_MOD, dualScreenMod)
                 })
             } catch (error: CancellationException) {
                 throw error
