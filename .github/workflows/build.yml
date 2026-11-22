@@ -135,8 +135,11 @@ jobs:
               assert metadata["depends"]["minecraft"] == "1.21.4"
               mixins = json.loads(mod.read(metadata["mixins"][0]))
               assert mixins["client"] == ["MinecraftClientMixin"]
-              for name in ("MinecraftClientMixin", "GamePanelBridge", "GamePanelBridge$Access"):
-                  assert mod.read(f"com/prissma/dualscreen/{name}.class").startswith(bytes.fromhex("CAFEBABE"))
+              mixin_package = mixins["package"].replace(".", "/")
+              bridge_path = "com/prissma/dualscreen/GamePanelBridge"
+              assert not bridge_path.startswith(mixin_package + "/")
+              for entry in (mixin_package + "/MinecraftClientMixin", bridge_path, bridge_path + "$Access"):
+                  assert mod.read(entry + ".class").startswith(bytes.fromhex("CAFEBABE"))
           PY
 
       - name: Verificar motor Rust dentro de la APK

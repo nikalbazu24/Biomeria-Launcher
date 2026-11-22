@@ -1,5 +1,6 @@
-package com.prissma.dualscreen;
+package com.prissma.dualscreen.mixin;
 
+import com.prissma.dualscreen.GamePanelBridge;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
