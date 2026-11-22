@@ -1,13 +1,18 @@
 package com.prissma.launcher.ui.workshop
 
 import android.content.ActivityNotFoundException
+import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -22,25 +27,27 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.prissma.launcher.data.GameInstance
+import com.prissma.launcher.engine.bedrock.BedrockArchive
 import com.prissma.launcher.engine.bedrock.BedrockImportDelivery
-import com.prissma.launcher.engine.bedrock.BedrockImportStorage
 import com.prissma.launcher.engine.bedrock.BedrockInstallation
 import com.prissma.launcher.engine.bedrock.BedrockLauncher
+import com.prissma.launcher.engine.bedrock.BedrockLibraryItem
+import com.prissma.launcher.engine.bedrock.BedrockLibraryStorage
 import com.prissma.launcher.engine.bedrock.InvalidBedrockArchive
-import com.prissma.launcher.engine.bedrock.PreparedBedrockImport
-import com.prissma.launcher.engine.bedrock.launchProblem
 import com.prissma.launcher.ui.components.LauncherButton
 import com.prissma.launcher.ui.components.PageHeader
 import com.prissma.launcher.ui.components.PanelShape
+import com.prissma.launcher.ui.components.gamepadClick
 import com.prissma.launcher.ui.hub.BedrockAppsDialog
 import com.prissma.launcher.ui.theme.Prissma
-import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import java.io.IOException
 
 @Composable
 internal fun BedrockWorkshopScreen(
-    instanceTitle: String,
+    instance: GameInstance,
     installation: BedrockInstallation?,
     launcher: BedrockLauncher,
     onRefresh: () -> Unit,
@@ -48,102 +55,168 @@ internal fun BedrockWorkshopScreen(
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
-    val storage = remember(context) { BedrockImportStorage(context.applicationContext) }
+    val storage = remember(context, instance.id) { BedrockLibraryStorage(context.applicationContext, instance.id) }
     val scope = rememberCoroutineScope()
-    var pending by remember { mutableStateOf<PreparedBedrockImport?>(null) }
-    var working by remember { mutableStateOf<String?>(null) }
+    val progress = remember { MutableStateFlow<String?>(null) }
+    val working by progress.collectAsState()
+    var archives by remember(storage) { mutableStateOf(emptyList<BedrockLibraryItem>()) }
+    var filter by rememberSaveable { mutableStateOf<BedrockArchive?>(null) }
+    var exportingId by rememberSaveable { mutableStateOf<String?>(null) }
+    var removingId by rememberSaveable { mutableStateOf<String?>(null) }
     var notice by rememberSaveable { mutableStateOf<String?>(null) }
     var hasError by rememberSaveable { mutableStateOf(false) }
     var chooseApp by rememberSaveable { mutableStateOf(false) }
-
-    DisposableEffect(storage) { onDispose { pending?.let(storage::discard) } }
 
     fun report(message: String, error: Boolean = false) {
         notice = message
         hasError = error
     }
 
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { source ->
-        if (source != null && working == null) {
-            pending?.let(storage::discard)
-            pending = null
-            notice = null
-            working = "Copiando el archivo…"
-            scope.launch {
-                try {
-                    pending = storage.prepare(source) { name -> working = "Verificando $name…" }
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (error: InvalidBedrockArchive) {
-                    report(error.message.orEmpty(), error = true)
-                } catch (error: IOException) {
-                    report("No se pudo preparar el archivo. Revisa que esté disponible y que quede espacio libre.", error = true)
-                } catch (error: SecurityException) {
-                    report("Android no dio acceso al archivo. Selecciónalo de nuevo.", error = true)
-                } finally {
-                    working = null
-                }
-            }
+    suspend fun runTask(label: String, failure: String, action: suspend () -> Unit) {
+        if (progress.value != null) return
+        progress.value = label
+        notice = null
+        try {
+            action()
+        } catch (error: InvalidBedrockArchive) {
+            report(error.message.orEmpty(), error = true)
+        } catch (error: IOException) {
+            report(failure, error = true)
+        } catch (error: SecurityException) {
+            report("Android no dio acceso al archivo. Vuelve a seleccionarlo.", error = true)
+        } finally {
+            progress.value = null
         }
     }
 
-    Column(
-        Modifier.fillMaxSize().background(Prissma.colors.surfaceVoid).safeDrawingPadding().padding(14.dp)
+    LaunchedEffect(storage) {
+        runTask("Cargando biblioteca…", "No se pudo abrir el contenido de esta instancia.") {
+            archives = storage.list()
+        }
+    }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { source ->
+        if (source != null) scope.launch {
+            runTask("Copiando el archivo…", "No se pudo guardar el archivo. Revisa que se pueda leer y quede espacio libre.") {
+                val result = storage.importArchive(source) { progress.value = "Verificando el archivo…" }
+                archives = storage.list()
+                filter = result.item.type
+                report(if (result.added) "Guardado en esta instancia." else "Este archivo ya está guardado en esta instancia.")
+            }
+        }
+    }
+    val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { destination ->
+        val id = exportingId
+        exportingId = null
+        if (destination != null && id != null) scope.launch {
+            runTask("Exportando archivo…", "No se pudo exportar el archivo al destino elegido.") {
+                storage.export(id, destination)
+                report("Copia exportada.")
+            }
+        }
+    }
+    val ready = working == null && exportingId == null
+    val filtered = archives.filter { filter == null || it.type == filter }
+    val target = installation?.takeIf { it.canOpen }
+
+    LazyColumn(
+        Modifier.fillMaxSize().background(Prissma.colors.surfaceVoid).safeDrawingPadding()
             .onPreviewKeyEvent {
                 if (it.type == KeyEventType.KeyUp && (it.key == Key.ButtonB || it.key == Key.Escape)) {
                     onBack()
                     true
                 } else false
-            }.verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            },
+        contentPadding = PaddingValues(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        PageHeader("Taller de Bedrock", instanceTitle, onBack)
-        Column(Modifier.fillMaxWidth().background(Prissma.colors.surfaceCard, PanelShape).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Importar contenido local", style = MaterialTheme.typography.titleLarge)
-            Text("Paquetes .mcpack · complementos .mcaddon · mundos .mcworld", color = Prissma.colors.textMuted)
-            Text(installation.launchProblem() ?: checkNotNull(installation).label, style = MaterialTheme.typography.bodyMedium)
-            LauncherButton("Importar archivo", {
-                try {
-                    picker.launch(arrayOf("*/*"))
-                } catch (error: ActivityNotFoundException) {
-                    report("Android no pudo abrir el selector de archivos.", error = true)
+        item { PageHeader("Taller de Bedrock", instance.title, onBack) }
+        item {
+            Column(Modifier.fillMaxWidth().background(Prissma.colors.surfaceCard, PanelShape).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Biblioteca de contenido", style = MaterialTheme.typography.titleLarge)
+                Text("Archivos de esta instancia · .mcpack, .mcaddon y .mcworld", color = Prissma.colors.textMuted)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LauncherButton("Importar archivo", {
+                        try {
+                            picker.launch(arrayOf("*/*"))
+                        } catch (error: ActivityNotFoundException) {
+                            report("Android no pudo abrir el selector de archivos.", error = true)
+                        }
+                    }, primary = true, enabled = ready)
+                    LauncherButton(if (target == null) "Buscar Minecraft" else "Cambiar aplicación", { chooseApp = true }, enabled = ready)
                 }
-            }, primary = pending == null, enabled = working == null)
-            LauncherButton(if (installation?.canOpen == true) "Cambiar aplicación" else "Buscar Minecraft", { chooseApp = true })
-
-            working?.let { message ->
-                Text(message, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                working?.let { message ->
+                    Text(message, style = MaterialTheme.typography.bodyMedium)
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+                notice?.let { message ->
+                    Text(message, color = if (hasError) Prissma.colors.error else Prissma.colors.brandAccent,
+                        style = MaterialTheme.typography.bodyMedium)
+                }
             }
-            pending?.let { archive ->
-                Text("${archive.type.label} verificado", style = MaterialTheme.typography.titleSmall, color = Prissma.colors.brandAccent)
-                Text(archive.name, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                val target = installation?.takeIf { it.canOpen }
-                if (target != null) {
-                    LauncherButton("Abrir en Minecraft", {
-                        when (launcher.importArchive(archive, target.packageName)) {
-                            BedrockImportDelivery.SENT -> {
-                                pending = null
-                                report("Enviado a ${target.title}. Revisa el aviso de importación dentro del juego.")
-                            }
-                            BedrockImportDelivery.NO_GAME -> {
-                                onRefresh()
-                                report("Minecraft dejó de estar disponible. Vuelve a elegir la aplicación.", error = true)
-                            }
-                            BedrockImportDelivery.NO_IMPORTER -> {
-                                report("Android no pudo abrir un importador de .${archive.type.extension} en ${target.title}.", error = true)
+        }
+        item {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val tabs = listOf(null to "Todo", BedrockArchive.PACK to "Paquetes", BedrockArchive.ADDON to "Complementos",
+                    BedrockArchive.WORLD to "Mundos")
+                for ((type, label) in tabs) {
+                    val select = { filter = type }
+                    FilterChip(filter == type, select, { Text(label) }, modifier = Modifier.gamepadClick(onClick = select))
+                }
+            }
+        }
+        if (filtered.isEmpty() && working == null) item {
+            Text(if (filter == null) "Aún no hay archivos guardados en esta instancia." else "No hay archivos en esta categoría.",
+                color = Prissma.colors.textMuted, modifier = Modifier.padding(horizontal = 4.dp))
+        }
+        items(filtered, key = { it.id }) { archive ->
+            Column(Modifier.fillMaxWidth().background(Prissma.colors.surfaceCard, PanelShape).padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(archive.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${archive.type.label} · ${Formatter.formatShortFileSize(context, archive.size)}", color = Prissma.colors.textMuted)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LauncherButton("Exportar copia", {
+                        exportingId = archive.id
+                        try {
+                            export.launch(archive.name)
+                        } catch (error: ActivityNotFoundException) {
+                            exportingId = null
+                            report("Android no pudo abrir el selector de destino.", error = true)
+                        }
+                    }, enabled = ready)
+                    if (target != null) LauncherButton("Abrir en Minecraft", {
+                        scope.launch {
+                            runTask("Preparando el archivo…", "No se pudo compartir el archivo guardado.") {
+                                when (launcher.importArchive(archive, storage.sharedUri(archive.id), target.packageName)) {
+                                    BedrockImportDelivery.SENT -> report("Enviado a ${target.title}. Revisa su aviso de importación.")
+                                    BedrockImportDelivery.NO_GAME -> {
+                                        onRefresh()
+                                        report("Minecraft dejó de estar disponible. Vuelve a elegir la aplicación.", error = true)
+                                    }
+                                    BedrockImportDelivery.NO_IMPORTER -> report("${target.title} no abrió el archivo .${archive.type.extension}.", error = true)
+                                }
                             }
                         }
-                    }, primary = true)
+                    }, enabled = ready)
+                    LauncherButton("Quitar", { removingId = archive.id }, enabled = ready)
                 }
-            }
-            notice?.let { message ->
-                Text(message, color = if (hasError) Prissma.colors.error else Prissma.colors.brandAccent,
-                    style = MaterialTheme.typography.bodyMedium)
             }
         }
     }
 
+    archives.firstOrNull { it.id == removingId }?.let { archive ->
+        AlertDialog(onDismissRequest = { removingId = null }, title = { Text("¿Quitar de esta instancia?") },
+            text = { Text(archive.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+            confirmButton = { LauncherButton("Quitar copia", {
+                removingId = null
+                scope.launch {
+                    runTask("Quitando archivo…", "No se pudo quitar el archivo de esta instancia.") {
+                        if (!storage.remove(archive.id)) throw IOException("El archivo ya no está en la biblioteca.")
+                        archives = storage.list()
+                        report("Copia quitada de esta instancia.")
+                    }
+                }
+            }) }, dismissButton = { LauncherButton("Cancelar", { removingId = null }, primary = true) })
+    }
     if (chooseApp) BedrockAppsDialog(installation, launcher, onRefresh, onDismiss = { chooseApp = false })
 }

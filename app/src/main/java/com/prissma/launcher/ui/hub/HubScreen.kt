@@ -215,7 +215,9 @@ internal fun HubScreen(
         val back = { page = HubPage.LIBRARY }
         when (workshopInstance.engine) {
             EngineType.JAVA -> ContentWorkshopScreen(instance = workshopInstance, onBack = back)
-            EngineType.BEDROCK -> BedrockWorkshopScreen(workshopInstance.title, bedrock, bedrockLauncher, onRefreshBedrock, back)
+            EngineType.BEDROCK -> key(workshopInstance.id) {
+                BedrockWorkshopScreen(workshopInstance, bedrock, bedrockLauncher, onRefreshBedrock, back)
+            }
             EngineType.RUST -> StarlingWorkshopScreen(workshopInstance.title, starling, starlingLauncher, back)
         }
         return

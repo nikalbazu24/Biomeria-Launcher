@@ -97,13 +97,13 @@ internal class BedrockLauncher(private val activity: Activity) {
         return if (start(store) || start(web)) null else "No se pudo abrir Google Play en este dispositivo."
     }
 
-    fun importArchive(archive: PreparedBedrockImport, selectedPackage: String): BedrockImportDelivery {
+    fun importArchive(archive: BedrockLibraryItem, uri: Uri, selectedPackage: String): BedrockImportDelivery {
         val target = detect()?.takeIf { it.canOpen && it.packageName == selectedPackage }
         return deliverBedrockArchive(archive.type, target?.packageName) { packageName, mime ->
             start(Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(archive.uri, mime)
+                setDataAndType(uri, mime)
                 setPackage(packageName)
-                clipData = ClipData.newRawUri(archive.name, archive.uri)
+                clipData = ClipData.newRawUri(archive.name, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             })
         }
