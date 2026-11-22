@@ -19,6 +19,7 @@ class DualScreenBridgeTest {
 
         assertEquals(7L, inventory.generation)
         assertTrue(inventory.interactive)
+        assertEquals(PanelLayout.PERSONAL, inventory.layout)
         assertEquals(3, inventory.selectedSlot)
         assertEquals(-12, inventory.x)
         assertEquals(64, inventory.y)
@@ -38,8 +39,61 @@ class DualScreenBridgeTest {
         assertNull(bridge.readInventory(writeSnapshot(bridge.directory, ready = false)))
         assertNull(bridge.readInventory(writeSnapshot(bridge.directory, magic = 0)))
         val snapshot = File(bridge.directory, "snapshot")
-        snapshot.writeBytes(byteArrayOf(0x50, 0x52, 0x53, 0x32))
+        snapshot.writeBytes(byteArrayOf(0x50, 0x52, 0x53, 0x33))
         assertNull(bridge.readInventory(snapshot.lastModified()))
+    }
+
+    @Test
+    fun craftingTableUsesItsOwnLayoutAndRejectsCommandsFromAnotherHandler() {
+        val bridge = DualScreenBridge.create(temporary.root)
+        bridge.visibility(true)
+        val personal = requireNotNull(bridge.readInventory(writeSnapshot(bridge.directory)))
+        val table = requireNotNull(bridge.readInventory(writeSnapshot(
+            bridge.directory, generation = 8, layout = PanelLayout.CRAFTING_TABLE
+        )))
+        assertEquals(3, table.layout.craftSize)
+        assertEquals(10, table.layout.inventoryStart)
+        assertEquals(37, table.layout.hotbarStart)
+        assertFalse(bridge.send(personal, PanelCommand.PICK, 9))
+        assertFalse(bridge.send(table, PanelCommand.SELECT_HOTBAR, 0))
+        assertFalse(bridge.send(table, PanelCommand.OPEN_XAERO))
+        assertFalse(bridge.send(table, PanelCommand.PICK, 9))
+
+        bridge.routeCrafting(table.generation)
+        assertEquals("8", File(bridge.directory, "crafting").readText())
+        assertTrue(bridge.send(table, PanelCommand.PICK, 9))
+        assertTrue(bridge.send(table, PanelCommand.CLOSE_TABLE))
+        writeSnapshot(bridge.directory, generation = 9)
+        assertFalse(bridge.send(table, PanelCommand.CLOSE_TABLE))
+        bridge.visibility(false)
+        assertFalse(File(bridge.directory, "crafting").exists())
+    }
+
+    @Test
+    fun xaeroMapRequiresSupportedModAndReadsBoundedWaypointList() {
+        val bridge = DualScreenBridge.create(temporary.root)
+        bridge.visibility(true)
+        val withoutMods = requireNotNull(bridge.readInventory(writeSnapshot(bridge.directory)))
+        assertFalse(bridge.send(withoutMods, PanelCommand.OPEN_XAERO))
+
+        val mark = PanelWaypoint("Base", -20, 69, 12)
+        val withMods = requireNotNull(bridge.readInventory(writeSnapshot(
+            bridge.directory, xaeroWorldMap = true, xaeroMinimap = true, waypoints = listOf(mark)
+        )))
+        assertTrue(withMods.xaeroWorldMap)
+        assertEquals(listOf(mark), withMods.waypoints)
+        assertTrue(bridge.send(withMods, PanelCommand.OPEN_XAERO))
+        assertNull(bridge.readInventory(writeSnapshot(bridge.directory, waypoints = listOf(mark))))
+        assertNull(bridge.readInventory(writeSnapshot(bridge.directory, xaeroMinimap = true, waypoints = List(25) { mark })))
+    }
+
+    @Test
+    fun preferencesKeepLegacyDefaultsAndRecoverInvalidValues() {
+        assertEquals(PanelPage.CRAFT, PanelPage.fromPreference("CRAFT"))
+        assertEquals(PanelPage.INVENTORY, PanelPage.fromPreference("OPTIONS"))
+        assertEquals(PanelPage.INVENTORY, PanelPage.fromPreference(null))
+        assertEquals(PanelMapSource.XAERO, PanelMapSource.fromPreference("XAERO"))
+        assertEquals(PanelMapSource.MINECRAFT, PanelMapSource.fromPreference("unavailable"))
     }
 
     @Test
@@ -93,7 +147,11 @@ class DualScreenBridgeTest {
         ready: Boolean = true,
         interactive: Boolean = true,
         selectedSlot: Int = 3,
-        magic: Int = DUAL_SNAPSHOT_MAGIC
+        magic: Int = DUAL_SNAPSHOT_MAGIC,
+        layout: PanelLayout = PanelLayout.PERSONAL,
+        xaeroWorldMap: Boolean = false,
+        xaeroMinimap: Boolean = false,
+        waypoints: List<PanelWaypoint> = emptyList()
     ): Long {
         val file = File(dir, "snapshot")
         DataOutputStream(file.outputStream()).use { out ->
@@ -101,6 +159,7 @@ class DualScreenBridgeTest {
             out.writeLong(generation)
             out.writeBoolean(ready)
             out.writeBoolean(interactive)
+            out.writeByte(layout.ordinal)
             out.writeInt(selectedSlot)
             out.writeDouble(-11.3)
             out.writeDouble(64.1)
@@ -114,6 +173,15 @@ class DualScreenBridgeTest {
                 out.writeInt(0)
             }
             out.writeInt(15)
+            out.writeBoolean(xaeroWorldMap)
+            out.writeBoolean(xaeroMinimap)
+            out.writeByte(waypoints.size)
+            for (mark in waypoints) {
+                out.writeUTF(mark.name)
+                out.writeInt(mark.x)
+                out.writeInt(mark.y)
+                out.writeInt(mark.z)
+            }
         }
         return file.lastModified()
     }

@@ -28,6 +28,8 @@ import com.prissma.launcher.engine.java.DOWNLOAD_MESSAGE
 import com.prissma.launcher.engine.java.DOWNLOAD_PERCENT
 import com.prissma.launcher.engine.java.GameDownloads
 import com.prissma.launcher.engine.java.GameHudSettings
+import com.prissma.launcher.engine.java.PanelMapSource
+import com.prissma.launcher.engine.java.PanelPage
 import com.prissma.launcher.engine.java.DUAL_SCREEN_MOD
 import com.prissma.launcher.engine.java.supportsDualInventory
 import com.prissma.launcher.engine.java.DEFAULT_JAVA_HEAP_MB
@@ -100,7 +102,11 @@ fun JavaLaunchScreen(
         mutableStateOf(GameHudSettings(settings.getBoolean("touch-" + instance.id, true),
             settings.getBoolean("fps-" + instance.id, false),
             settings.getFloat("pause-opacity-" + instance.id, .65f).coerceIn(.15f, 1f),
-            settings.getBoolean("dual-screen-" + instance.id, false)))
+            settings.getBoolean("dual-screen-" + instance.id, false),
+            settings.getBoolean("panel-crafting-" + instance.id, true),
+            PanelPage.fromPreference(settings.getString("panel-home-" + instance.id, null)),
+            PanelMapSource.fromPreference(settings.getString("panel-map-" + instance.id, null)),
+            settings.getBoolean("panel-compact-" + instance.id, false)))
     }
     val supported = supportsJavaLoader(instance.version, instance.loader)
 
@@ -109,7 +115,11 @@ fun JavaLaunchScreen(
         settings.edit().putBoolean("touch-" + instance.id, updated.showTouch)
             .putBoolean("fps-" + instance.id, updated.showFps)
             .putFloat("pause-opacity-" + instance.id, updated.pauseOpacity)
-            .putBoolean("dual-screen-" + instance.id, updated.dualScreen).apply()
+            .putBoolean("dual-screen-" + instance.id, updated.dualScreen)
+            .putBoolean("panel-crafting-" + instance.id, updated.routeCrafting)
+            .putString("panel-home-" + instance.id, updated.panelHome.name)
+            .putString("panel-map-" + instance.id, updated.panelMap.name)
+            .putBoolean("panel-compact-" + instance.id, updated.compactPanel).apply()
     }
     val gameActivity = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         result.data?.getBundleExtra("GAME_HUD")?.let { saveHud(GameHudSettings.fromBundle(it)) }

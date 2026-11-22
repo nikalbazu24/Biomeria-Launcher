@@ -31,13 +31,21 @@ internal data class GameHudSettings(
     val showTouch: Boolean = true,
     val showFps: Boolean = false,
     val pauseOpacity: Float = .65f,
-    val dualScreen: Boolean = false
+    val dualScreen: Boolean = false,
+    val routeCrafting: Boolean = true,
+    val panelHome: PanelPage = PanelPage.INVENTORY,
+    val panelMap: PanelMapSource = PanelMapSource.MINECRAFT,
+    val compactPanel: Boolean = false
 ) {
     fun toBundle() = Bundle().apply {
         putBoolean("touch", showTouch)
         putBoolean("fps", showFps)
         putFloat("opacity", pauseOpacity)
         putBoolean("dualScreen", dualScreen)
+        putBoolean("routeCrafting", routeCrafting)
+        putString("panelHome", panelHome.name)
+        putString("panelMap", panelMap.name)
+        putBoolean("compactPanel", compactPanel)
     }
 
     companion object {
@@ -45,7 +53,11 @@ internal data class GameHudSettings(
             bundle?.getBoolean("touch", true) ?: true,
             bundle?.getBoolean("fps", false) ?: false,
             bundle?.getFloat("opacity", .65f)?.coerceIn(.15f, 1f) ?: .65f,
-            bundle?.getBoolean("dualScreen", false) ?: false
+            bundle?.getBoolean("dualScreen", false) ?: false,
+            bundle?.getBoolean("routeCrafting", true) ?: true,
+            PanelPage.fromPreference(bundle?.getString("panelHome")),
+            PanelMapSource.fromPreference(bundle?.getString("panelMap")),
+            bundle?.getBoolean("compactPanel", false) ?: false
         )
     }
 }

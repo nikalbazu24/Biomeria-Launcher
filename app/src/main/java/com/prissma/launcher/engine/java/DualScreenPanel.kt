@@ -31,6 +31,7 @@ import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.prissma.launcher.ui.launch.GameHudControls
+import com.prissma.launcher.ui.launch.PanelPreferenceControls
 import com.prissma.launcher.ui.theme.Prissma
 import com.prissma.launcher.ui.theme.PrissmaTheme
 import kotlinx.coroutines.Dispatchers
@@ -45,11 +46,12 @@ internal fun DualScreenHost(
     title: String,
     hud: GameHudSettings,
     allowGameInput: Boolean,
+    allowMenus: Boolean,
     onHud: (GameHudSettings) -> Unit,
     onHotbar: (Int) -> Unit
 ) {
     val content by rememberUpdatedState<@Composable () -> Unit>({
-        PrissmaTheme { DualScreenPanel(title, bridge, hud, allowGameInput, onHud, onHotbar) }
+        PrissmaTheme { DualScreenPanel(title, bridge, hud, allowGameInput, allowMenus, onHud, onHotbar) }
     })
     DisposableEffect(activity, enabled, bridge) {
         val manager = activity.getSystemService(DisplayManager::class.java)
@@ -123,20 +125,18 @@ internal fun DualScreenHost(
     }
 }
 
-private enum class PanelPage(val label: String) {
-    INVENTORY("Inventario"), CRAFT("Crafteo"), MAP("Mapa"), OPTIONS("Opciones")
-}
-
 @Composable
 private fun DualScreenPanel(
     title: String,
     bridge: DualScreenBridge?,
     hud: GameHudSettings,
     allowGameInput: Boolean,
+    allowMenus: Boolean,
     onHud: (GameHudSettings) -> Unit,
     onHotbar: (Int) -> Unit
 ) {
-    var page by remember { mutableStateOf(PanelPage.INVENTORY) }
+    var page by remember { mutableStateOf(hud.panelHome) }
+    var returnPage by remember { mutableStateOf<PanelPage?>(null) }
     var inventory by remember(bridge) { mutableStateOf<PanelInventory?>(null) }
     var pixels by remember(bridge) { mutableStateOf<IntArray?>(null) }
     var click by remember { mutableStateOf(PanelCommand.PICK) }
@@ -149,16 +149,34 @@ private fun DualScreenPanel(
         }
     }
 
-    val revision = inventory?.mapRevision ?: -1
-    LaunchedEffect(bridge, page, revision) {
+    val live = inventory
+    val table = live?.layout == PanelLayout.CRAFTING_TABLE
+    val tableSession = live?.generation?.takeIf { hud.routeCrafting && table }
+    LaunchedEffect(tableSession) {
+        if (tableSession != null) {
+            if (page != PanelPage.CRAFT) returnPage = page
+            page = PanelPage.CRAFT
+            click = PanelCommand.PICK
+        } else {
+            if (page == PanelPage.CRAFT) returnPage?.let { page = it }
+            returnPage = null
+        }
+    }
+    val routed = tableSession?.takeIf { page == PanelPage.CRAFT && allowMenus && live?.interactive == true }
+    DisposableEffect(bridge, routed) {
+        bridge?.routeCrafting(routed)
+        onDispose { if (routed != null) bridge?.routeCrafting(null) }
+    }
+
+    val revision = live?.mapRevision ?: -1
+    LaunchedEffect(bridge, page, hud.panelMap, revision) {
         pixels = null
-        if (bridge != null && page == PanelPage.MAP && revision >= 0) {
+        if (bridge != null && page == PanelPage.MAP && hud.panelMap == PanelMapSource.MINECRAFT && revision >= 0) {
             pixels = withContext(Dispatchers.IO) { bridge.readMap(revision) }
         }
     }
 
-    val live = inventory
-    val interactive = live?.interactive == true && allowGameInput
+    val interactive = live?.interactive == true && if (table) routed != null else allowGameInput
     val sendSlot: (Int) -> Unit = { slot ->
         if (interactive && live != null) bridge?.send(live, click, slot)
     }
@@ -183,6 +201,7 @@ private fun DualScreenPanel(
             when {
                 page == PanelPage.OPTIONS -> {
                     GameHudControls(hud, onHud)
+                    if (bridge != null) PanelPreferenceControls(hud, onHud)
                     OutlinedButton(
                         onClick = { onHud(hud.copy(dualScreen = false)) },
                         enabled = (live?.held?.count ?: 0) == 0
@@ -203,9 +222,18 @@ private fun DualScreenPanel(
                     val image = remember(pixels) {
                         pixels?.let { Bitmap.createBitmap(it, DUAL_MAP_SIZE, DUAL_MAP_SIZE, Bitmap.Config.ARGB_8888).asImageBitmap() }
                     }
-                    if (image == null) Text("Equipa un mapa explorado en una mano para verlo aquí.")
+                    if (hud.panelMap == PanelMapSource.XAERO) {
+                        XaeroMapPanel(live, interactive && !table) {
+                            bridge.send(live, PanelCommand.OPEN_XAERO)
+                        }
+                    } else if (image == null) Text("Equipa un mapa explorado en una mano para verlo aquí.")
                     else Image(image, contentDescription = "Mapa equipado",
                         modifier = Modifier.size(192.dp), contentScale = ContentScale.Fit)
+                }
+                table && (!hud.routeCrafting || page != PanelPage.CRAFT) -> {
+                    Text("Mesa de crafteo abierta", style = MaterialTheme.typography.titleSmall)
+                    if (hud.routeCrafting) OutlinedButton(onClick = { page = PanelPage.CRAFT }) { Text("Mostrar mesa aquí") }
+                    else Text("Usa la mesa en la pantalla del juego.")
                 }
                 else -> {
                     if (!interactive) Text("Vuelve a la vista de juego para mover objetos.", style = MaterialTheme.typography.bodySmall)
@@ -220,33 +248,69 @@ private fun DualScreenPanel(
                         if (live.held.count > 0) Text("En cursor · ${live.held.name} ×${live.held.count}")
                     }
                     if (page == PanelPage.CRAFT) {
+                        if (table) OutlinedButton(
+                            onClick = { bridge.send(live, PanelCommand.CLOSE_TABLE) },
+                            enabled = interactive
+                        ) { Text("Cerrar mesa") }
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column {
-                                SlotRow(listOf(1, 2), live, interactive, "Crafteo 2×2", onSlot = sendSlot)
-                                SlotRow(listOf(3, 4), live, interactive, onSlot = sendSlot)
+                                val side = live.layout.craftSize
+                                repeat(side) { row ->
+                                    val first = row * side + 1
+                                    SlotRow((first until first + side).toList(), live, interactive,
+                                        label = if (row == 0) "Crafteo ${side}×$side" else null,
+                                        compact = hud.compactPanel, onSlot = sendSlot)
+                                }
                             }
-                            SlotRow(listOf(0), live, interactive, "Resultado", onSlot = sendSlot)
+                            SlotRow(listOf(0), live, interactive, "Resultado", compact = hud.compactPanel, onSlot = sendSlot)
                         }
                     } else {
-                        SlotRow(listOf(5, 6, 7, 8, 45), live, interactive, "Armadura y mano secundaria", onSlot = sendSlot)
-                        SlotRow((36..44).toList(), live, interactive, "Barra rápida", live.selectedSlot + 36, sendSlot)
+                        SlotRow(listOf(5, 6, 7, 8, 45), live, interactive, "Armadura y mano secundaria",
+                            compact = hud.compactPanel, onSlot = sendSlot)
                     }
-                    for (start in 9..27 step 9) {
+                    val hotbarStart = live.layout.hotbarStart
+                    val inventoryStart = live.layout.inventoryStart
+                    if (page == PanelPage.INVENTORY) {
+                        SlotRow((hotbarStart until hotbarStart + 9).toList(), live, interactive,
+                            "Barra rápida", live.selectedSlot + hotbarStart, hud.compactPanel, sendSlot)
+                    }
+                    for (start in inventoryStart until hotbarStart step 9) {
                         SlotRow((start until start + 9).toList(), live, interactive,
-                            if (start == 9) "Inventario" else null, onSlot = sendSlot)
+                            if (start == inventoryStart) "Inventario" else null, compact = hud.compactPanel, onSlot = sendSlot)
                     }
                     if (page == PanelPage.CRAFT) {
-                        SlotRow((36..44).toList(), live, interactive, "Barra rápida", live.selectedSlot + 36, sendSlot)
+                        SlotRow((hotbarStart until hotbarStart + 9).toList(), live, interactive,
+                            "Barra rápida", live.selectedSlot + hotbarStart, hud.compactPanel, sendSlot)
                     }
                 }
             }
         }
 
-        if (live != null && page == PanelPage.INVENTORY) {
+        if (live != null && !table && page == PanelPage.INVENTORY) {
             SlotRow((0..8).toList(), null, interactive, "Seleccionar en mano", live.selectedSlot) { slot ->
                 if (interactive) bridge?.send(live, PanelCommand.SELECT_HOTBAR, slot)
             }
         }
+    }
+}
+
+@Composable
+private fun XaeroMapPanel(live: PanelInventory, canOpen: Boolean, onOpen: () -> Unit) {
+    if (live.xaeroWorldMap) {
+        OutlinedButton(onClick = onOpen, enabled = canOpen) { Text("Abrir World Map arriba") }
+    }
+    if (live.xaeroMinimap) {
+        Text("Marcadores de Xaero’s Minimap", style = MaterialTheme.typography.titleSmall)
+        if (live.waypoints.isEmpty()) Text("El conjunto activo no tiene marcadores visibles.")
+        live.waypoints.forEach { mark ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(mark.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("X ${mark.x} · Y ${mark.y} · Z ${mark.z}", color = Prissma.colors.textMuted,
+                    style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    } else if (!live.xaeroWorldMap) {
+        Text("Instala Xaero’s World Map o Xaero’s Minimap para Fabric 1.21.4 desde el Taller.")
     }
 }
 
@@ -257,6 +321,7 @@ private fun SlotRow(
     enabled: Boolean,
     label: String? = null,
     selected: Int? = null,
+    compact: Boolean = false,
     onSlot: (Int) -> Unit
 ) {
     Column {
@@ -271,7 +336,11 @@ private fun SlotRow(
                 ) else ButtonDefaults.filledTonalButtonColors()
                 FilledTonalButton(
                     onClick = { onSlot(number) },
-                    modifier = Modifier.width(if (live == null) 46.dp else 66.dp)
+                    modifier = Modifier.width(when {
+                        live == null -> 46.dp
+                        compact -> 53.dp
+                        else -> 66.dp
+                    })
                         .semantics { contentDescription = description },
                     enabled = enabled,
                     colors = colors,

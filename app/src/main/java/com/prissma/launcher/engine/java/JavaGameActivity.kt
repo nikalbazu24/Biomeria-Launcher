@@ -260,6 +260,7 @@ private fun JavaNativeViewportScreen(
         title = instanceTitle,
         hud = hud,
         allowGameInput = canSendInput && captured,
+        allowMenus = canSendInput,
         onHud = { hud = it; onHudChanged(it) },
         onHotbar = { slot -> input.selectHotbarSlot(slot + 1) }
     )

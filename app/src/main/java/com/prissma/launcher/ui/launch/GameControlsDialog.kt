@@ -1,6 +1,7 @@
 package com.prissma.launcher.ui.launch
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -10,6 +11,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.prissma.launcher.engine.java.GameHudSettings
 import com.prissma.launcher.engine.java.GamepadAction
+import com.prissma.launcher.engine.java.PanelMapSource
+import com.prissma.launcher.engine.java.PanelPage
 import com.prissma.launcher.engine.java.defaultGamepadActions
 import com.prissma.launcher.engine.java.remappableGamepadButtons
 import com.prissma.launcher.ui.components.LauncherButton
@@ -35,10 +38,11 @@ internal fun GameControlsDialog(
                     Text("Doble pantalla", Modifier.weight(1f))
                     Switch(hud.dualScreen, { onHud(hud.copy(dualScreen = it)) })
                 }
-                if (hud.dualScreen) Text(
-                    "En una pantalla secundaria compatible podrás usar el panel táctil. Java 1.21.4 con Fabric habilita el inventario, el crafteo y el mapa.",
-                    style = MaterialTheme.typography.bodySmall
-                )
+                if (hud.dualScreen) {
+                    Text("Inventario, crafteo y mapas disponibles en Java 1.21.4 con Fabric.",
+                        style = MaterialTheme.typography.bodySmall)
+                    PanelPreferenceControls(hud, onHud)
+                }
                 HorizontalDivider()
                 Text("Botones en partida", style = MaterialTheme.typography.titleSmall)
                 remappableGamepadButtons.forEach { (code, button) ->
@@ -61,6 +65,34 @@ internal fun GameControlsDialog(
         confirmButton = { LauncherButton("Listo", onDismiss, primary = true) },
         dismissButton = { LauncherButton("Restablecer mando", { onBindings(emptyMap()) }) }
     )
+}
+
+@Composable
+internal fun PanelPreferenceControls(settings: GameHudSettings, onChange: (GameHudSettings) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Mesa de crafteo abajo", Modifier.weight(1f))
+            Switch(settings.routeCrafting, { onChange(settings.copy(routeCrafting = it)) })
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Ranuras compactas", Modifier.weight(1f))
+            Switch(settings.compactPanel, { onChange(settings.copy(compactPanel = it)) })
+        }
+        Text("Pestaña al iniciar", style = MaterialTheme.typography.labelMedium)
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            PanelPage.entries.filter { it != PanelPage.OPTIONS }.forEach { page ->
+                FilterChip(settings.panelHome == page, { onChange(settings.copy(panelHome = page)) },
+                    label = { Text(page.label) })
+            }
+        }
+        Text("Fuente del mapa", style = MaterialTheme.typography.labelMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            PanelMapSource.entries.forEach { source ->
+                FilterChip(settings.panelMap == source, { onChange(settings.copy(panelMap = source)) },
+                    label = { Text(source.label) })
+            }
+        }
+    }
 }
 
 @Composable
