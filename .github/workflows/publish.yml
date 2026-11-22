@@ -1,0 +1,120 @@
+name: Publish verified PRISSMA beta 113
+
+on:
+  push:
+    branches: [ops/publish-prissma-113]
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the exact beta 113 sources
+        uses: actions/checkout@v4
+        with:
+          ref: 48d58a5866e35f5be42a98b2d4382ce1f4084780
+          fetch-depth: 1
+
+      - name: Validate production signing prerequisites
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error title=PRISSMA beta 113 no publicable::Falta la credencial $name. No se puede sustituir la firma oficial por una de depuración."
+              exit 1
+            fi
+          done
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/prissma-signing.jks"
+          expected='d2457fc8866da1a2d4227b781855bf02e6dd47cd89242ef205b7d61c83fc553c'
+          actual="$(keytool -exportcert -keystore "$RUNNER_TEMP/prissma-signing.jks" -alias "$KEY_ALIAS" -storepass:env KEYSTORE_PASSWORD | sha256sum | cut -d ' ' -f 1)"
+          if [ "$actual" != "$expected" ]; then
+            echo '::error title=Certificado incorrecto::La firma no coincide con el certificado de actualización de PRISSMA. No se publicó nada.'
+            exit 1
+          fi
+          echo "PRISSMA_KEYSTORE=$RUNNER_TEMP/prissma-signing.jks" >> "$GITHUB_ENV"
+
+      - name: Retrieve the exact verified beta 113 APK
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 45060213870
+          name: PRISSMA-APK
+          path: input
+
+      - name: Retrieve its independent transfer digest
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 45060253015
+          name: apk-digest
+          path: digest
+
+      - name: Check artifact integrity and app identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk='input/PRISSMA-Launcher-v1.0.0-beta.113.apk'
+          test -s "$apk"
+          actual="$(sha256sum "$apk" | cut -d ' ' -f 1)"
+          expected="$(tr -d '\r\n' < digest/sha256.txt)"
+          if [ "$actual" != "$expected" ]; then
+            echo '::error::La huella SHA-256 de la beta 113 no coincide con la del transporte verificado.'
+            exit 1
+          fi
+          aapt="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)"
+          "$aapt" dump badging "$apk" | grep -F "package: name='com.prissma.launcher' versionCode='113' versionName='1.0.0-beta.113'"
+          unzip -p "$apk" assets/release-notes/1.0.0-beta.113.md | cmp - app/src/main/assets/release-notes/1.0.0-beta.113.md
+
+      - name: Sign beta 113 with the official update certificate
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          zipalign="$(find "$ANDROID_HOME/build-tools" -name zipalign -type f | sort -V | tail -n 1)"
+          apksigner="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+          "$zipalign" -f -p 4 input/PRISSMA-Launcher-v1.0.0-beta.113.apk "$RUNNER_TEMP/aligned.apk"
+          "$apksigner" sign --ks "$PRISSMA_KEYSTORE" --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEY_PASSWORD \
+            --out release/PRISSMA-Launcher-v1.0.0-beta.113.apk "$RUNNER_TEMP/aligned.apk"
+          "$apksigner" verify --verbose --print-certs release/PRISSMA-Launcher-v1.0.0-beta.113.apk > "$RUNNER_TEMP/signing-report.txt"
+          grep -Fx 'Signer #1 certificate SHA-256 digest: d2457fc8866da1a2d4227b781855bf02e6dd47cd89242ef205b7d61c83fc553c' "$RUNNER_TEMP/signing-report.txt"
+          aapt="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)"
+          "$aapt" dump badging release/PRISSMA-Launcher-v1.0.0-beta.113.apk | grep -F "package: name='com.prissma.launcher' versionCode='113' versionName='1.0.0-beta.113'"
+          python3 scripts/verify_java_apk.py release/PRISSMA-Launcher-v1.0.0-beta.113.apk
+          git archive --format=zip --output=release/PRISSMA-Fuentes-beta113.zip HEAD
+
+      - name: Publish verified release and source archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag='v1.0.0-beta.113'
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "::error::El release $tag ya existe: no se sobreescribe."
+            exit 1
+          fi
+          gh release create "$tag" \
+            release/PRISSMA-Launcher-v1.0.0-beta.113.apk \
+            release/PRISSMA-Fuentes-beta113.zip \
+            --target 48d58a5866e35f5be42a98b2d4382ce1f4084780 \
+            --title 'PRISSMA Launcher v1.0.0-beta.113' \
+            --notes-file app/src/main/assets/release-notes/1.0.0-beta.113.md \
+            --latest
