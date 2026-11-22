@@ -9,6 +9,9 @@ import android.os.ParcelFileDescriptor;
 import android.provider.OpenableColumns;
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.util.List;
 
 /**
  * The update the game downloaded (files/updates/, game/update_offer.rs), read by Android's package
@@ -19,25 +22,39 @@ import java.io.FileNotFoundException;
 public final class UpdateProvider extends ContentProvider {
     static final String TYPE = "application/vnd.android.package-archive";
 
-    /** content://<package>.updates/<name> for an APK of files/updates/. */
-    static Uri uri(String packageName, String name) {
-        return Uri.parse("content://" + packageName + ".updates/" + Uri.encode(name));
+    static Uri reportUri(String packageName, String slot, String name) {
+        return new Uri.Builder().scheme("content").authority(packageName + ".updates")
+                .appendPath("diagnostics").appendPath(PrissmaProfiles.slot(slot)).appendPath(name).build();
     }
 
     private File file(Uri uri) throws FileNotFoundException {
+        List<String> path = uri.getPathSegments();
         String name = uri.getLastPathSegment();
-        boolean report = uri.getPathSegments().size() == 2
-                && "diagnostics".equals(uri.getPathSegments().get(0));
+        boolean report = isReport(path);
         if (name == null || !(report
                 ? name.matches("starling-diagnostics-[0-9]+\\.zip")
-                : uri.getPathSegments().size() == 1 && name.matches("[A-Za-z0-9._-]+\\.apk"))) {
+                : path.size() == 1 && name.matches("[A-Za-z0-9._-]+\\.apk"))) {
             throw new FileNotFoundException(String.valueOf(uri));
         }
-        File file = new File(new File(getContext().getFilesDir(), report ? "performance" : "updates"), name);
-        if (!file.isFile()) {
+        File root = getContext().getFilesDir();
+        if (report && path.size() == 3) {
+            try {
+                root = PrissmaProfiles.existing(root, path.get(1));
+            } catch (IllegalArgumentException error) {
+                throw new FileNotFoundException(String.valueOf(uri));
+            }
+        }
+        File directory = new File(root, report ? "performance" : "updates");
+        File file = new File(directory, name);
+        if (!Files.isDirectory(directory.toPath(), LinkOption.NOFOLLOW_LINKS)
+                || !Files.isRegularFile(file.toPath(), LinkOption.NOFOLLOW_LINKS)) {
             throw new FileNotFoundException(file.getPath());
         }
         return file;
+    }
+
+    private static boolean isReport(List<String> path) {
+        return (path.size() == 2 || path.size() == 3) && "diagnostics".equals(path.get(0));
     }
 
     @Override
@@ -47,8 +64,7 @@ public final class UpdateProvider extends ContentProvider {
 
     @Override
     public String getType(Uri uri) {
-        return uri.getPathSegments().size() == 2
-                && "diagnostics".equals(uri.getPathSegments().get(0)) ? "application/zip" : TYPE;
+        return isReport(uri.getPathSegments()) ? "application/zip" : TYPE;
     }
 
     @Override

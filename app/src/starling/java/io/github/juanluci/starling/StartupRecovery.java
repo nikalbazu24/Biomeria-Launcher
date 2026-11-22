@@ -1,10 +1,15 @@
 package io.github.juanluci.starling;
 
+import android.app.ActivityManager;
 import android.content.Context;
 import android.util.AtomicFile;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.util.List;
 import org.json.JSONObject;
 
 /** Persist each attempt before native loading; offer recovery once per interrupted attempt. */
@@ -12,8 +17,9 @@ final class StartupRecovery {
     static final String RECOVERY = "io.github.juanluci.starling.INTERRUPTED_START";
     private static File marker(Context context) { return new File(context.getFilesDir(), "starling-starting"); }
     static void begin(Context context) {
-        try { new FileOutputStream(marker(context)).close(); }
-        catch (java.io.IOException error) { android.util.Log.w("starling", "Cannot record startup", error); }
+        try (DataOutputStream output = new DataOutputStream(new FileOutputStream(marker(context)))) {
+            output.writeInt(android.os.Process.myPid());
+        } catch (IOException error) { android.util.Log.w("starling", "Cannot record startup", error); }
     }
     static void shown(Context context) { marker(context).delete(); }
     static void offered(Context context) {
@@ -34,7 +40,12 @@ final class StartupRecovery {
         }
     }
     static boolean interrupted(Context context) {
-        if (marker(context).exists()) return true;
+        File marker = marker(context);
+        if (marker.exists()) {
+            try (DataInputStream input = new DataInputStream(new FileInputStream(marker))) {
+                return !running(context, input.readInt());
+            } catch (IOException ignored) { return true; }
+        }
         File session = new File(context.getFilesDir(), "performance/current-session.json");
         try (FileInputStream stream = new FileInputStream(session)) {
             byte[] data = new byte[16384];
@@ -45,5 +56,16 @@ final class StartupRecovery {
             return !json.optBoolean("recovery_offered") && !json.optBoolean("clean_exit") && ("native_start".equals(phase)
                     || "renderer_init".equals(phase) || "resource_loading".equals(phase));
         } catch (Exception ignored) { return false; }
+    }
+
+    private static boolean running(Context context, int pid) {
+        ActivityManager manager = context.getSystemService(ActivityManager.class);
+        List<ActivityManager.RunningAppProcessInfo> processes = manager == null ? null : manager.getRunningAppProcesses();
+        if (processes == null) return false;
+        String game = context.getPackageName() + ":rust_game";
+        for (ActivityManager.RunningAppProcessInfo process : processes) {
+            if (process.pid == pid && game.equals(process.processName)) return true;
+        }
+        return false;
     }
 }

@@ -145,9 +145,6 @@ public class StarlingActivity extends NativeActivity {
      *  all 0 without one, and before Android 9 (android_lib.rs). */
     private static native void onSafeInsets(int left, int top, int right, int bottom);
 
-    /** The game folder in shared storage, or null to keep it in the app's own files. */
-    private static native void onStorage(String folder);
-
     /** Android took back the pointer the game had captured (android_lib.rs). */
     private static native void onPointerCaptureLost();
 
@@ -161,15 +158,21 @@ public class StarlingActivity extends NativeActivity {
 
     /** The game has drawn: the window may show (firstFrame). */
     private volatile boolean drawn;
+    private String slot;
+    private File profileFiles;
+    private boolean restarting;
 
-    /** PRISSMA keeps worlds in its private storage and exposes player files through Files. */
-    static String sharedFolder(Context context) {
-        return null;
+    /** NativeActivity uses this path for ANativeActivity.internalDataPath. */
+    @Override public File getFilesDir() {
+        return profileFiles == null ? super.getFilesDir() : profileFiles;
     }
 
     public void openDiagnostics() {
         runOnUiThread(new Runnable() {
-            @Override public void run() { startActivity(new Intent(StarlingActivity.this, DiagnosticsActivity.class)); }
+            @Override public void run() {
+                startActivity(new Intent(StarlingActivity.this, DiagnosticsActivity.class)
+                        .putExtra(PrissmaProfiles.EXTRA_SLOT, slot));
+            }
         });
     }
 
@@ -178,7 +181,7 @@ public class StarlingActivity extends NativeActivity {
         if (!name.matches("starling-diagnostics-[0-9]+\\.zip")) return;
         runOnUiThread(new Runnable() {
             @Override public void run() {
-                Uri uri = Uri.parse("content://" + getPackageName() + ".updates/diagnostics/" + name);
+                Uri uri = UpdateProvider.reportUri(getPackageName(), slot, name);
                 Intent send = new Intent(Intent.ACTION_SEND).setType("application/zip");
                 send.putExtra(Intent.EXTRA_STREAM, uri);
                 send.setClipData(ClipData.newRawUri("diagnostic report", uri));
@@ -191,10 +194,14 @@ public class StarlingActivity extends NativeActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        slot = PrissmaProfiles.slot(getIntent().getStringExtra(PrissmaProfiles.EXTRA_SLOT));
+        try {
+            profileFiles = PrissmaProfiles.existing(super.getFilesDir(), slot);
+        } catch (java.io.FileNotFoundException error) {
+            throw new IllegalStateException("Rust profile was not prepared by its launcher", error);
+        }
         StartupRecovery.begin(this);
         loadGame();
-        // Before super.onCreate starts the game's thread, which reads it first thing.
-        onStorage(sharedFolder(this));
         super.onCreate(savedInstanceState);
         displayPreferences = new DisplayPreferences(this);
         // Made here, on the UI thread: the game reads and writes it from its own.
@@ -252,6 +259,13 @@ public class StarlingActivity extends NativeActivity {
                     });
         }
         hideSystemBars();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        String requested = PrissmaProfiles.slot(intent.getStringExtra(PrissmaProfiles.EXTRA_SLOT));
+        if (!slot.equals(requested)) restartInto(requested, "Abriendo otra instancia de Rust…");
     }
 
     /**
@@ -736,20 +750,21 @@ public class StarlingActivity extends NativeActivity {
      * player's language: the world's mods, the launcher, the files moving); null for the default.
      */
     public void restart(String message) {
-        Intent again = new Intent(this, LauncherActivity.class);
-        again.putExtra(LauncherActivity.AFTER, android.os.Process.myPid());
-        if (message != null && !message.isEmpty()) {
-            again.putExtra(LauncherActivity.MESSAGE, message);
-        }
-        again.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        startActivity(again);
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                finish();
-                // Straight to the launcher's restart screen, no window animation between.
-                overridePendingTransition(0, 0);
-            }
+        restartInto(slot, message);
+    }
+
+    private void restartInto(String requested, String message) {
+        runOnUiThread(() -> {
+            if (restarting || isFinishing()) return;
+            restarting = true;
+            Intent again = new Intent(this, LauncherActivity.class)
+                    .putExtra(PrissmaProfiles.EXTRA_SLOT, requested)
+                    .putExtra(LauncherActivity.AFTER, android.os.Process.myPid())
+                    .putExtra(LauncherActivity.MESSAGE, message)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(again);
+            finish();
+            overridePendingTransition(0, 0);
         });
     }
 
@@ -825,7 +840,7 @@ public class StarlingActivity extends NativeActivity {
      */
     public boolean openFolder(String path) {
         File target = new File(path);
-        String id = GameFolder.choose(getFilesDir(), sharedFolder(this)).idOf(target);
+        String id = new GameFolder(getFilesDir(), PrissmaProfiles.documentRoot(slot)).idOf(target);
         if (id != null
                 && viewFolder(DocumentsContract.buildDocumentUri(getPackageName() + ".documents", id))) {
             return true;

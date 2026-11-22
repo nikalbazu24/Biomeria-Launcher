@@ -23,6 +23,10 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.util.function.Consumer;
 
 /**
  * What runs before the game (StarlingActivity) when it is handed something, in a process and a
@@ -36,11 +40,25 @@ public final class LauncherActivity extends Activity {
     static final String AFTER = "io.github.juanluci.starling.AFTER";
     /** What the restart screen says while the game starts again (StarlingActivity.restart). */
     static final String MESSAGE = "io.github.juanluci.starling.MESSAGE";
+    private String slot;
+    private File profileFiles;
+
+    @Override public File getFilesDir() {
+        return profileFiles == null ? super.getFilesDir() : profileFiles;
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Intent intent = getIntent();
+        try {
+            slot = PrissmaProfiles.slot(intent.getStringExtra(PrissmaProfiles.EXTRA_SLOT));
+            profileFiles = PrissmaProfiles.prepare(super.getFilesDir(), slot,
+                    intent.getStringExtra(PrissmaProfiles.EXTRA_TITLE));
+        } catch (IOException | IllegalArgumentException error) {
+            launchError("No se pudo preparar el almacenamiento de esta instancia de Rust.");
+            return;
+        }
         final int after = intent == null ? 0 : intent.getIntExtra(AFTER, 0);
         Uri file = handedFile(intent);
         if (after != 0) {
@@ -59,7 +77,12 @@ public final class LauncherActivity extends Activity {
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
-                            play();
+                            if (isFinishing() || isDestroyed()) return;
+                            if (new File("/proc/" + after).exists()) {
+                                launchError("Rust todavía está cerrando la instancia anterior. Inténtalo de nuevo.");
+                            } else {
+                                play();
+                            }
                         }
                     });
                 }
@@ -67,18 +90,18 @@ public final class LauncherActivity extends Activity {
         } else if (file != null) {
             final AlertDialog copying =
                     new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                            .setMessage("Handing the file to Starling...")
+                            .setMessage("Copiando el mod a esta instancia…")
                             .setCancelable(false)
                             .show();
-            receive(this, file, new Runnable() {
-                @Override
-                public void run() {
-                    copying.dismiss();
-                    play();
-                }
+            receive(this, file, copied -> {
+                if (isFinishing() || isDestroyed()) return;
+                copying.dismiss();
+                if (copied) play();
+                else launchError("No se pudo copiar el mod a esta instancia de Rust.");
             });
         } else if (StartupRecovery.interrupted(this)) {
             startActivity(new Intent(this, DiagnosticsActivity.class)
+                    .putExtra(PrissmaProfiles.EXTRA_SLOT, slot)
                     .putExtra(StartupRecovery.RECOVERY, true));
             finish();
         } else {
@@ -86,9 +109,16 @@ public final class LauncherActivity extends Activity {
         }
     }
 
+    private void launchError(String message) {
+        new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setMessage(message).setPositiveButton(android.R.string.ok, (dialog, which) -> finish())
+                .setOnCancelListener(dialog -> finish()).show();
+    }
+
     private void play() {
         // The game's own task (singleTask): it stays in the recents, this one does not.
         Intent game = new Intent(this, GameActivity.class);
+        game.putExtra(PrissmaProfiles.EXTRA_SLOT, slot);
         game.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         startActivity(game);
         finish();
@@ -283,34 +313,36 @@ public final class LauncherActivity extends Activity {
 
     /**
      * Copy a file into the game's import inbox as `name.part`, renamed to `name` once complete,
-     * on a thread of its own; then `done` on the UI thread (if any).
+     * on a thread of its own; then report the result on the UI thread (if requested).
      */
-    static void receive(final Activity activity, final Uri file, final Runnable done) {
+    static void receive(final Activity activity, final Uri file, final Consumer<Boolean> done) {
         final File inbox = new File(activity.getFilesDir(), "import-inbox");
         final String name = displayName(activity, file);
         new Thread(new Runnable() {
             @Override
             public void run() {
-                inbox.mkdirs();
-                File part = new File(inbox, name + ".part");
-                try (InputStream in = activity.getContentResolver().openInputStream(file);
-                        OutputStream out = new FileOutputStream(part)) {
-                    if (in == null) {
-                        throw new java.io.IOException("nothing to read");
+                File part = null;
+                boolean copied = false;
+                try {
+                    Files.createDirectories(inbox.toPath());
+                    part = Files.createTempFile(inbox.toPath(), "incoming-", ".part").toFile();
+                    try (InputStream in = activity.getContentResolver().openInputStream(file);
+                            OutputStream out = new FileOutputStream(part)) {
+                        if (in == null) throw new IOException("Nothing to read");
+                        byte[] buffer = new byte[1 << 16];
+                        for (int n; (n = in.read(buffer)) >= 0; ) out.write(buffer, 0, n);
                     }
-                    byte[] buffer = new byte[1 << 16];
-                    for (int n; (n = in.read(buffer)) > 0; ) {
-                        out.write(buffer, 0, n);
-                    }
-                } catch (Exception e) {
-                    part.delete();
+                    Files.move(part.toPath(), new File(inbox, name).toPath(),
+                            StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                    copied = true;
+                } catch (IOException | SecurityException e) {
                     android.util.Log.w("starling", "could not receive " + name, e);
-                }
-                if (part.exists() && !part.renameTo(new File(inbox, name))) {
-                    part.delete();
+                } finally {
+                    if (part != null) part.delete();
                 }
                 if (done != null) {
-                    activity.runOnUiThread(done);
+                    final boolean result = copied;
+                    activity.runOnUiThread(() -> done.accept(result));
                 }
             }
         }, "starling-receive").start();
@@ -333,7 +365,8 @@ public final class LauncherActivity extends Activity {
         if (name == null || name.isEmpty()) {
             name = "imported";
         }
-        name = name.replaceAll("[/\\\\:*?\"<>|]", "_");
+        name = name.replaceAll("[/\\\\:*?\"<>|\\p{Cntrl}]", "_");
+        if (".".equals(name) || "..".equals(name)) return "imported";
         // ".part" is the inbox's mark for a file still arriving.
         return name.endsWith(".part") ? name + "_" : name;
     }

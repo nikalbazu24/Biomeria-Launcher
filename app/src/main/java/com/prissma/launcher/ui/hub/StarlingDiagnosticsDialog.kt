@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import com.prissma.launcher.data.GameInstance
 import com.prissma.launcher.engine.rust.StarlingInstallation
 import com.prissma.launcher.engine.rust.StarlingLauncher
 import com.prissma.launcher.engine.rust.StarlingReport
@@ -37,6 +38,7 @@ private const val MAX_CLIPBOARD_CHARS = 256 * 1024
 internal fun StarlingDiagnosticsDialog(
     installation: StarlingInstallation?,
     launcher: StarlingLauncher,
+    instance: GameInstance?,
     sharedReport: Uri?,
     onConsume: (Uri) -> Unit,
     onDismiss: () -> Unit
@@ -80,7 +82,7 @@ internal fun StarlingDiagnosticsDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Desde el diagnóstico de Starling, exporta y comparte el ZIP. Elige PRISSMA en el menú de Android.")
                 if (installation?.canOpen == true) {
-                    LauncherButton("Abrir diagnóstico de Starling", { errorMessage = launcher.openDiagnostics() }, enabled = !busy)
+                    LauncherButton("Abrir diagnóstico de Starling", { errorMessage = launcher.openDiagnostics(instance) }, enabled = !busy)
                 }
                 LauncherButton("Importar ZIP", {
                     try {

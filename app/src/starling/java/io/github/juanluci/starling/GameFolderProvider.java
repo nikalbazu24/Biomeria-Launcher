@@ -39,10 +39,10 @@ public final class GameFolderProvider extends DocumentsProvider {
         return true;
     }
 
-    /** Looked up on each call: the player can allow shared storage while this process lives. */
-    private GameFolder folder() {
-        Context context = getContext();
-        return GameFolder.choose(context.getFilesDir(), StarlingActivity.sharedFolder(context));
+    private GameFolder folder(String document) throws FileNotFoundException {
+        String slot = PrissmaProfiles.slotForDocument(document);
+        File files = PrissmaProfiles.existing(getContext().getFilesDir(), slot);
+        return new GameFolder(files, PrissmaProfiles.documentRoot(slot));
     }
 
     /** The manifest's authority, which follows the package: Starling and its Preview side by side. */
@@ -54,6 +54,12 @@ public final class GameFolderProvider extends DocumentsProvider {
     private String title() {
         Context context = getContext();
         return context.getApplicationInfo().loadLabel(context.getPackageManager()).toString();
+    }
+
+    private String title(GameFolder folder) throws FileNotFoundException {
+        if (GameFolder.ROOT.equals(folder.rootId())) return title();
+        String name = PrissmaProfiles.title(folder.file(folder.rootId()));
+        return "PRISSMA · " + (name == null || name.isEmpty() ? "Rust" : name);
     }
 
     private void changed(String folderId) {
@@ -71,23 +77,32 @@ public final class GameFolderProvider extends DocumentsProvider {
     @Override
     public Cursor queryRoots(String[] projection) throws FileNotFoundException {
         MatrixCursor cursor = new MatrixCursor(projection == null ? ROOT_COLUMNS : projection);
-        MatrixCursor.RowBuilder row = cursor.newRow();
-        row.add(Root.COLUMN_ROOT_ID, GameFolder.ROOT);
-        row.add(Root.COLUMN_DOCUMENT_ID, GameFolder.ROOT);
-        row.add(Root.COLUMN_TITLE, title());
-        // SUPPORTS_CREATE: without it the system does not offer this place to copy to.
-        row.add(Root.COLUMN_FLAGS,
-                Root.FLAG_LOCAL_ONLY | Root.FLAG_SUPPORTS_CREATE | Root.FLAG_SUPPORTS_IS_CHILD);
-        row.add(Root.COLUMN_ICON, getContext().getApplicationInfo().icon);
-        row.add(Root.COLUMN_MIME_TYPES, "*/*");
-        row.add(Root.COLUMN_AVAILABLE_BYTES, folder().file(GameFolder.ROOT).getUsableSpace());
+        for (String slot : PrissmaProfiles.slots(getContext().getFilesDir())) {
+            String root = PrissmaProfiles.documentRoot(slot);
+            try {
+                GameFolder folder = folder(root);
+                File path = folder.file(root);
+                String label = title(folder);
+                MatrixCursor.RowBuilder row = cursor.newRow();
+                row.add(Root.COLUMN_ROOT_ID, root);
+                row.add(Root.COLUMN_DOCUMENT_ID, root);
+                row.add(Root.COLUMN_TITLE, label);
+                row.add(Root.COLUMN_FLAGS,
+                        Root.FLAG_LOCAL_ONLY | Root.FLAG_SUPPORTS_CREATE | Root.FLAG_SUPPORTS_IS_CHILD);
+                row.add(Root.COLUMN_ICON, getContext().getApplicationInfo().icon);
+                row.add(Root.COLUMN_MIME_TYPES, "*/*");
+                row.add(Root.COLUMN_AVAILABLE_BYTES, path.getUsableSpace());
+            } catch (FileNotFoundException ignored) {
+                // Android can ask for roots while a profile is being created or removed.
+            }
+        }
         return cursor;
     }
 
     @Override
     public Cursor queryDocument(String id, String[] projection) throws FileNotFoundException {
         MatrixCursor cursor = new MatrixCursor(projection == null ? DOCUMENT_COLUMNS : projection);
-        addRow(cursor, folder(), id);
+        addRow(cursor, folder(id), id);
         return cursor;
     }
 
@@ -95,7 +110,7 @@ public final class GameFolderProvider extends DocumentsProvider {
     public Cursor queryChildDocuments(String id, String[] projection, String sortOrder)
             throws FileNotFoundException {
         MatrixCursor cursor = new MatrixCursor(projection == null ? DOCUMENT_COLUMNS : projection);
-        GameFolder folder = folder();
+        GameFolder folder = folder(id);
         try {
             for (String child : folder.children(id)) {
                 try {
@@ -127,7 +142,7 @@ public final class GameFolderProvider extends DocumentsProvider {
         }
         MatrixCursor.RowBuilder row = cursor.newRow();
         row.add(Document.COLUMN_DOCUMENT_ID, id);
-        row.add(Document.COLUMN_DISPLAY_NAME, GameFolder.ROOT.equals(id) ? title() : file.getName());
+        row.add(Document.COLUMN_DISPLAY_NAME, folder.rootId().equals(id) ? title(folder) : file.getName());
         row.add(Document.COLUMN_MIME_TYPE, directory ? Document.MIME_TYPE_DIR : mimeType(file.getName()));
         row.add(Document.COLUMN_FLAGS, flags);
         row.add(Document.COLUMN_SIZE, directory ? null : Long.valueOf(file.length()));
@@ -162,15 +177,19 @@ public final class GameFolderProvider extends DocumentsProvider {
 
     @Override
     public boolean isChildDocument(String parent, String child) {
-        return folder().isChild(parent, child);
+        try {
+            return folder(parent).isChild(parent, child);
+        } catch (FileNotFoundException ignored) {
+            return false;
+        }
     }
 
     /** Lets the Files app show the way down to a document opened by its link. */
     @Override
     public DocumentsContract.Path findDocumentPath(String parent, String child)
             throws FileNotFoundException {
-        return new DocumentsContract.Path(
-                parent == null ? GameFolder.ROOT : null, folder().path(parent, child));
+        GameFolder folder = folder(child);
+        return new DocumentsContract.Path(parent == null ? folder.rootId() : null, folder.path(parent, child));
     }
 
     @Override
@@ -179,7 +198,7 @@ public final class GameFolderProvider extends DocumentsProvider {
         if (signal != null) {
             signal.throwIfCanceled();
         }
-        File file = folder().file(id);
+        File file = folder(id).file(id);
         // Before opening: a write mode would make a file that is not there.
         if (!file.isFile()) {
             throw new FileNotFoundException(id);
@@ -206,7 +225,7 @@ public final class GameFolderProvider extends DocumentsProvider {
     public String createDocument(String parent, String mimeType, String name)
             throws FileNotFoundException {
         try {
-            String id = folder().create(parent, name, Document.MIME_TYPE_DIR.equals(mimeType));
+            String id = folder(parent).create(parent, name, Document.MIME_TYPE_DIR.equals(mimeType));
             changed(parent);
             return id;
         } catch (IOException e) {
@@ -217,7 +236,7 @@ public final class GameFolderProvider extends DocumentsProvider {
     @Override
     public String renameDocument(String id, String name) throws FileNotFoundException {
         try {
-            String renamed = folder().rename(id, name);
+            String renamed = folder(id).rename(id, name);
             changed(GameFolder.parent(id));
             return renamed;
         } catch (IOException e) {
@@ -228,7 +247,7 @@ public final class GameFolderProvider extends DocumentsProvider {
     @Override
     public void deleteDocument(String id) throws FileNotFoundException {
         try {
-            folder().delete(id);
+            folder(id).delete(id);
             changed(GameFolder.parent(id));
         } catch (IOException e) {
             throw failed(e);

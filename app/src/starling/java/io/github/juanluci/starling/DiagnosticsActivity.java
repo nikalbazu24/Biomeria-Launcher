@@ -36,6 +36,12 @@ import java.util.concurrent.ThreadFactory;
 
 /** A system window in its own process. Opening it does not load the game or create a GPU. */
 public final class DiagnosticsActivity extends Activity {
+    private String slot;
+    private File profileFiles;
+
+    @Override public File getFilesDir() {
+        return profileFiles == null ? super.getFilesDir() : profileFiles;
+    }
     /**
      * The graphics API the next start uses, chosen here (Vasysik's idea, 2026-11-12): a phone whose
      * driver takes the game down before Video Settings can be reached can still try the other one.
@@ -89,6 +95,16 @@ public final class DiagnosticsActivity extends Activity {
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
+        try {
+            slot = PrissmaProfiles.slot(getIntent().getStringExtra(PrissmaProfiles.EXTRA_SLOT));
+            profileFiles = PrissmaProfiles.prepare(super.getFilesDir(), slot,
+                    getIntent().getStringExtra(PrissmaProfiles.EXTRA_TITLE));
+        } catch (IOException | IllegalArgumentException error) {
+            android.widget.Toast.makeText(this, "No se pudo abrir el diagnóstico de esta instancia de Rust.",
+                    android.widget.Toast.LENGTH_LONG).show();
+            finish();
+            return;
+        }
         recovery = getIntent().getBooleanExtra(StartupRecovery.RECOVERY, false);
         intro = recovery ? R.string.diagnostics_recovery_intro : R.string.diagnostics_intro;
         regular = Typeface.createFromAsset(getAssets(), "diagnostic-fonts/Geist-Regular.ttf");
@@ -116,7 +132,8 @@ public final class DiagnosticsActivity extends Activity {
         root.addView(status);
         View.OnClickListener retry = new View.OnClickListener() {
             @Override public void onClick(View view) {
-                startActivity(new Intent(DiagnosticsActivity.this, GameActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                startActivity(new Intent(DiagnosticsActivity.this, GameActivity.class)
+                        .putExtra(PrissmaProfiles.EXTRA_SLOT, slot).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
                 finish();
             }
         };
@@ -196,7 +213,7 @@ public final class DiagnosticsActivity extends Activity {
         for (Button button : actions) button.setEnabled(!value);
     }
     private File gameFolder() {
-        return GameFolder.choose(getFilesDir(), StarlingActivity.sharedFolder(this)).root();
+        return getFilesDir();
     }
     /** `graphicsApi` in the game folder's settings file; Auto without one, as the game reads it. */
     private String graphicsApi() {
@@ -251,14 +268,12 @@ public final class DiagnosticsActivity extends Activity {
         busy(true);
         status.setText(R.string.diagnostics_working);
         final String privateFolder = getFilesDir().getAbsolutePath();
-        String shared = StarlingActivity.sharedFolder(this);
-        final String game = shared == null ? privateFolder : shared;
         NATIVE.execute(new Runnable() {
             @Override public void run() {
                 try {
                     // Lazy: even a broken native library cannot prevent the system window opening.
                     System.loadLibrary("horizon_android");
-                    final String result = makeReport(privateFolder, game, export);
+                    final String result = makeReport(privateFolder, privateFolder, export);
                     runOnUiThread(new Runnable() {
                         @Override public void run() {
                             if (isFinishing() || isDestroyed()) return;
@@ -323,7 +338,7 @@ public final class DiagnosticsActivity extends Activity {
     }
     private void share() {
         if (latest == null) { status.setText(R.string.diagnostics_no_report); return; }
-        Uri uri = Uri.parse("content://" + getPackageName() + ".updates/diagnostics/" + latest);
+        Uri uri = UpdateProvider.reportUri(getPackageName(), slot, latest);
         Intent send = new Intent(Intent.ACTION_SEND).setType("application/zip");
         send.putExtra(Intent.EXTRA_STREAM, uri);
         send.setClipData(ClipData.newRawUri(getString(R.string.diagnostics_title), uri));

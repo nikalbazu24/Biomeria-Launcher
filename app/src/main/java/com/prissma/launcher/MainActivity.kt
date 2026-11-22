@@ -17,6 +17,7 @@ import com.prissma.launcher.engine.java.GameDownloads
 import com.prissma.launcher.engine.rust.StarlingInstallation
 import com.prissma.launcher.engine.rust.StarlingLauncher
 import com.prissma.launcher.data.InstanceStorage
+import com.prissma.launcher.data.GameInstance
 import com.prissma.launcher.data.OPEN_UPDATE_SETTINGS
 import com.prissma.launcher.data.UpdateNotifications
 import com.prissma.launcher.ui.hub.HubScreen
@@ -101,7 +102,7 @@ class MainActivity : ComponentActivity() {
 
     private fun openBedrock(): String? = bedrockLauncher.open()?.also { refreshBedrock() }
 
-    private fun openStarling(): String? = starlingLauncher.open()?.also { starling = starlingLauncher.detect() }
+    private fun openStarling(instance: GameInstance): String? = starlingLauncher.open(instance)?.also { starling = starlingLauncher.detect() }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)

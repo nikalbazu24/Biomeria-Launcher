@@ -77,7 +77,7 @@ internal fun HubScreen(
     starling: StarlingInstallation?,
     starlingLauncher: StarlingLauncher,
     starlingReport: Uri?,
-    onOpenStarling: () -> String?,
+    onOpenStarling: (GameInstance) -> String?,
     onConsumeStarlingReport: (Uri) -> Unit,
     externalLaunchInstanceId: String? = null,
     updateSettingsRequest: Int = 0,
@@ -157,7 +157,7 @@ internal fun HubScreen(
             }
             EngineType.RUST -> {
                 launchingId = null
-                val problem = onOpenStarling()
+                val problem = onOpenStarling(instance)
                 if (problem != null) {
                     showStarlingDiagnostics = true
                     notify(problem)
@@ -218,7 +218,9 @@ internal fun HubScreen(
             EngineType.BEDROCK -> key(workshopInstance.id) {
                 BedrockWorkshopScreen(workshopInstance, bedrock, bedrockLauncher, onRefreshBedrock, back)
             }
-            EngineType.RUST -> StarlingWorkshopScreen(workshopInstance.title, starling, starlingLauncher, back)
+            EngineType.RUST -> key(workshopInstance.id) {
+                StarlingWorkshopScreen(workshopInstance, starling, starlingLauncher, back)
+            }
         }
         return
     }
@@ -302,7 +304,8 @@ internal fun HubScreen(
         BedrockAppsDialog(bedrock, bedrockLauncher, onRefreshBedrock, onDismiss = { showBedrockApps = false })
     }
     if (showStarlingDiagnostics) {
-        StarlingDiagnosticsDialog(starling, starlingLauncher, starlingReport, onConsumeStarlingReport) {
+        StarlingDiagnosticsDialog(starling, starlingLauncher, selected?.takeIf { it.engine == EngineType.RUST },
+            starlingReport, onConsumeStarlingReport) {
             showStarlingDiagnostics = false
         }
     }

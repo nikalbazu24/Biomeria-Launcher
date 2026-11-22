@@ -56,35 +56,14 @@ final class GameFolder {
     private static final int NAME_TRIES = 1000;
 
     private final File root;
-    private final boolean ownFiles;
+    private final String rootId;
 
-    GameFolder(File root, boolean ownFiles) {
+    GameFolder(File root, String rootId) {
         this.root = root;
-        this.ownFiles = ownFiles;
+        this.rootId = rootId;
     }
 
-    /** The folder itself (DiagnosticsActivity's graphics API choice writes its settings file). */
-    File root() {
-        return root;
-    }
-
-    /**
-     * The folder the game uses, as android.rs game_folder chooses it: `shared` (null when not
-     * allowed), once the game has made it and moved the player's files there at a start, else
-     * the app's own files. This never makes the shared folder: the game renames an older Horizon
-     * folder to it only when it is missing.
-     */
-    static GameFolder choose(File own, String shared) {
-        if (shared != null) {
-            File folder = new File(shared);
-            boolean moved = new File(folder, "options.txt").exists()
-                    || !new File(own, "options.txt").exists();
-            if (folder.isDirectory() && moved) {
-                return new GameFolder(folder, false);
-            }
-        }
-        return new GameFolder(own, true);
-    }
+    String rootId() { return rootId; }
 
     /** Whether a file or folder may have this name: one part of a path, inside its folder. */
     private static boolean validName(String name) {
@@ -95,19 +74,19 @@ final class GameFolder {
 
     /** The file of a document, which may not exist. Each part is checked: no way out, no links. */
     File file(String id) throws FileNotFoundException {
-        if (!ROOT.equals(id) && !id.startsWith(ROOT + "/")) {
+        if (!rootId.equals(id) && !id.startsWith(rootId + "/")) {
             throw new FileNotFoundException("Not in the game folder: " + id);
         }
         File file = root;
         refuseLink(file, id);
-        if (ROOT.equals(id)) {
+        if (rootId.equals(id)) {
             return file;
         }
-        String[] names = id.substring(ROOT.length() + 1).split("/", -1);
+        String[] names = id.substring(rootId.length() + 1).split("/", -1);
         boolean appearanceImages = "skins".equals(names[0])
                 || ("game-wardrobe".equals(names[0])
                     && (names.length == 1 || "images".equals(names[1])));
-        if (ownFiles && !PLAYER_FILES.contains(names[0]) && !LOGS.contains(names[0])
+        if (!PLAYER_FILES.contains(names[0]) && !LOGS.contains(names[0])
                 && !appearanceImages) {
             throw new FileNotFoundException("Not in the game folder: " + id);
         }
@@ -143,7 +122,7 @@ final class GameFolder {
         if (!path.equals(top) && !path.startsWith(top + File.separator)) {
             return null;
         }
-        String id = ROOT + path.substring(top.length()).replace(File.separatorChar, '/');
+        String id = rootId + path.substring(top.length()).replace(File.separatorChar, '/');
         try {
             file(id);
             return id;
@@ -160,7 +139,7 @@ final class GameFolder {
     /** The documents in a folder, without links, special files and what is not the player's. */
     List<String> children(String id) throws IOException {
         File folder = file(id);
-        if (ownFiles && ROOT.equals(id)) {
+        if (rootId.equals(id)) {
             for (String name : FOLDERS) {
                 new File(root, name).mkdirs();
             }
@@ -186,12 +165,12 @@ final class GameFolder {
 
     /** Whether a document keeps its name and place: the folder, and the app's own files' top. */
     boolean fixed(String id) {
-        return ROOT.equals(id) || (ownFiles && id.indexOf('/') == id.lastIndexOf('/'));
+        return rootId.equals(id) || id.indexOf('/') == id.lastIndexOf('/');
     }
 
     /** Whether new documents may go in this folder. */
     boolean takesNew(String id) {
-        return !(ownFiles && ROOT.equals(id));
+        return !rootId.equals(id);
     }
 
     /** A new file or folder, " (1)" added when the name is taken; its id. */
@@ -267,7 +246,7 @@ final class GameFolder {
 
     /** The ids from `top` (null: the game folder) down to `id`, both included. */
     List<String> path(String top, String id) throws FileNotFoundException {
-        String from = top == null ? ROOT : top;
+        String from = top == null ? rootId : top;
         file(id);
         if (!from.equals(id) && !isChild(from, id)) {
             throw new FileNotFoundException(id + " is not in " + from);

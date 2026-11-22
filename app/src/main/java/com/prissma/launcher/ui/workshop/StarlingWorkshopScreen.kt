@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.prissma.launcher.data.GameInstance
 import com.prissma.launcher.engine.rust.StarlingInstallation
 import com.prissma.launcher.engine.rust.StarlingLauncher
 import com.prissma.launcher.engine.rust.launchProblem
@@ -29,7 +30,7 @@ import java.io.IOException
 
 @Composable
 internal fun StarlingWorkshopScreen(
-    title: String,
+    instance: GameInstance,
     installation: StarlingInstallation?,
     launcher: StarlingLauncher,
     onBack: () -> Unit
@@ -50,7 +51,7 @@ internal fun StarlingWorkshopScreen(
                             if (it.moveToFirst()) it.getString(0) else null
                         } ?: source.lastPathSegment.orEmpty().substringAfterLast('/')
                     }
-                    problem = if (name.endsWith(".hmod", ignoreCase = true)) launcher.open(source)
+                    problem = if (name.endsWith(".hmod", ignoreCase = true)) launcher.open(instance, source)
                         else "Selecciona un paquete .hmod compatible con Horizon 0.2."
                 } catch (error: SecurityException) {
                     problem = "Android no dio acceso al archivo. Selecciónalo de nuevo."
@@ -73,7 +74,7 @@ internal fun StarlingWorkshopScreen(
             },
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        PageHeader("Taller de Rust", title, onBack)
+        PageHeader("Taller de Rust", instance.title, onBack)
         Column(Modifier.fillMaxWidth().background(Prissma.colors.surfaceCard, PanelShape).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Mods de Starling", style = MaterialTheme.typography.titleLarge)
