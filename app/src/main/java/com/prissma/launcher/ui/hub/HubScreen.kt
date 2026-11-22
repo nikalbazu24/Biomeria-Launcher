@@ -211,7 +211,7 @@ internal fun HubScreen(
 
     val showWorkshop = page == HubPage.WORKSHOP && workshopInstance != null
     BackHandler(enabled = page != HubPage.LIBRARY && !showWorkshop) { page = HubPage.LIBRARY }
-    if (showWorkshop && workshopInstance != null) {
+    if (showWorkshop) {
         val back = { page = HubPage.LIBRARY }
         when (workshopInstance.engine) {
             EngineType.JAVA -> ContentWorkshopScreen(instance = workshopInstance, onBack = back)
