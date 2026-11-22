@@ -47,6 +47,8 @@ import com.prissma.launcher.ui.components.gamepadClick
 import com.prissma.launcher.ui.launch.JavaLaunchScreen
 import com.prissma.launcher.ui.theme.Prissma
 import com.prissma.launcher.ui.workshop.ContentWorkshopScreen
+import com.prissma.launcher.ui.workshop.WorkshopDownloadsDialog
+import com.prissma.launcher.ui.workshop.workshopDownloadsLabel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -63,6 +65,7 @@ private enum class HubPage(val label: String, val icon: ImageVector) {
 fun HubScreen(
     externalLaunchInstanceId: String? = null,
     updateSettingsRequest: Int = 0,
+    workshopDownloadsRequest: Int = 0,
     sourceFrontendPackage: String? = null,
     onConsumeExternalLaunch: () -> Unit = {}
 ) {
@@ -76,6 +79,8 @@ fun HubScreen(
     val notices = remember { SnackbarHostState() }
 
     var instances by remember(storage) { mutableStateOf(storage.loadInstances()) }
+    val workshopJobs by remember(downloads, instances) { downloads.workshopDownloads(instances) }.collectAsState(emptyList())
+    var showWorkshopDownloads by rememberSaveable { mutableStateOf(false) }
     var profile by remember(storage) { mutableStateOf(storage.loadProfile()) }
     var favorites by remember(preferences) { mutableStateOf(preferences.favorites()) }
     var recent by remember(preferences) { mutableStateOf(preferences.recent()) }
@@ -138,6 +143,13 @@ fun HubScreen(
             page = HubPage.SETTINGS
         }
     }
+    LaunchedEffect(workshopDownloadsRequest) {
+        if (workshopDownloadsRequest != 0) {
+            launchingId = null
+            if (page == HubPage.WORKSHOP) page = HubPage.LIBRARY
+            showWorkshopDownloads = true
+        }
+    }
     LaunchedEffect(downloads) {
         val sample = instances.firstOrNull { it.id == "survival-mods-java" }
         if (sample != null && withContext(Dispatchers.IO) {
@@ -184,6 +196,8 @@ fun HubScreen(
             playerAvatar = storage.profileAvatar(profile),
             updateAvailable = update != null,
             onProfile = { showAccount = true },
+            downloadsLabel = workshopDownloadsLabel(workshopJobs),
+            onDownloads = { showWorkshopDownloads = true },
             modifier = Modifier.fillMaxSize().padding(padding).onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
                 when {
@@ -242,7 +256,9 @@ fun HubScreen(
         }
     }
 
-    if (!releaseNotesSeen && page == HubPage.LIBRARY && externalLaunchInstanceId == null &&
+    if (showWorkshopDownloads) WorkshopDownloadsDialog(workshopJobs, instances) { showWorkshopDownloads = false }
+
+    if (!showWorkshopDownloads && !releaseNotesSeen && page == HubPage.LIBRARY && externalLaunchInstanceId == null &&
         updateSettingsRequest == 0 && !showAccount && !showNew && editingId == null && deleteId == null
     ) {
         installedNotes?.let { ReleaseNotesDialog(version, it, ::acknowledgeReleaseNotes) }
@@ -308,6 +324,8 @@ private fun HubFrame(
     playerAvatar: File?,
     updateAvailable: Boolean,
     onProfile: () -> Unit,
+    downloadsLabel: String,
+    onDownloads: () -> Unit,
     modifier: Modifier,
     content: @Composable () -> Unit
 ) {
@@ -330,6 +348,7 @@ private fun HubFrame(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(page.label, Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall,
                         maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold)
+                    LauncherButton(downloadsLabel, onDownloads)
                     OutlinedButton(onProfile, Modifier.widthIn(max = 170.dp).gamepadClick(onClick = onProfile),
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp)) {
                         ProfileAvatar(playerName, playerAvatar, Modifier.size(25.dp))

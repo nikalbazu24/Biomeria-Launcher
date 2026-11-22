@@ -2,9 +2,12 @@ package com.prissma.launcher.engine.java
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Intent
 import android.content.Context
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.text.format.Formatter
 import androidx.core.app.NotificationCompat
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -13,12 +16,15 @@ import androidx.work.ForegroundInfo
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import androidx.work.WorkQuery
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.prissma.launcher.MainActivity
 import com.prissma.launcher.R
 import com.prissma.launcher.data.GameInstance
 import com.prissma.launcher.data.ModrinthRepository
 import com.prissma.launcher.data.WorkshopCategory
+import com.prissma.launcher.data.WorkshopInstallStage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -31,6 +37,12 @@ import kotlin.math.roundToInt
 internal const val RUNTIME_WORK = "download-java-21"
 internal const val DOWNLOAD_MESSAGE = "message"
 internal const val DOWNLOAD_PERCENT = "percent"
+internal const val DOWNLOAD_DETAIL = "detail"
+internal const val OPEN_WORKSHOP_DOWNLOADS = "com.prissma.launcher.OPEN_WORKSHOP_DOWNLOADS"
+internal const val WORKSHOP_PROJECT_TAG = "workshop-project:"
+internal const val WORKSHOP_TITLE_TAG = "workshop-title:"
+internal const val WORKSHOP_INSTANCE_TAG = "workshop-"
+private const val ALL_WORKSHOP_DOWNLOADS = "workshop-content-downloads"
 
 internal class GameDownloads(private val context: Context) {
     private val work = WorkManager.getInstance(context)
@@ -53,9 +65,13 @@ internal class GameDownloads(private val context: Context) {
 
     fun mods(instance: GameInstance) = work.getWorkInfosByTagFlow(modTag(instance))
 
+    fun workshopDownloads(instances: List<GameInstance>) = work.getWorkInfosFlow(
+        WorkQuery.Builder.fromTags(listOf(ALL_WORKSHOP_DOWNLOADS) + instances.map(::modTag)).build()
+    )
+
     fun key(instance: GameInstance) = "download-game-" + instance.id + "-" + instance.version + "-" + instance.loader
     private fun modKey(instance: GameInstance, id: String) = modTag(instance) + "-$id"
-    private fun modTag(instance: GameInstance) = "workshop-" + instance.id
+    private fun modTag(instance: GameInstance) = WORKSHOP_INSTANCE_TAG + instance.id
 
     private fun enqueue(
         key: String, title: String, kind: String, id: String = "", version: String = "", loader: String = "",
@@ -66,32 +82,43 @@ internal class GameDownloads(private val context: Context) {
         work.enqueueUniqueWork(key, ExistingWorkPolicy.KEEP,
             OneTimeWorkRequestBuilder<GameDownloadWorker>().setInputData(data)
                 .setConstraints(network).addTag(tag)
-                .apply { if (projectId.isNotEmpty()) addTag(projectId) }.build())
+                .apply {
+                    if (projectId.isNotEmpty()) {
+                        addTag(ALL_WORKSHOP_DOWNLOADS)
+                        addTag(WORKSHOP_PROJECT_TAG + projectId)
+                        addTag(WORKSHOP_TITLE_TAG + title.take(120))
+                    }
+                }.build())
     }
 }
 
+private data class DownloadUpdate(val percent: Int, val message: String, val detail: String = "")
+
 class GameDownloadWorker(context: Context, parameters: WorkerParameters) : CoroutineWorker(context, parameters) {
     override suspend fun doWork(): Result = coroutineScope {
-        val updates = Channel<Pair<Int, String>>(Channel.CONFLATED)
+        val updates = Channel<DownloadUpdate>(Channel.CONFLATED)
         val title = inputData.getString("title").orEmpty()
+        val isWorkshop = inputData.getString("kind") == "content"
         val background = try {
-            setForeground(foreground(title, "Preparando descarga", 0))
+            setForeground(foreground(title, DownloadUpdate(-1,
+                if (isWorkshop) "Esperando turno de instalación" else "Preparando descarga"), isWorkshop))
             true
         } catch (error: IllegalStateException) {
             // If Android blocks foreground startup, keep short jobs eligible for retry.
             false
         }
         val observer = launch {
-            var lastPercent = -1
-            for ((percent, message) in updates) {
-                if (lastPercent == percent) continue
-                lastPercent = percent
-                setProgress(workDataOf(DOWNLOAD_PERCENT to percent, DOWNLOAD_MESSAGE to message))
-                if (background) setForeground(foreground(title, message, percent))
+            var lastUpdate: DownloadUpdate? = null
+            for (update in updates) {
+                if (lastUpdate == update) continue
+                lastUpdate = update
+                setProgress(workDataOf(DOWNLOAD_PERCENT to update.percent, DOWNLOAD_MESSAGE to update.message,
+                    DOWNLOAD_DETAIL to update.detail, "title" to title))
+                if (background) setForeground(foreground(title, update, isWorkshop))
             }
         }
         val progress: (Float, String) -> Unit = { fraction, message ->
-            updates.trySend((fraction.coerceIn(0f, 1f) * 100).roundToInt() to message)
+            updates.trySend(DownloadUpdate((fraction.coerceIn(0f, 1f) * 100).roundToInt(), message))
         }
         val context = applicationContext
         try {
@@ -111,9 +138,20 @@ class GameDownloadWorker(context: Context, parameters: WorkerParameters) : Corou
                 "content" -> {
                     val project = inputData.getString("projectId").orEmpty()
                     val category = WorkshopCategory.valueOf(inputData.getString("category").orEmpty())
-                    progress(.10f, "Comprobando compatibilidad")
-                    val items = ModrinthRepository(context).install(project, id, category, version, loader.ifBlank { null })
-                    if (items == 1) "Archivo listo" else "$items archivos listos, incluidas las dependencias"
+                    updates.trySend(DownloadUpdate(-1, "Esperando turno de instalación"))
+                    val items = ModrinthRepository(context).install(project, id, category, version, loader.ifBlank { null }) { status ->
+                        val detail = buildList {
+                            if (status.fileNumber > 0) add("Archivo ${status.fileNumber} de ${status.fileCount}")
+                            status.fileName?.let { add(it.take(120)) }
+                            if (status.stage == WorkshopInstallStage.DOWNLOADING) {
+                                val done = Formatter.formatShortFileSize(context, status.downloadedBytes)
+                                val total = status.totalBytes.takeIf { it > 0 }?.let { Formatter.formatShortFileSize(context, it) }
+                                add(if (total == null) done else "$done / $total")
+                            }
+                        }.joinToString(" · ")
+                        updates.trySend(DownloadUpdate(status.percent ?: -1, status.stage.label, detail))
+                    }
+                    if (items == 1) "1 archivo instalado" else "$items archivos instalados, incluidas las dependencias"
                 }
                 else -> error("Tarea de descarga inválida.")
             }
@@ -129,18 +167,29 @@ class GameDownloadWorker(context: Context, parameters: WorkerParameters) : Corou
         }
     }
 
-    private suspend fun foreground(title: String, message: String, percent: Int): ForegroundInfo = withContext(Dispatchers.IO) {
+    private suspend fun foreground(
+        title: String, update: DownloadUpdate, isWorkshop: Boolean
+    ): ForegroundInfo = withContext(Dispatchers.IO) {
         val manager = applicationContext.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel("game_downloads", "Descargas", NotificationManager.IMPORTANCE_LOW))
+        val summary = if (update.percent < 0) update.message else update.message + " · " + update.percent + " %"
         val notification = NotificationCompat.Builder(applicationContext, "game_downloads")
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
-            .setContentText(message)
-            .setProgress(100, percent, percent == 0)
+            .setContentText(summary)
+            .setProgress(100, update.percent.coerceAtLeast(0), update.percent < 0)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .build()
-        ForegroundInfo(id.hashCode(), notification,
+        if (update.detail.isNotBlank()) {
+            notification.setStyle(NotificationCompat.BigTextStyle().bigText("$summary\n" + update.detail))
+        }
+        if (isWorkshop) {
+            notification.setContentIntent(PendingIntent.getActivity(applicationContext, 0,
+                Intent(applicationContext, MainActivity::class.java).setAction(OPEN_WORKSHOP_DOWNLOADS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+        }
+        ForegroundInfo(id.hashCode(), notification.build(),
             if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0)
     }
 }

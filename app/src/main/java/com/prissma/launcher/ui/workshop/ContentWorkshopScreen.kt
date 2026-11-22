@@ -34,7 +34,7 @@ import com.prissma.launcher.data.InstalledFileItem
 import com.prissma.launcher.data.ModrinthItem
 import com.prissma.launcher.data.ModrinthRepository
 import com.prissma.launcher.data.WorkshopCategory
-import com.prissma.launcher.engine.java.DOWNLOAD_MESSAGE
+import com.prissma.launcher.engine.java.WORKSHOP_PROJECT_TAG
 import com.prissma.launcher.engine.java.GameDownloads
 import com.prissma.launcher.ui.components.ControlShape
 import com.prissma.launcher.ui.components.LauncherButton
@@ -61,7 +61,7 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val downloads = remember(context) { GameDownloads(context) }
     val jobs by remember(downloads, instance.id) { downloads.mods(instance) }.collectAsState(emptyList())
-    val queued = jobs.filter { !it.state.isFinished }.flatMap { it.tags }.toSet()
+    val activeJobs = jobs.filter { !it.state.isFinished }
     val finished = jobs.filter { it.state.isFinished }.map { it.id }
     val focus = LocalFocusManager.current
     val loader = instance.configuredModLoader
@@ -76,6 +76,7 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
     var installed by remember { mutableStateOf<List<InstalledFileItem>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var showTutorial by rememberSaveable { mutableStateOf(false) }
+    var showDownloads by rememberSaveable { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     var confirmRemoval by remember { mutableStateOf<InstalledFileItem?>(null) }
 
@@ -126,6 +127,7 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
     ) {
         PageHeader("Taller", instance.title + " · Minecraft " + instance.version + " · Modrinth", onBack)
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            LauncherButton(workshopDownloadsLabel(jobs), { showDownloads = true }, primary = activeJobs.isNotEmpty())
             WorkshopTab.entries.forEach {
                 val choose = { tab = it }
                 FilterChip(tab == it, choose, { Text(it.label) }, modifier = Modifier.gamepadClick(onClick = choose))
@@ -150,11 +152,6 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
             }
         }
         status?.let { Text(it, color = Prissma.colors.netP2P, style = MaterialTheme.typography.bodySmall) }
-        jobs.lastOrNull { it.state == WorkInfo.State.FAILED }?.outputData?.let { failure ->
-            Text(listOfNotNull(failure.getString("title"), failure.getString(DOWNLOAD_MESSAGE)).joinToString(" · "),
-                color = Prissma.colors.error, style = MaterialTheme.typography.bodySmall,
-                maxLines = 2, overflow = TextOverflow.Ellipsis)
-        }
 
         when {
             loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -175,7 +172,7 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
                         it.compatibility?.let { note ->
                             Text(note, style = MaterialTheme.typography.bodySmall, color = Prissma.colors.textMuted)
                         }
-                        LauncherButton("Quitar archivo", { confirmRemoval = it }, enabled = queued.isEmpty())
+                        LauncherButton("Quitar archivo", { confirmRemoval = it }, enabled = activeJobs.isEmpty())
                     }
                 }
             }
@@ -185,9 +182,11 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(9.dp), verticalArrangement = Arrangement.spacedBy(9.dp)
             ) {
                 items(results, key = { it.projectId }) { item ->
+                    val matchingJobs = jobs.filter { WORKSHOP_PROJECT_TAG + item.projectId in it.tags || item.projectId in it.tags }
+                    val job = matchingJobs.firstOrNull { !it.state.isFinished } ?: matchingJobs.lastOrNull()
                     ProjectCard(
-                        item, downloading = item.projectId in queued,
-                        enabled = item.projectId !in queued && (item.category != WorkshopCategory.MODS || loader == "fabric")
+                        item, job,
+                        enabled = job?.state?.isFinished != false && (item.category != WorkshopCategory.MODS || loader == "fabric")
                     ) {
                         downloads.mod(instance, item.projectId, item.title, item.category)
                         status = "Descarga en segundo plano · " + item.title
@@ -196,6 +195,8 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
             }
         }
     }
+
+    if (showDownloads) WorkshopDownloadsDialog(jobs, listOf(instance)) { showDownloads = false }
 
     if (showTutorial) {
         AlertDialog(
@@ -232,7 +233,7 @@ fun ContentWorkshopScreen(instance: GameInstance, onBack: () -> Unit) {
 }
 
 @Composable
-private fun ProjectCard(item: ModrinthItem, downloading: Boolean, enabled: Boolean, onSave: () -> Unit) {
+private fun ProjectCard(item: ModrinthItem, job: WorkInfo?, enabled: Boolean, onSave: () -> Unit) {
     Column(cardModifier(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(38.dp).background(Prissma.colors.surfaceElevated, ControlShape), contentAlignment = Alignment.Center) {
@@ -248,7 +249,10 @@ private fun ProjectCard(item: ModrinthItem, downloading: Boolean, enabled: Boole
         }
         Text(item.description, minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis,
             style = MaterialTheme.typography.bodySmall, color = Prissma.colors.textMuted)
-        LauncherButton(if (downloading) "En cola o descargando…" else "Descargar", onSave, enabled = enabled)
+        if (job != null) WorkshopJobProgress(job)
+        if (job?.state?.isFinished != false) {
+            LauncherButton(if (job?.state == WorkInfo.State.FAILED) "Reintentar" else "Descargar", onSave, enabled = enabled)
+        }
     }
 }
 

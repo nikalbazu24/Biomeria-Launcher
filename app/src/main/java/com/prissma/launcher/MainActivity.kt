@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.prissma.launcher.engine.java.GameDownloads
+import com.prissma.launcher.engine.java.OPEN_WORKSHOP_DOWNLOADS
 import com.prissma.launcher.data.InstanceStorage
 import com.prissma.launcher.data.OPEN_UPDATE_SETTINGS
 import com.prissma.launcher.data.UpdateNotifications
@@ -20,6 +21,7 @@ import com.prissma.launcher.ui.theme.PrissmaTheme
 class MainActivity : ComponentActivity() {
 
     private var updateSettingsRequest by mutableStateOf(0)
+    private var workshopDownloadsRequest by mutableStateOf(0)
     private var externalLaunchInstanceId by mutableStateOf<String?>(null)
     private var sourceFrontendPackage by mutableStateOf<String?>(null)
 
@@ -34,7 +36,7 @@ class MainActivity : ComponentActivity() {
             PrissmaTheme {
                 var showSplash by remember { mutableStateOf(externalLaunchInstanceId == null) }
 
-                if (showSplash && externalLaunchInstanceId == null && updateSettingsRequest == 0) {
+                if (showSplash && externalLaunchInstanceId == null && updateSettingsRequest == 0 && workshopDownloadsRequest == 0) {
                     PrissmaSplashScreen(
                         onSplashFinished = { showSplash = false }
                     )
@@ -42,6 +44,7 @@ class MainActivity : ComponentActivity() {
                     HubScreen(
                         externalLaunchInstanceId = externalLaunchInstanceId,
                         updateSettingsRequest = updateSettingsRequest,
+                        workshopDownloadsRequest = workshopDownloadsRequest,
                         sourceFrontendPackage = sourceFrontendPackage,
                         onConsumeExternalLaunch = { externalLaunchInstanceId = null }
                     )
@@ -59,6 +62,10 @@ class MainActivity : ComponentActivity() {
     private fun handleIncomingIntent(intent: Intent?) {
         if (intent?.action == OPEN_UPDATE_SETTINGS) {
             updateSettingsRequest += 1
+            return
+        }
+        if (intent?.action == OPEN_WORKSHOP_DOWNLOADS) {
+            workshopDownloadsRequest += 1
             return
         }
         val dataUri = intent?.data ?: return

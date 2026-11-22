@@ -15,6 +15,8 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 
 enum class WorkshopCategory(
@@ -101,9 +103,11 @@ class ModrinthRepository(private val context: Context) {
         instanceId: String,
         category: WorkshopCategory,
         gameVersion: String,
-        loader: String?
+        loader: String?,
+        onProgress: (WorkshopInstallProgress) -> Unit = {}
     ): Int = withContext(Dispatchers.IO) {
         installationLock.withLock {
+            onProgress(WorkshopInstallProgress(WorkshopInstallStage.CHECKING))
             require(instanceId.matches(Regex("[A-Za-z0-9_-]{1,100}")))
             require(category != WorkshopCategory.MODS || loader == "fabric") {
                 "Elige Fabric como cargador para instalar mods."
@@ -150,40 +154,55 @@ class ModrinthRepository(private val context: Context) {
             val instanceRoot = File(context.filesDir, "instances/$instanceId")
             val targetDir = File(instanceRoot, category.folderName).apply { mkdirs() }
             val manifestDir = File(instanceRoot, "workshop/" + category.name).apply { mkdirs() }
-            val installed = resolved.entries.reversed().map { (project, version) ->
-                val files = version.getJSONArray("files")
-                val primary = (0 until files.length()).asSequence().map(files::getJSONObject)
-                    .firstOrNull { it.optBoolean("primary") } ?: files.getJSONObject(0)
-                val name = primary.getString("filename")
-                require(safeFilename(name)) { "Modrinth devolvió un nombre de archivo inválido." }
-                require(category != WorkshopCategory.MODS || name.endsWith(".jar", ignoreCase = true))
-                val url = primary.getString("url")
-                require(url.startsWith("https://cdn.modrinth.com/")) { "Origen del archivo inválido." }
-                val sha512 = primary.getJSONObject("hashes").getString("sha512")
-                require(sha512.matches(Regex("(?i)[a-f0-9]{128}")))
-                val destination = File(targetDir, name)
-                if (!destination.isFile || sha512(destination) != sha512.lowercase()) {
-                    downloadBinary(url, destination, sha512)
+            val staging = File(instanceRoot, "workshop/.staging")
+            check(!staging.exists() || staging.deleteRecursively()) { "No se pudo limpiar la descarga anterior." }
+            check(staging.mkdirs()) { "No se pudo preparar la carpeta de instalación." }
+            try {
+                val changes = linkedMapOf<File, File>()
+                val obsolete = mutableSetOf<File>()
+                val destinations = mutableSetOf<File>()
+                resolved.entries.reversed().forEachIndexed { index, (project, version) ->
+                    currentCoroutineContext().ensureActive()
+                    val files = version.getJSONArray("files")
+                    val primary = (0 until files.length()).asSequence().map(files::getJSONObject)
+                        .firstOrNull { it.optBoolean("primary") } ?: files.getJSONObject(0)
+                    val name = primary.getString("filename")
+                    require(safeFilename(name)) { "Modrinth devolvió un nombre de archivo inválido." }
+                    require(category != WorkshopCategory.MODS || name.endsWith(".jar", ignoreCase = true))
+                    val url = primary.getString("url")
+                    require(url.startsWith("https://cdn.modrinth.com/")) { "Origen del archivo inválido." }
+                    val expectedHash = primary.getJSONObject("hashes").getString("sha512").lowercase()
+                    require(expectedHash.matches(Regex("[a-f0-9]{128}")))
+                    val destination = File(targetDir, name)
+                    check(destinations.add(destination)) { "Dos dependencias usan el mismo nombre de archivo: $name." }
+
+                    val report = WorkshopInstallProgress(WorkshopInstallStage.VERIFYING, name, index + 1, resolved.size)
+                    if (destination.isFile) onProgress(report)
+                    if (!destination.isFile || sha512(destination) != expectedHash) {
+                        val partial = File(staging, "archive-$index")
+                        downloadBinary(url, partial, expectedHash, primary.optLong("size"), report, onProgress)
+                        changes[destination] = partial
+                    }
+
+                    val manifest = File(manifestDir, "$project.json")
+                    val previous = runCatching {
+                        JSONObject(AtomicFile(manifest).readFully().toString(Charsets.UTF_8)).getString("file")
+                    }.getOrNull()
+                    val info = JSONObject().put("file", name).put("game_versions", version.getJSONArray("game_versions"))
+                        .put("loaders", version.getJSONArray("loaders"))
+                    val stagedManifest = File(staging, "manifest-$index")
+                    stagedManifest.writeText(info.toString())
+                    changes[manifest] = stagedManifest
+                    if (previous != null && previous != name && safeFilename(previous)) obsolete.add(File(targetDir, previous))
                 }
-                Triple(project, name, version)
+                currentCoroutineContext().ensureActive()
+                onProgress(WorkshopInstallProgress(WorkshopInstallStage.INSTALLING, fileCount = resolved.size))
+                publishWorkshopFiles(changes, staging)
+                (obsolete - destinations).forEach { it.delete() }
+                resolved.size
+            } finally {
+                staging.deleteRecursively()
             }
-            for ((project, name, version) in installed) {
-                val metadata = AtomicFile(File(manifestDir, "$project.json"))
-                val previous = runCatching { JSONObject(metadata.readFully().toString(Charsets.UTF_8)).getString("file") }
-                    .getOrNull()
-                val info = JSONObject().put("file", name).put("game_versions", version.getJSONArray("game_versions"))
-                    .put("loaders", version.getJSONArray("loaders"))
-                val output = metadata.startWrite()
-                try {
-                    output.write(info.toString().toByteArray(Charsets.UTF_8))
-                    metadata.finishWrite(output)
-                } catch (error: Exception) {
-                    metadata.failWrite(output)
-                    throw error
-                }
-                if (previous != null && previous != name && safeFilename(previous)) File(targetDir, previous).delete()
-            }
-            installed.size
         }
     }
 
@@ -241,7 +260,14 @@ class ModrinthRepository(private val context: Context) {
         }
     }
 
-    private suspend fun downloadBinary(fileUrl: String, destination: File, expectedSha512: String) {
+    private suspend fun downloadBinary(
+        fileUrl: String,
+        partial: File,
+        expectedSha512: String,
+        declaredSize: Long,
+        file: WorkshopInstallProgress,
+        onProgress: (WorkshopInstallProgress) -> Unit
+    ) {
         val conn = (URL(fileUrl).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 15_000
@@ -249,33 +275,66 @@ class ModrinthRepository(private val context: Context) {
             setRequestProperty("User-Agent", userAgent)
         }
         try {
+            val download = file.copy(stage = WorkshopInstallStage.DOWNLOADING)
+            onProgress(download.copy(totalBytes = declaredSize))
             if (conn.responseCode !in 200..299) {
                 throw IOException("Fallo al descargar archivo (HTTP " + conn.responseCode + ")")
             }
-            val atomic = AtomicFile(destination)
-            val output = atomic.startWrite()
-            try {
-                val digest = MessageDigest.getInstance("SHA-512")
-                java.security.DigestInputStream(conn.inputStream, digest).use { input ->
-                    val job = currentCoroutineContext()
+            val total = declaredSize.takeIf { it > 0 } ?: conn.contentLengthLong
+            val digest = MessageDigest.getInstance("SHA-512")
+            val job = currentCoroutineContext()
+            var written = 0L
+            var lastProgress = -1L
+            onProgress(download.copy(totalBytes = total))
+            java.security.DigestInputStream(conn.inputStream, digest).use { input ->
+                partial.outputStream().use { output ->
                     val buffer = ByteArray(32 * 1024)
                     while (true) {
                         job.ensureActive()
                         val count = input.read(buffer)
                         if (count < 0) break
                         output.write(buffer, 0, count)
+                        written += count
+                        val update = download.copy(downloadedBytes = written, totalBytes = total)
+                        val milestone = update.percent?.toLong() ?: written / (256 * 1024)
+                        if (milestone != lastProgress) {
+                            lastProgress = milestone
+                            onProgress(update)
+                        }
                     }
                 }
-                val actualSha512 = digest.digest().joinToString("") { "%02x".format(it) }
-                check(actualSha512.equals(expectedSha512, ignoreCase = true)) { "La descarga está incompleta o dañada." }
-                atomic.finishWrite(output)
-            } catch (error: Exception) {
-                atomic.failWrite(output)
-                throw error
             }
+            onProgress(file)
+            val actual = digest.digest().joinToString("") { "%02x".format(it) }
+            if (actual != expectedSha512) throw IOException("La descarga está incompleta o dañada.")
         } finally {
             conn.disconnect()
         }
+    }
+}
+
+internal fun publishWorkshopFiles(changes: Map<File, File>, staging: File) {
+    val backups = linkedMapOf<File, File?>()
+    try {
+        for ((destination, staged) in changes) {
+            val backup = if (destination.isFile) {
+                File(staging, "backup-" + backups.size).also { destination.copyTo(it) }
+            } else null
+            Files.move(staged.toPath(), destination.toPath(), StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING)
+            backups[destination] = backup
+        }
+    } catch (failure: Exception) {
+        for ((destination, backup) in backups.entries.reversed()) {
+            try {
+                if (backup == null) Files.deleteIfExists(destination.toPath())
+                else Files.move(backup.toPath(), destination.toPath(), StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING)
+            } catch (rollbackFailure: Exception) {
+                failure.addSuppressed(rollbackFailure)
+            }
+        }
+        throw failure
     }
 }
 
