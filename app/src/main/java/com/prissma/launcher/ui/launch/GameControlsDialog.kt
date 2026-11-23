@@ -72,7 +72,7 @@ internal fun GameControlsDialog(
 internal fun PanelPreferenceControls(settings: GameHudSettings, onChange: (GameHudSettings) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         PanelSwitch("Mesa de crafteo abajo", settings.routeCrafting) { onChange(settings.copy(routeCrafting = it)) }
-        PanelSwitch("Cofres abajo", settings.routeChests) { onChange(settings.copy(routeChests = it)) }
+        PanelSwitch("Cofres, tolvas y dispensadores abajo", settings.routeChests) { onChange(settings.copy(routeChests = it)) }
         PanelSwitch("Hornos abajo", settings.routeFurnaces) { onChange(settings.copy(routeFurnaces = it)) }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Ranuras compactas", Modifier.weight(1f))

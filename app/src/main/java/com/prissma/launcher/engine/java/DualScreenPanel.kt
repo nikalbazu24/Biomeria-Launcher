@@ -498,7 +498,6 @@ private fun DualScreenPanel(
             }
         }
         }
-        }
         PanelFooter(hints, controllerActive) { activity.releaseLowerGamepad() }
     }
 }
@@ -587,9 +586,10 @@ private fun ContainerSlots(
             FurnaceMeter("Combustible", if (furnace.burning) furnace.fuel else 0f, Modifier.weight(1f))
         }
     } else {
+        val columns = live.layout.containerColumns
         repeat(live.layout.chestRows) { row ->
-            SlotRow((row * 9 until (row + 1) * 9).toList(), live, interactive, fit = true, padFocus = padFocus,
-                matchingSlots = matchingSlots, onSlot = onSlot)
+            SlotRow((row * columns until (row + 1) * columns).toList(), live, interactive, fit = columns == 9,
+                padFocus = padFocus, matchingSlots = matchingSlots, onSlot = onSlot)
         }
     }
 }

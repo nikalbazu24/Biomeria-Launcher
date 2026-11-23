@@ -47,7 +47,7 @@ public final class GamePanelBridge {
 
     // Ordinals and slot counts match Android's PanelLayout.
     private enum Layout {
-        PERSONAL(46), CRAFTING_TABLE(46), CHEST(63), DOUBLE_CHEST(90), FURNACE(39);
+        PERSONAL(46), CRAFTING_TABLE(46), CHEST(63), DOUBLE_CHEST(90), FURNACE(39), HOPPER(41), DISPENSER(45);
         final int slots;
         Layout(int slots) { this.slots = slots; }
     }
@@ -204,7 +204,7 @@ public final class GamePanelBridge {
 
     private static int readMenuPolicy(Path marker) {
         try {
-            if (Files.isRegularFile(marker) && Files.size(marker) <= 2) {
+            if (Files.isRegularFile(marker) && Files.size(marker) <= 4) {
                 return Integer.parseInt(Files.readString(marker, StandardCharsets.US_ASCII));
             }
         } catch (IOException | NumberFormatException ignored) {
@@ -440,6 +440,9 @@ public final class GamePanelBridge {
         final Method screenHandler, closeScreen, title, chestRows, cookProgress, fuelProgress, furnaceBurning;
         final Class<?> craftingScreen, craftingHandler, chestScreen, chestHandler, furnaceScreen, furnaceHandler;
         final Object pickup, quickMove, mapId;
+        /** Optional containers: shulker box, hopper, dispenser/dropper and every furnace kind. */
+        final Class<?> shulkerScreen, shulkerHandler, hopperScreen, hopperHandler, dispenserScreen, dispenserHandler;
+        final Class<?> anyFurnaceScreen, anyFurnaceHandler;
         /** Optional: ItemStack.getItem, Registries.ITEM and Registry.getId. Icons are skipped if missing. */
         final Method itemOf, registryId;
         final Object itemRegistry;
@@ -513,6 +516,14 @@ public final class GamePanelBridge {
             itemOf = item;
             registryId = id;
             itemRegistry = registry;
+            shulkerScreen = optional(loader, 495);
+            shulkerHandler = optional(loader, 1733);
+            hopperScreen = optional(loader, 488);
+            hopperHandler = optional(loader, 1722);
+            dispenserScreen = optional(loader, 480);
+            dispenserHandler = optional(loader, 1716);
+            anyFurnaceScreen = optional(loader, 489);
+            anyFurnaceHandler = furnace;
         }
 
         Layout layout(Object screen, Object handler) throws ReflectiveOperationException {
@@ -530,7 +541,31 @@ public final class GamePanelBridge {
             if (screenType == furnaceScreen && handlerType == furnaceHandler && screenHandler.invoke(screen) == handler) {
                 return Layout.FURNACE;
             }
+            // Smoker and blast furnace share the furnace slots and progress methods.
+            if (anyFurnaceScreen != null && anyFurnaceScreen.isInstance(screen) && anyFurnaceHandler.isInstance(handler)
+                    && screenHandler.invoke(screen) == handler) {
+                return Layout.FURNACE;
+            }
+            if (matches(screenType, shulkerScreen, handlerType, shulkerHandler, screen, handler)) return Layout.CHEST;
+            if (matches(screenType, hopperScreen, handlerType, hopperHandler, screen, handler)) return Layout.HOPPER;
+            if (matches(screenType, dispenserScreen, handlerType, dispenserHandler, screen, handler)) return Layout.DISPENSER;
             return Layout.PERSONAL;
+        }
+
+        private boolean matches(Class<?> screenType, Class<?> expectedScreen, Class<?> handlerType, Class<?> expectedHandler,
+                                Object screen, Object handler) throws ReflectiveOperationException {
+            return expectedScreen != null && expectedHandler != null && screenType == expectedScreen
+                    && handlerType == expectedHandler && screenHandler.invoke(screen) == handler;
+        }
+
+        /** A missing class only hides that one container from the lower screen. */
+        private static Class<?> optional(ClassLoader loader, int id) {
+            try {
+                return type(loader, id);
+            } catch (ClassNotFoundException | LinkageError error) {
+                System.err.println("[PRISSMA] Contenedor class_" + id + " no disponible en el panel.");
+                return null;
+            }
         }
 
         private static Class<?> type(ClassLoader loader, int id) throws ClassNotFoundException {

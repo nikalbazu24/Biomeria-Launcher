@@ -34,7 +34,9 @@ internal fun panelPadRows(layout: PanelLayout?, page: PanelPage): List<List<Pane
                 rows += if (line == (side - 1) / 2) inputs + 0 else inputs
             }
         }
-        page == PanelPage.STORAGE && layout.chestRows > 0 -> repeat(layout.chestRows) { rows += row(it * 9, 9) }
+        page == PanelPage.STORAGE && layout.chestRows > 0 -> repeat(layout.chestRows) {
+            rows += row(it * layout.containerColumns, layout.containerColumns)
+        }
         page == PanelPage.STORAGE && layout == PanelLayout.FURNACE -> rows += listOf(0, 1, 2)
         else -> return emptyList()
     }

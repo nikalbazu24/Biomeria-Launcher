@@ -39,13 +39,17 @@ internal enum class PanelLayout(
     val inventoryStart: Int,
     val hotbarStart: Int,
     val menuPage: PanelPage?,
-    val chestRows: Int = 0
+    val chestRows: Int = 0,
+    /** Slots per container row: 9 for chests, 5 for the hopper, 3 for the dispenser. */
+    val containerColumns: Int = 9
 ) {
     PERSONAL(46, 9, 36, null),
     CRAFTING_TABLE(46, 10, 37, PanelPage.CRAFT),
     CHEST(63, 27, 54, PanelPage.STORAGE, chestRows = 3),
     DOUBLE_CHEST(90, 54, 81, PanelPage.STORAGE, chestRows = 6),
-    FURNACE(39, 3, 30, PanelPage.STORAGE);
+    FURNACE(39, 3, 30, PanelPage.STORAGE),
+    HOPPER(41, 5, 32, PanelPage.STORAGE, chestRows = 1, containerColumns = 5),
+    DISPENSER(45, 9, 36, PanelPage.STORAGE, chestRows = 3, containerColumns = 3);
 
     val craftSize get() = if (this == CRAFTING_TABLE) 3 else 2
 

@@ -50,7 +50,7 @@ internal data class GameHudSettings(
     fun routes(layout: PanelLayout) = when (layout) {
         PanelLayout.PERSONAL -> false
         PanelLayout.CRAFTING_TABLE -> routeCrafting
-        PanelLayout.CHEST, PanelLayout.DOUBLE_CHEST -> routeChests
+        PanelLayout.CHEST, PanelLayout.DOUBLE_CHEST, PanelLayout.HOPPER, PanelLayout.DISPENSER -> routeChests
         PanelLayout.FURNACE -> routeFurnaces
     }
 

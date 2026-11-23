@@ -39,6 +39,16 @@ class PanelPadSlotsTest {
     }
 
     @Test
+    fun hopperAndDispenserReachEverySlotInTheirOwnShape() {
+        val hopper = panelPadRows(PanelLayout.HOPPER, PanelPage.STORAGE)
+        assertEquals((0..4).map { PanelPadSlot(it) }, hopper.first())
+        assertEquals(PanelLayout.HOPPER.slotCount, hopper.flatten().distinct().size)
+        val dispenser = panelPadRows(PanelLayout.DISPENSER, PanelPage.STORAGE)
+        assertEquals(listOf(PanelPadSlot(3), PanelPadSlot(4), PanelPadSlot(5)), dispenser[1])
+        assertEquals(PanelLayout.DISPENSER.slotCount, dispenser.flatten().distinct().size)
+    }
+
+    @Test
     fun hotbarSelectionIsSeparateFromMovingInventorySlots() {
         val personal = panelPadRows(PanelLayout.PERSONAL, PanelPage.INVENTORY)
         val selected = personal.last().last()
