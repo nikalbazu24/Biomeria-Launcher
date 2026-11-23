@@ -1,5 +1,6 @@
 package com.biomeria.launcher.ui.hub
 
+import com.biomeria.launcher.ui.components.BiomeriaDialog
 import android.content.ActivityNotFoundException
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -9,7 +10,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -74,7 +74,7 @@ internal fun StarlingDiagnosticsDialog(
     var selected by remember(report) { mutableStateOf(report?.logs?.keys?.firstOrNull()) }
     val log = selected?.let { report?.logs?.get(it) }
 
-    AlertDialog(
+    BiomeriaDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         title = { Text("Diagnóstico de Starling") },
         text = {

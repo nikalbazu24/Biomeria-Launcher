@@ -1,5 +1,6 @@
 package com.biomeria.launcher.ui.workshop
 
+import com.biomeria.launcher.ui.components.BiomeriaDialog
 import android.content.ActivityNotFoundException
 import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
@@ -11,7 +12,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -205,7 +205,7 @@ internal fun BedrockWorkshopScreen(
     }
 
     archives.firstOrNull { it.id == removingId }?.let { archive ->
-        AlertDialog(onDismissRequest = { removingId = null }, title = { Text("¿Quitar de esta instancia?") },
+        BiomeriaDialog(onDismissRequest = { removingId = null }, title = { Text("¿Quitar de esta instancia?") },
             text = { Text(archive.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
             confirmButton = { LauncherButton("Quitar copia", {
                 removingId = null

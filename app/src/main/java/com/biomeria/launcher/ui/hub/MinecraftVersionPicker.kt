@@ -1,5 +1,6 @@
 package com.biomeria.launcher.ui.hub
 
+import com.biomeria.launcher.ui.components.BiomeriaDialog
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -37,7 +38,7 @@ internal fun MinecraftVersionPicker(onDismiss: () -> Unit, onSelect: (MinecraftC
     val matches = remember(catalog, channel, query) {
         catalog.orEmpty().filter { (channel.isBlank() || channel == it.channel) && it.version.contains(query.trim(), true) }
     }
-    AlertDialog(
+    BiomeriaDialog(
         onDismissRequest = onDismiss,
         title = { Text("Versiones de Minecraft Java") },
         text = {

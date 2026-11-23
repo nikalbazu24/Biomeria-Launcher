@@ -1,5 +1,6 @@
 package com.biomeria.launcher.ui.workshop
 
+import com.biomeria.launcher.ui.components.BiomeriaDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -58,7 +59,7 @@ internal fun WorkshopDownloadsDialog(
     downloads: GameDownloads,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
+    BiomeriaDialog(
         onDismissRequest = onDismiss,
         title = { Text("Descargas del Taller") },
         text = {

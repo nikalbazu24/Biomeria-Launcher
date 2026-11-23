@@ -3,7 +3,6 @@ package com.biomeria.launcher.ui.components
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,7 +30,7 @@ internal fun readableReleaseNotes(notes: String): String = notes.lineSequence()
 internal fun ReleaseNotesDialog(version: String, notes: String, onDismiss: () -> Unit) {
     val readableNotes = remember(notes) { readableReleaseNotes(notes) }
     val confirmFocus = remember { FocusRequester() }
-    AlertDialog(
+    BiomeriaDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.onPreviewKeyEvent {
             if (it.type != KeyEventType.KeyUp || it.key != Key.ButtonB) return@onPreviewKeyEvent false

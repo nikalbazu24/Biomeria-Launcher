@@ -1,5 +1,6 @@
 package com.biomeria.launcher.engine.java
 
+import com.biomeria.launcher.ui.components.BiomeriaDialog
 import android.content.Context
 import android.content.Intent
 import android.hardware.input.InputManager
@@ -707,7 +708,8 @@ private fun JavaNativeViewportScreen(
                 }
             }
             if (captured && hud.showTouch) {
-                TouchControls(input, Modifier.align(Alignment.BottomCenter).fillMaxWidth())
+                TouchControls(input, Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+                    onChat = { input.tapKey(84); showKeyboard = true }) // T abre el chat
                 Row(
                     Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.displayCutout)
                         .padding(bottom = 96.dp),
@@ -733,7 +735,12 @@ private fun JavaNativeViewportScreen(
                 remember(activity) { activity.intent.getStringExtra("INSTANCE_ID") ?: instanceTitle },
                 remember(activity) { activity.intent.getStringExtra("GAME_DIR_PATH")?.let(::File) },
                 lessMotion = hud.reduceMotion)
-            val tipClashes = singleScreenMap && hud.tipCorner == hud.mapCorner
+            val mapCorner = when (hud.mapCorner) {
+                TipCorner.TOP_END -> TipCorner.TOP_START
+                TipCorner.BOTTOM_END -> TipCorner.BOTTOM_START
+                else -> hud.mapCorner
+            }
+            val tipClashes = singleScreenMap && hud.tipCorner == mapCorner
             BiomeriaTipHost(hud.biomeriaTips, captured && !showOverlay,
                 Modifier.align(if (tipClashes) Alignment.TopCenter else when (hud.tipCorner) {
                     TipCorner.TOP_START -> Alignment.TopStart
@@ -751,7 +758,7 @@ private fun JavaNativeViewportScreen(
             }
             if (singleScreenMap && captured && panelBridge != null) {
                 FloatingMap(panelBridge, hud, onOpen = { mapExpanded = true },
-                    modifier = Modifier.align(when (hud.mapCorner) {
+                    modifier = Modifier.align(when (mapCorner) {
                         TipCorner.TOP_START -> Alignment.TopStart
                         TipCorner.TOP_END -> Alignment.TopEnd
                         TipCorner.BOTTOM_START -> Alignment.BottomStart
@@ -759,7 +766,7 @@ private fun JavaNativeViewportScreen(
                     }).windowInsetsPadding(WindowInsets.displayCutout).padding(
                         start = 10.dp, end = 10.dp, bottom = 10.dp,
                         // Below the menu button on the right and the indicators on the left.
-                        top = when (hud.mapCorner) {
+                        top = when (mapCorner) {
                             TipCorner.TOP_END -> 54.dp
                             TipCorner.TOP_START -> if (hud.showFps || hud.showCoordinates || hud.showBattery) 56.dp else 10.dp
                             else -> 10.dp
@@ -819,7 +826,7 @@ private fun JavaNativeViewportScreen(
         }
     }
     if (showHudDialog) {
-        AlertDialog(
+        BiomeriaDialog(
             onDismissRequest = { showHudDialog = false },
             title = { Text("HUD de partida") },
             text = {
@@ -859,7 +866,7 @@ private fun JavaNativeViewportScreen(
 
 
 @Composable
-private fun TouchControls(input: GameInput, modifier: Modifier) {
+private fun TouchControls(input: GameInput, modifier: Modifier, onChat: () -> Unit) {
     Row(
         modifier.windowInsetsPadding(WindowInsets.displayCutout).padding(14.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -870,6 +877,7 @@ private fun TouchControls(input: GameInput, modifier: Modifier) {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TouchButton("E", "Inventario") { input.key(69, it) }
                 TouchButton("Salto", "Saltar") { input.key(32, it) }
+                TouchButton("Chat", "Abrir el teclado") { if (it) onChat() }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TouchButton("Usar", "Usar objeto") { input.mouseButton(1, it) }

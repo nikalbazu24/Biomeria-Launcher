@@ -1,12 +1,12 @@
 package com.biomeria.launcher.ui.hub
 
+import com.biomeria.launcher.ui.components.BiomeriaDialog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -49,7 +49,7 @@ internal fun BedrockAppsDialog(
         if (problem == null) onDismiss()
     }
 
-    AlertDialog(
+    BiomeriaDialog(
         onDismissRequest = onDismiss,
         title = { Text("Minecraft en Android") },
         text = {

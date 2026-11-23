@@ -1,10 +1,10 @@
 package com.biomeria.launcher.engine.java
 
+import com.biomeria.launcher.ui.components.BiomeriaDialog
 import android.content.Context
 import android.net.ConnectivityManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -66,7 +66,7 @@ internal fun LocalWorldShareDialog(context: Context, bridge: DualScreenBridge, o
         withContext(Dispatchers.IO) { File(bridge.directory, "lan-open").delete() }
         result = -1
     }
-    AlertDialog(
+    BiomeriaDialog(
         onDismissRequest = onDismiss,
         title = { Text("Sala LAN") },
         text = {

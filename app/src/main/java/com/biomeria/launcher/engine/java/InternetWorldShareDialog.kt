@@ -1,9 +1,9 @@
 package com.biomeria.launcher.engine.java
 
+import com.biomeria.launcher.ui.components.BiomeriaDialog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -18,7 +18,7 @@ internal fun InternetWorldShareDialog(room: InternetWorldShare, onDismiss: () ->
     var copied by remember(current) { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
 
-    AlertDialog(
+    BiomeriaDialog(
         onDismissRequest = onDismiss,
         title = { Text("Sala por internet") },
         text = {
