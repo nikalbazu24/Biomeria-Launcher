@@ -101,7 +101,7 @@ jobs:
           report="$("$apksigner" verify --print-certs "BIOMERIA-Launcher-${RELEASE_TAG}.apk")"
           if [ "$PERSISTENT_SIGNING" = "true" ]; then
             expected="$(keytool -exportcert -keystore app/biomeria.jks -alias "$KEY_ALIAS" -storepass:env KEYSTORE_PASSWORD | sha256sum | cut -d ' ' -f 1)"
-            actual="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' <<< "$report")"
+            actual="$(grep -m1 'certificate SHA-256 digest:' <<< "$report" | sed 's/.*digest: *//')"
             echo "Huella esperada (llave del secreto): $expected"
             echo "Huella del APK: $actual"
             if [ "$actual" != "$expected" ]; then
