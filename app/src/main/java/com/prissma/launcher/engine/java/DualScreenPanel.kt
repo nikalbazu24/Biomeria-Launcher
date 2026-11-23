@@ -22,6 +22,21 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
+import com.prissma.launcher.ui.components.BlockButton
+import com.prissma.launcher.ui.components.BlockButtons
+import com.prissma.launcher.ui.components.LauncherButton
+import com.prissma.launcher.ui.theme.PixelFont
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.geometry.Offset
@@ -305,33 +320,49 @@ private fun DualScreenPanel(
         if (interactive && live != null && (matchingSlots == null || slot in matchingSlots)) bridge?.send(live, click, slot)
     }
 
-    Column(
-        Modifier.fillMaxSize().background(Prissma.colors.surfaceVoid).safeDrawingPadding().padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Text(title, color = Prissma.colors.textPrimary, style = MaterialTheme.typography.titleMedium,
-            maxLines = 1, overflow = TextOverflow.Ellipsis)
-        val controls = when {
-            !controllerActive -> "Mantén Select para usar el mando aquí"
-            showingRecipes -> "↑/↓ · Recorrer    A · Elegir    B · Atrás"
-            editingSearch && searchable -> "Cruceta · Teclado    A · Elegir    B · Aplicar"
-            showingMap -> "Stick derecho · Mover    X/Y · Zoom    A · Centrar    R3 · Nueva marca    Start · Marcas"
-            matchingSlots != null -> "Cruceta · Coincidencias    A · Tomar o colocar    B · Limpiar"
-            searchable -> "Start · Buscar    A · Tomar o colocar    X · Dividir    Y · Mover rápido"
-            padFocus != null && !padFocus.selectsHotbar -> "A · Tomar o colocar    X · Dividir    Y · Mover rápido    B · Volver"
-            padFocus?.selectsHotbar == true -> "A · Seleccionar en mano    B · Volver"
-            else -> "L1/R1 · Pestañas    B · Devolver mando"
-        }
-        Text(controls, color = if (controllerActive) MaterialTheme.colorScheme.primary else Prissma.colors.textMuted,
-            style = MaterialTheme.typography.labelMedium)
-        if (hud.widgetsBelow) GameWidgets(hud, fps, bridge, Modifier.fillMaxWidth())
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PanelPage.entries.filter { it != PanelPage.STORAGE || menuPage == PanelPage.STORAGE }.forEach { tab ->
-                FilterChip(selected = page == tab, onClick = { page = tab; click = PanelCommand.PICK },
-                    label = { Text(tab.label) })
+    val hints: List<Pair<String, String>> = when {
+        !controllerActive -> emptyList()
+        showingRecipes -> listOf("↕" to "Recorrer", "A" to "Elegir", "B" to "Atrás")
+        editingSearch && searchable -> listOf("✛" to "Teclado", "A" to "Elegir", "B" to "Aplicar")
+        showingMap -> listOf("R" to "Mover", "X" to "Alejar", "Y" to "Acercar", "A" to "Centrar", "R3" to "Nueva marca", "Start" to "Marcas")
+        matchingSlots != null -> listOf("✛" to "Coincidencias", "A" to "Tomar o colocar", "B" to "Limpiar")
+        searchable -> listOf("A" to "Tomar o colocar", "X" to "Dividir", "Y" to "Mover rápido", "Start" to "Buscar", "B" to "Devolver mando")
+        padFocus != null && !padFocus.selectsHotbar -> listOf("A" to "Tomar o colocar", "X" to "Dividir", "Y" to "Mover rápido", "B" to "Volver")
+        padFocus?.selectsHotbar == true -> listOf("A" to "Llevar en la mano", "B" to "Volver")
+        else -> listOf("LB/RB" to "Pestañas", "B" to "Devolver mando")
+    }
+    Column(Modifier.fillMaxSize().background(Prissma.colors.surfaceVoid).safeDrawingPadding()) {
+        Column(
+            Modifier.fillMaxWidth().background(Prissma.colors.ink)
+                .drawBehind { drawRect(Prissma.colors.surfaceElevated, Offset(0f, size.height - 3.dp.toPx()), Size(size.width, 3.dp.toPx())) }
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                PanelKeyChip("LB")
+                PanelPage.entries.filter { it != PanelPage.STORAGE || menuPage == PanelPage.STORAGE }.forEach { tab ->
+                    BlockButton({ page = tab; click = PanelCommand.PICK }, Modifier.heightIn(min = 52.dp),
+                        if (page == tab) BlockButtons.primary else BlockButtons.neutral,
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
+                        Text(if (tab == PanelPage.STORAGE) live?.menuTitle?.takeIf { it.isNotBlank() } ?: tab.label else tab.label,
+                            style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                    }
+                }
+                PanelKeyChip("RB")
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(title, Modifier.weight(1f), color = Prissma.colors.textMuted, style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (hud.widgetsBelow) GameWidgets(hud, fps, bridge)
+                else if (live != null) Text("X ${live.x}  Y ${live.y}  Z ${live.z}", color = Prissma.colors.textPrimary,
+                    fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelLarge)
             }
         }
-        HorizontalDivider(color = Prissma.colors.borderSubtle)
+        Column(
+            Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
         if (editingSearch && searchable) {
             InventorySearchKeyboard(slotQuery, searchKey.takeIf { controllerActive }, ::applySearchKey,
                 { slotQuery = "" }, Modifier.weight(1f))
@@ -388,7 +419,7 @@ private fun DualScreenPanel(
                 }
                 menuPage != null && (menuSession == null || page != menuPage) -> {
                     Text(live.menuTitle, style = MaterialTheme.typography.titleSmall)
-                    if (menuSession != null) OutlinedButton(onClick = { page = menuPage }) { Text("Mostrar aquí") }
+                    if (menuSession != null) LauncherButton("Mostrar aquí", { page = menuPage }, primary = true)
                     else Text("Usa el menú en la pantalla del juego.")
                 }
                 else -> {
@@ -415,11 +446,9 @@ private fun DualScreenPanel(
                         }
                     } else if (page == PanelPage.CRAFT) {
                         if (table) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = { bridge.send(live, PanelCommand.CLOSE_MENU) },
-                                enabled = interactive) { Text("Cerrar mesa") }
-                            if (live.recipeBookAvailable) OutlinedButton(
-                                onClick = { showRecipes = true }, enabled = interactive
-                            ) { Text(if (controllerActive) "Recetas [R1]" else "Recetas") }
+                            LauncherButton("Cerrar mesa", { bridge.send(live, PanelCommand.CLOSE_MENU) }, enabled = interactive)
+                            if (live.recipeBookAvailable) LauncherButton(if (controllerActive) "Recetas [R1]" else "Recetas",
+                                { showRecipes = true }, primary = true, enabled = interactive)
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column {
@@ -468,6 +497,65 @@ private fun DualScreenPanel(
                 if (interactive) bridge?.send(live, PanelCommand.SELECT_HOTBAR, slot)
             }
         }
+        }
+        }
+        PanelFooter(hints, controllerActive) { activity.releaseLowerGamepad() }
+    }
+}
+
+/** Small key label for the shoulder buttons on either side of the tabs. */
+@Composable
+private fun PanelKeyChip(key: String) {
+    Text(key, Modifier.background(Prissma.colors.borderSubtle, RoundedCornerShape(4.dp)).padding(horizontal = 8.dp, vertical = 5.dp),
+        color = Prissma.colors.textPrimary, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+}
+
+/**
+ * Bottom bar: which screen the controller drives and what each button does right now.
+ * Touch can hand the controller back to the game; taking it here is done by holding Select.
+ */
+@Composable
+private fun PanelFooter(hints: List<Pair<String, String>>, controllerActive: Boolean, onRelease: () -> Unit) {
+    val palette = Prissma.colors
+    Row(
+        Modifier.fillMaxWidth().background(palette.ink)
+            .drawBehind { drawRect(palette.surfaceElevated, size = Size(size.width, 3.dp.toPx())) }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        BlockButton(onRelease, Modifier.heightIn(min = 52.dp), if (controllerActive) BlockButtons.gold else BlockButtons.neutral,
+            enabled = controllerActive, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) {
+            Column {
+                Text(if (controllerActive) "El mando controla este panel" else "El mando controla el juego",
+                    fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                Text(if (controllerActive) "Toca o pulsa B para devolverlo" else "Mantén Select para usarlo aquí",
+                    style = MaterialTheme.typography.labelSmall, maxLines = 1)
+            }
+        }
+        Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            hints.forEach { (key, label) -> PanelHint(key, label) }
+        }
+    }
+}
+
+@Composable
+private fun PanelHint(key: String, label: String) {
+    val (back, front) = when (key) {
+        "A" -> Color(0xFF7BC74D) to Color(0xFF0E1A08)
+        "B" -> Color(0xFFF07D4A) to Color(0xFF2B0E05)
+        "X" -> Color(0xFF4FB3D9) to Color(0xFF08202B)
+        "Y" -> Color(0xFFF5E663) to Color(0xFF2A2508)
+        else -> Color(0xFF34404A) to Color(0xFFF2F5EF)
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(Modifier.heightIn(min = 26.dp).widthIn(min = 26.dp).background(back, RoundedCornerShape(13.dp)).padding(horizontal = 6.dp),
+            contentAlignment = Alignment.Center) {
+            Text(key, color = front, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelMedium)
+        }
+        Text(label, color = Prissma.colors.textPrimary, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge,
+            maxLines = 1)
     }
 }
 
@@ -484,7 +572,7 @@ private fun ContainerSlots(
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(live.menuTitle, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
-        OutlinedButton(onClick = onClose, enabled = interactive) { Text("Cerrar") }
+        LauncherButton("Cerrar", onClose, enabled = interactive)
     }
     val furnace = live.furnace
     if (furnace != null) {
@@ -530,9 +618,10 @@ private fun SlotRow(
     onSlot: (Int) -> Unit
 ) {
     Column(if (fit) Modifier.fillMaxWidth() else Modifier) {
-        if (label != null) Text(label, color = Prissma.colors.textMuted, style = MaterialTheme.typography.labelMedium)
+        if (label != null) Text(label, Modifier.padding(bottom = 4.dp), color = Color(0xFFC3CDD2),
+            style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.ExtraBold)
         Row(if (fit) Modifier.fillMaxWidth() else Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             slots.forEach { number ->
                 val padSelected = padFocus == PanelPadSlot(number, selectsHotbar)
                 val matches = matchingSlots == null || number in matchingSlots
@@ -543,43 +632,45 @@ private fun SlotRow(
                 val item = live?.slots?.get(number)
                 val name = item?.name?.takeIf { it.isNotBlank() } ?: if (live == null) "${number + 1}" else "—"
                 val description = if (item == null) "Ranura $name" else if (item.count == 0) "Ranura vacía" else "$name, ${item.count}"
-                val colors = if (number == selected) ButtonDefaults.filledTonalButtonColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                ) else ButtonDefaults.filledTonalButtonColors()
-                FilledTonalButton(
-                    onClick = { onSlot(number) },
-                    modifier = (if (fit) Modifier.weight(1f) else Modifier.width(when {
-                        live == null -> 46.dp
-                        compact -> 53.dp
-                        else -> 66.dp
+                val palette = Prissma.colors
+                val outline = when {
+                    padSelected -> palette.gold
+                    number == selected -> palette.textPrimary
+                    matchingSlots != null && matches -> palette.brandAccent
+                    else -> palette.ink
+                }
+                Box(
+                    (if (fit) Modifier.weight(1f) else Modifier.width(when {
+                        live == null -> 52.dp
+                        compact -> 56.dp
+                        else -> 70.dp
                     }))
+                        .aspectRatio(1f)
                         .bringIntoViewRequester(bringIntoView)
-                        .alpha(if (matches) 1f else .33f)
+                        .alpha(if (matches) 1f else .3f)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(if (number == selected) Color(0xFF2A333B) else Color(0xFF1A2026))
+                        .border(3.dp, Color(0xFF232B33), RoundedCornerShape(3.dp))
+                        .border(if (padSelected) 4.dp else 3.dp, outline, RoundedCornerShape(3.dp))
+                        .clickable(enabled = enabled && matches, role = Role.Button) { onSlot(number) }
                         .semantics { contentDescription = description },
-                    enabled = enabled && matches,
-                    colors = colors,
-                    border = when {
-                        padSelected -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
-                        matchingSlots != null && matches -> BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .55f))
-                        else -> null
-                    },
-                    contentPadding = PaddingValues(horizontal = 3.dp)
+                    contentAlignment = Alignment.Center
                 ) {
                     // The game's own icon when the mod sent the item id; the name otherwise.
                     val shown = item?.takeIf { it.count > 0 }
                     val icon = shown?.let { rememberItemIcon(it.id) }
                     if (icon != null && shown != null) {
-                        Box(Modifier.size(if (compact) 34.dp else 42.dp)) {
-                            Image(icon, contentDescription = null, modifier = Modifier.fillMaxSize(),
-                                filterQuality = FilterQuality.None)
-                            if (shown.count > 1) Text(shown.count.toString(), Modifier.align(Alignment.BottomEnd),
-                                color = Color.White, fontWeight = FontWeight.ExtraBold,
-                                style = MaterialTheme.typography.labelMedium.copy(shadow = Shadow(Color.Black, Offset(2f, 2f))))
-                        }
-                    } else Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(name, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (item != null && item.count > 1) Text("×${item.count}", style = MaterialTheme.typography.labelSmall)
+                        Image(icon, contentDescription = null, modifier = Modifier.fillMaxSize(.74f),
+                            filterQuality = FilterQuality.None)
+                    } else if (shown != null || live == null) {
+                        Text(name, Modifier.padding(horizontal = 3.dp), color = palette.textPrimary, maxLines = 2,
+                            overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelSmall)
                     }
+                    if (shown != null && shown.count > 1) Text(shown.count.toString(),
+                        Modifier.align(Alignment.BottomEnd).padding(end = 4.dp, bottom = 1.dp),
+                        color = Color.White, fontFamily = PixelFont, fontSize = if (compact) 14.sp else 17.sp,
+                        style = TextStyle(shadow = Shadow(Color.Black, Offset(3f, 3f))))
                 }
             }
         }

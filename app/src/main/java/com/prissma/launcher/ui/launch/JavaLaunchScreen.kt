@@ -310,7 +310,7 @@ fun JavaLaunchScreen(
         Image(painterResource(EngineType.JAVA.biomeImage), null, Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop, alignment = Alignment.CenterEnd)
         Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(
-            0f to Color(0xF0080A0D), .5f to Color(0xD9080A0D), 1f to Color(0x59080A0D)
+            0f to Color(0xFA080A0D), .55f to Color(0xF0080A0D), 1f to Color(0x99080A0D)
         )))
         BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 20.dp, vertical = 14.dp)) {
             val wide = maxWidth >= 600.dp
@@ -328,11 +328,12 @@ fun JavaLaunchScreen(
                         Spacer(Modifier.height(8.dp))
                         Text(instance.title, style = MaterialTheme.typography.headlineLarge.copy(
                             shadow = Shadow(Color(0x8C000000), Offset(5f, 5f))), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("Minecraft " + instance.version + " · " + instance.loader, color = Color(0xFFC3CDD2),
-                            style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                        Text("Minecraft " + instance.version + " · " + instance.loader, color = Color(0xFFF2F5EF),
+                            style = MaterialTheme.typography.titleSmall.copy(shadow = Shadow(Color(0xCC000000), Offset(2f, 2f))),
+                            fontWeight = FontWeight.ExtraBold)
                     }
                     Column(
-                        Modifier.fillMaxWidth().background(Color(0xE0101418), PanelShape)
+                        Modifier.fillMaxWidth().background(Color(0xF5101418), PanelShape)
                             .border(2.dp, Prissma.colors.surfaceElevated, PanelShape).padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
@@ -340,14 +341,14 @@ fun JavaLaunchScreen(
                         StepRow("Java para Android", runtimeStep) { downloads.runtime() }
                         StepRow("Archivos de Minecraft " + instance.version, gameStep) { if (supported) downloads.game(instance) }
                         if (instance.version in experimentalVersions) Text("Vanilla con Java 21 · en pruebas",
-                            color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
+                            color = Prissma.colors.textPrimary, style = MaterialTheme.typography.bodySmall)
                         if (instance.configuredModLoader == "neoforge") Text("NeoForge $NEOFORGE_VERSION · el primer arranque prepara el cliente.",
-                            color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
+                            color = Prissma.colors.textPrimary, style = MaterialTheme.typography.bodySmall)
                         StepRow("Abrir el juego", LaunchStep(
                             if (opening) StepState.RUNNING else StepState.WAITING,
                             if (opening) "Abriendo…" else "Esperando", 0f), null)
                         BlockProgress(if (ready) 1f else progress)
-                        Text(statusLine, color = Color(0xFFC3CDD2), style = MaterialTheme.typography.bodySmall,
+                        Text(statusLine, color = Color(0xFFE3E9EC), style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                     launchError?.let { Text(it, color = Prissma.colors.error, fontWeight = FontWeight.Bold) }
@@ -366,7 +367,7 @@ fun JavaLaunchScreen(
                         Column {
                             server?.let { Text("Servidor · ${it.text}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall) }
                             if (!ready) Text("Puedes volver a tus mundos: la descarga sigue en segundo plano.",
-                                color = Color(0xFFC3CDD2), style = MaterialTheme.typography.bodySmall)
+                                color = Color(0xFFE3E9EC), style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -375,7 +376,7 @@ fun JavaLaunchScreen(
                 Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Bottom)) {
                     TipCard()
                     Column(
-                        Modifier.fillMaxWidth().background(Color(0xE00B0E11), PanelShape)
+                        Modifier.fillMaxWidth().background(Color(0xF50B0E11), PanelShape)
                             .border(2.dp, Prissma.colors.surfaceElevated, PanelShape).padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
@@ -487,7 +488,7 @@ private fun StepRow(title: String, step: LaunchStep, onRetry: (() -> Unit)?) {
             }
         }
         Text(title, Modifier.weight(1f), fontWeight = if (step.state == StepState.RUNNING) FontWeight.ExtraBold else FontWeight.Bold,
-            color = if (step.state == StepState.WAITING) Color(0xFF8F9CA3) else palette.textPrimary, maxLines = 1,
+            color = if (step.state == StepState.WAITING) Color(0xFFB8C3C9) else palette.textPrimary, maxLines = 1,
             overflow = TextOverflow.Ellipsis)
         when (step.state) {
             StepState.READY -> Text("Listo", color = palette.brandAccentLight, fontWeight = FontWeight.ExtraBold,
@@ -495,7 +496,7 @@ private fun StepRow(title: String, step: LaunchStep, onRetry: (() -> Unit)?) {
             StepState.RUNNING -> Text(if (step.fraction > 0f) "${(step.fraction * 100).toInt()} %" else "…", color = palette.gold,
                 fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
             StepState.FAILED -> if (onRetry != null) LauncherButton("Reintentar", onRetry)
-            StepState.WAITING -> Text(step.detail, color = Color(0xFF8F9CA3), fontWeight = FontWeight.Bold,
+            StepState.WAITING -> Text(step.detail, color = Color(0xFFB8C3C9), fontWeight = FontWeight.Bold,
                 style = MaterialTheme.typography.labelMedium, maxLines = 1)
         }
     }
@@ -531,7 +532,7 @@ private fun TipCard() {
             index = (index + 1) % tips.size
         }
     }
-    Column(Modifier.fillMaxWidth().background(Color(0xE00B0E11), PanelShape)
+    Column(Modifier.fillMaxWidth().background(Color(0xF50B0E11), PanelShape)
         .border(2.dp, Prissma.colors.surfaceElevated, PanelShape).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("CONSEJO", color = Prissma.colors.gold, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.ExtraBold)
@@ -545,7 +546,7 @@ private fun OptionTile(title: String, detail: String, modifier: Modifier, onClic
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
         Column(Modifier.weight(1f)) {
             Text(title, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge, maxLines = 1)
-            Text(detail, color = Prissma.colors.textMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1,
+            Text(detail, color = Color(0xFFC9D2D7), style = MaterialTheme.typography.labelMedium, maxLines = 1,
                 overflow = TextOverflow.Ellipsis)
         }
     }
