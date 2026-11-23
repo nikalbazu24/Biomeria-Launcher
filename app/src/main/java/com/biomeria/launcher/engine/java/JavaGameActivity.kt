@@ -496,6 +496,7 @@ private fun JavaNativeViewportScreen(
             showInternetDialog -> showInternetDialog = false
             mapExpanded -> mapExpanded = false
             libJvmPath.isBlank() -> onExitGame()
+            jvmStarted && hasPresentedFrame && !captured && !showOverlay -> input.tapKey(256) // Cierra inventario/pantalla (ESC)
             else -> showOverlay = !showOverlay
         }
     }
@@ -717,6 +718,13 @@ private fun JavaNativeViewportScreen(
                     }
                 }
             }
+            if (!captured && hasPresentedFrame && !showOverlay) {
+                Box(Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.displayCutout).padding(top = 8.dp)) {
+                    TouchButton("✕ Cerrar", "Cerrar pantalla", Modifier.size(84.dp, 38.dp)) { down ->
+                        if (down) input.tapKey(256)
+                    }
+                }
+            }
             if (hud.showFps) {
                 FpsCounter(fps, Modifier.align(Alignment.TopStart).windowInsetsPadding(WindowInsets.displayCutout)
                     .padding(start = 6.dp, top = 4.dp))
@@ -725,13 +733,17 @@ private fun JavaNativeViewportScreen(
                 remember(activity) { activity.intent.getStringExtra("INSTANCE_ID") ?: instanceTitle },
                 remember(activity) { activity.intent.getStringExtra("GAME_DIR_PATH")?.let(::File) },
                 lessMotion = hud.reduceMotion)
+            val tipClashes = singleScreenMap && hud.tipCorner == hud.mapCorner
             BiomeriaTipHost(hud.biomeriaTips, captured && !showOverlay,
-                Modifier.align(when (hud.tipCorner) {
+                Modifier.align(if (tipClashes) Alignment.TopCenter else when (hud.tipCorner) {
                     TipCorner.TOP_START -> Alignment.TopStart
                     TipCorner.TOP_END -> Alignment.TopEnd
                     TipCorner.BOTTOM_START -> Alignment.BottomStart
                     TipCorner.BOTTOM_END -> Alignment.BottomEnd
-                }).windowInsetsPadding(WindowInsets.displayCutout).padding(8.dp))
+                }).windowInsetsPadding(WindowInsets.displayCutout).padding(
+                    start = 8.dp, end = if (hud.tipCorner == TipCorner.TOP_END && !tipClashes) 64.dp else 8.dp,
+                    top = 8.dp, bottom = 8.dp)
+                    .widthIn(max = 300.dp))
             if (!hud.widgetsBelow || !activity.lowerPanelVisible) {
                 GameWidgets(hud, fps, panelBridge,
                     Modifier.align(Alignment.TopStart).windowInsetsPadding(WindowInsets.displayCutout)

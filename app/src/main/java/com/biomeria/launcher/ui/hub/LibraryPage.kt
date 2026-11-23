@@ -111,7 +111,7 @@ internal fun LibraryPage(
         }
     }
     BoxWithConstraints(modifier) {
-        val wide = maxWidth >= 520.dp && maxHeight >= 300.dp
+        val wide = maxWidth >= 520.dp && maxHeight >= 440.dp
         val hero: @Composable (Modifier) -> Unit = {
             WorldHero(selected, selected?.let(versionOf), bedrock, starling, selected?.id?.let(favorites::contains) == true,
                 onPlay, onServers, onBedrockApps, onStarlingDiagnostics, onWorkshop, onEdit, onFavorite, onNew, it)
@@ -279,7 +279,7 @@ private fun BiomeFilters(
     onOrder: () -> Unit
 ) {
     val palette = Biomeria.colors
-    val chips: @Composable RowScope.() -> Unit = {
+    val chips: @Composable () -> Unit = {
         FilterBlock("Todos", palette.textPrimary, filter == null) { onFilter(null) }
         EngineType.entries.forEach { engine ->
             FilterBlock(engine.biomeLabel, engine.biomeColor, filter == engine) { onFilter(if (filter == engine) null else engine) }
@@ -289,11 +289,13 @@ private fun BiomeFilters(
     }
     if (wide) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), content = chips)
+            Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), content = { chips() })
             WorldSearch(query, onQuery, Modifier.width(210.dp))
         }
     } else {
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), content = chips)
+        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+        androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) { chips() }
         WorldSearch(query, onQuery, Modifier.fillMaxWidth())
     }
 }

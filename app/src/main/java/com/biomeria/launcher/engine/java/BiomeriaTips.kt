@@ -65,7 +65,7 @@ internal fun BiomeriaTipHost(enabled: Boolean, playing: Boolean, modifier: Modif
     AnimatedVisibility(current != null, modifier, enter = fadeIn() + slideInVertically { -it / 3 }, exit = fadeOut()) {
         val index = current ?: shown.coerceAtMost(biomeriaTips.lastIndex)
         val tip = biomeriaTips[index]
-        Column(Modifier.widthIn(max = 340.dp).background(Color(0xF00B0E11), RoundedCornerShape(6.dp))
+        Column(Modifier.widthIn(max = 340.dp).fillMaxWidth().background(Color(0xF00B0E11), RoundedCornerShape(6.dp))
             .border(3.dp, Color(0xFF7BC74D), RoundedCornerShape(6.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
