@@ -227,6 +227,10 @@ internal fun SettingsPage(
             if (installedNotes != null) {
                 LauncherButton("Novedades de la versión instalada", { notesDialog = version to installedNotes })
             }
+            LauncherButton("Ver la introducción otra vez", {
+                com.prissma.launcher.ui.intro.IntroPreferences.reset(context)
+                onNotice("La introducción aparecerá la próxima vez que abras Biomeria.")
+            })
             LauncherButton(if (notificationsEnabled) "Gestionar avisos de Android" else "Activar avisos de actualización", {
                 if (!notificationsEnabled && Build.VERSION.SDK_INT >= 33) {
                     notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)

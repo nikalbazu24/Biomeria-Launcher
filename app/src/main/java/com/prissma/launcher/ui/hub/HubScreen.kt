@@ -95,6 +95,8 @@ internal fun HubScreen(
     starlingReport: Uri?,
     onOpenStarling: (GameInstance) -> String?,
     onConsumeStarlingReport: (Uri) -> Unit,
+    introResult: com.prissma.launcher.ui.intro.IntroResult? = null,
+    onConsumeIntro: () -> Unit = {},
     externalLaunchInstanceId: String? = null,
     externalLaunchFromWeb: Boolean = false,
     updateSettingsRequest: Int = 0,
@@ -125,6 +127,7 @@ internal fun HubScreen(
     var query by rememberSaveable { mutableStateOf("") }
     var order by rememberSaveable { mutableStateOf(LibraryOrder.RECENT) }
     var page by rememberSaveable { mutableStateOf(HubPage.LIBRARY) }
+    var pendingStart by remember { mutableStateOf<com.prissma.launcher.ui.intro.IntroStart?>(null) }
 
     var showAccount by rememberSaveable { mutableStateOf(false) }
     var showBedrockApps by rememberSaveable { mutableStateOf(false) }
@@ -156,6 +159,24 @@ internal fun HubScreen(
         scope.launch {
             notices.currentSnackbarData?.dismiss()
             notices.showSnackbar(message, withDismissAction = true)
+        }
+    }
+
+    // The intro's choices: sign in first if a Microsoft or Ely.by account was picked, then the first step.
+    LaunchedEffect(introResult) {
+        val result = introResult ?: return@LaunchedEffect
+        onConsumeIntro()
+        pendingStart = result.start
+        if (result.signIn) showAccount = true
+    }
+    LaunchedEffect(pendingStart, showAccount) {
+        val start = pendingStart ?: return@LaunchedEffect
+        if (showAccount) return@LaunchedEffect
+        pendingStart = null
+        when (start) {
+            com.prissma.launcher.ui.intro.IntroStart.CREATE_JAVA -> showNew = true
+            com.prissma.launcher.ui.intro.IntroStart.OPEN_BEDROCK -> onOpenBedrock()?.let(::notify)
+            com.prissma.launcher.ui.intro.IntroStart.EXPLORE -> Unit
         }
     }
 

@@ -8,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.core.content.IntentCompat
@@ -22,6 +23,9 @@ import com.prissma.launcher.data.OPEN_UPDATE_SETTINGS
 import com.prissma.launcher.data.UpdateNotifications
 import com.prissma.launcher.ui.hub.HubScreen
 import com.prissma.launcher.ui.splash.PrissmaSplashScreen
+import com.prissma.launcher.ui.intro.IntroPreferences
+import com.prissma.launcher.ui.intro.IntroResult
+import com.prissma.launcher.ui.intro.IntroScreen
 import com.prissma.launcher.ui.theme.PrissmaTheme
 
 class MainActivity : ComponentActivity() {
@@ -54,10 +58,17 @@ class MainActivity : ComponentActivity() {
             PrissmaTheme {
                 var showSplash by rememberSaveable { mutableStateOf(externalLaunchInstanceId == null && starlingReport == null) }
 
+                var showIntro by rememberSaveable { mutableStateOf(!IntroPreferences.done(this@MainActivity)) }
+                var introResult by remember { mutableStateOf<IntroResult?>(null) }
                 if (showSplash && externalLaunchInstanceId == null && starlingReport == null && updateSettingsRequest == 0) {
                     PrissmaSplashScreen(
                         onSplashFinished = { showSplash = false }
                     )
+                } else if (showIntro && externalLaunchInstanceId == null && starlingReport == null && updateSettingsRequest == 0) {
+                    IntroScreen { result ->
+                        introResult = result
+                        showIntro = false
+                    }
                 } else {
                     HubScreen(
                         bedrock = bedrock,
@@ -72,6 +83,8 @@ class MainActivity : ComponentActivity() {
                             showSplash = false
                             if (starlingReport == source) starlingReport = null
                         },
+                        introResult = introResult,
+                        onConsumeIntro = { introResult = null },
                         externalLaunchInstanceId = externalLaunchInstanceId,
                         externalLaunchFromWeb = externalLaunchFromWeb,
                         updateSettingsRequest = updateSettingsRequest,

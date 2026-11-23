@@ -140,7 +140,7 @@ fun JavaLaunchScreen(
         mutableStateOf(GameHudSettings(settings.getBoolean("touch-" + instance.id, true),
             settings.getBoolean("fps-" + instance.id, false),
             settings.getFloat("pause-opacity-" + instance.id, .65f).coerceIn(.15f, 1f),
-            settings.getBoolean("dual-screen-" + instance.id, false),
+            settings.getBoolean("dual-screen-" + instance.id, settings.getBoolean("dual-screen-default", false)),
             settings.getBoolean("panel-crafting-" + instance.id, true),
             PanelPage.fromPreference(settings.getString("panel-home-" + instance.id, null)),
             PanelMapSource.fromPreference(settings.getString("panel-map-" + instance.id, null)),
