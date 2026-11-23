@@ -160,6 +160,8 @@ internal class DualScreenBridge(val directory: File, val terrainDirectory: File?
 
     fun viewRecipes(generation: Long?) = setGenerationMarker("recipes-open", generation)
 
+    fun collectEntities(enabled: Boolean) = setGenerationMarker("entities-enabled", if (enabled) 1L else null)
+
     fun collectTerrain(tiles: Boolean, position: Boolean) {
         setGenerationMarker("terrain-enabled", if (tiles && terrainDirectory != null) 1L else null)
         setGenerationMarker("terrain-position", if (position && terrainDirectory != null) 1L else null)

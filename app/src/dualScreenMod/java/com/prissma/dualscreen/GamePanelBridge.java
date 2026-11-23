@@ -38,6 +38,8 @@ public final class GamePanelBridge {
     private static final InternetWorldLease internetWorld = new InternetWorldLease();
     private static TerrainMap terrain;
     private static boolean terrainFailed;
+    private static EntityRadar radar;
+    private static boolean radarFailed;
     private static RecipeBookPanel recipeBook;
     private static byte[] previousMap;
     private static int mapRevision;
@@ -192,13 +194,33 @@ public final class GamePanelBridge {
                 return;
             }
             if (terrain == null) terrain = new TerrainMap(client.getClass().getClassLoader(), Path.of(TERRAIN));
-            terrain.update(root, client, world, player, (double) game.x.invoke(player),
-                    (double) game.y.invoke(player), (double) game.z.invoke(player), ticks, mapVisible);
+            double px = (double) game.x.invoke(player), py = (double) game.y.invoke(player), pz = (double) game.z.invoke(player);
+            terrain.update(root, client, world, player, px, py, pz, ticks, mapVisible);
+            updateRadar(root, client, world, player, px, py, pz, mapVisible);
         } catch (ReflectiveOperationException | RuntimeException | LinkageError error) {
             terrainFailed = true;
             System.err.println("[PRISSMA] Mapa de terreno no disponible: " + error);
         } catch (IOException ignored) {
             // A tile write failure must not interrupt the container handoff.
+        }
+    }
+
+    /** Entities appear only in worlds this device hosts (singleplayer or its own LAN room), never on servers. */
+    private static void updateRadar(Path root, Object client, Object world, Object player,
+                                    double x, double y, double z, boolean mapVisible) throws IOException {
+        Path target = root.resolve("terrain-entities");
+        boolean wanted = mapVisible && !radarFailed && Files.isRegularFile(root.resolve("entities-enabled"));
+        try {
+            if (!wanted || game.integratedServer.invoke(client) == null) {
+                Files.deleteIfExists(target);
+                return;
+            }
+            if (radar == null) radar = new EntityRadar(client.getClass().getClassLoader());
+            radar.publish(target, world, player, x, y, z);
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError error) {
+            radarFailed = true;
+            Files.deleteIfExists(target);
+            System.err.println("[PRISSMA] Radar de criaturas no disponible: " + error);
         }
     }
 

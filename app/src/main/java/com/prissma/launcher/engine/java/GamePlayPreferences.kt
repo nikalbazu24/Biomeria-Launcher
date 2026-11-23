@@ -45,7 +45,9 @@ internal data class GameHudSettings(
     val widgetScale: Float = 1f,
     val widgetOpacity: Float = .65f,
     val fpsLimit: Int = 0,
-    val batterySaver: Boolean = false
+    val batterySaver: Boolean = false,
+    /** Creatures on the Biomeria map. Only singleplayer and this device's LAN room send them. */
+    val showEntities: Boolean = true
 ) {
     fun routes(layout: PanelLayout) = when (layout) {
         PanelLayout.PERSONAL -> false
@@ -73,6 +75,7 @@ internal data class GameHudSettings(
         putFloat("widgetOpacity", widgetOpacity)
         putInt("fpsLimit", fpsLimit)
         putBoolean("batterySaver", batterySaver)
+        putBoolean("entities", showEntities)
     }
 
     companion object {
@@ -94,7 +97,8 @@ internal data class GameHudSettings(
             bundle?.getFloat("widgetScale", 1f)?.coerceIn(.75f, 1.5f) ?: 1f,
             bundle?.getFloat("widgetOpacity", .65f)?.coerceIn(.25f, 1f) ?: .65f,
             normalizeFpsLimit(bundle?.getInt("fpsLimit") ?: 0),
-            bundle?.getBoolean("batterySaver", false) ?: false
+            bundle?.getBoolean("batterySaver", false) ?: false,
+            bundle?.getBoolean("entities", true) ?: true
         )
     }
 }

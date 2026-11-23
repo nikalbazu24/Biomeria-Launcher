@@ -46,6 +46,22 @@ internal class ItemIcons(private val archives: List<File>) {
         return result
     }
 
+    /** A mob's face cut from the game's own entity texture, for the map. Null for unknown mobs. */
+    @Synchronized
+    fun face(entityId: String): Bitmap? {
+        val key = "face:$entityId"
+        if (cache.containsKey(key)) return cache[key]
+        val result = runCatching {
+            val region = faceRegion(entityId) ?: return@runCatching null
+            val bytes = read("minecraft", "textures/${region.texture}") ?: return@runCatching null
+            val texture = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@runCatching null
+            if (region.x + region.width > texture.width || region.y + region.height > texture.height) null
+            else Bitmap.createBitmap(texture, region.x, region.y, region.width, region.height)
+        }.getOrNull()
+        cache[key] = result
+        return result
+    }
+
     private fun index(): Map<String, List<ZipFile>> {
         namespaces?.let { return it }
         val found = LinkedHashMap<String, MutableList<ZipFile>>()

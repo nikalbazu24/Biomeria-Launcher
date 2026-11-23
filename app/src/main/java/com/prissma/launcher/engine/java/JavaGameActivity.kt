@@ -423,8 +423,11 @@ private fun JavaNativeViewportScreen(
     val canSendInput = jvmStarted && !showOverlay && !showKeyboard && !showQuickMenu && !showHudDialog &&
         !showLanDialog && !showInternetDialog && !mapExpanded
     val collectTerrain = hud.showMinimap || (hud.dualScreen && hud.panelMap == PanelMapSource.PRISSMA)
-    LaunchedEffect(panelBridge, collectTerrain, hud.showCoordinates) {
-        withContext(Dispatchers.IO) { panelBridge?.collectTerrain(collectTerrain, hud.showCoordinates) }
+    LaunchedEffect(panelBridge, collectTerrain, hud.showCoordinates, hud.showEntities) {
+        withContext(Dispatchers.IO) {
+            panelBridge?.collectTerrain(collectTerrain, hud.showCoordinates)
+            panelBridge?.collectEntities(collectTerrain && hud.showEntities)
+        }
     }
     LaunchedEffect(hud.fpsLimit, hud.batterySaver) {
         activity.setFrameLimits(hud.fpsLimit, hud.batterySaver)

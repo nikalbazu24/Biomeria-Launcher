@@ -117,6 +117,9 @@ internal fun GameHudControls(settings: GameHudSettings, onChange: (GameHudSettin
         PanelSwitch("Minimapa en el juego (Fabric 1.21.4)", settings.showMinimap) {
             onChange(settings.copy(showMinimap = it))
         }
+        PanelSwitch("Criaturas en el mapa (solo mundos propios)", settings.showEntities) {
+            onChange(settings.copy(showEntities = it))
+        }
         PanelSwitch("Coordenadas (Fabric 1.21.4)", settings.showCoordinates) { onChange(settings.copy(showCoordinates = it)) }
         PanelSwitch("Nivel de batería", settings.showBattery) { onChange(settings.copy(showBattery = it)) }
         if (settings.dualScreen) {

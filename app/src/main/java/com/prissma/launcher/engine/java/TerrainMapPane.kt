@@ -26,6 +26,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -53,10 +55,12 @@ internal fun TerrainMapPane(
     val directory = bridge.terrainDirectory ?: return
     val context = LocalContext.current
     var position by remember(bridge) { mutableStateOf<TerrainPosition?>(null) }
+    var entities by remember(bridge) { mutableStateOf<List<TerrainEntity>>(emptyList()) }
     LaunchedEffect(bridge) {
         var lastRead = 0L
         while (true) {
-            val next = withContext(Dispatchers.IO) { bridge.readTerrainPosition() }
+            val (next, nearby) = withContext(Dispatchers.IO) { bridge.readTerrainPosition() to bridge.readTerrainEntities() }
+            entities = nearby
             val now = SystemClock.elapsedRealtime()
             if (next != null) {
                 position = next
@@ -73,7 +77,7 @@ internal fun TerrainMapPane(
         return
     }
     key(player.scope) {
-        TerrainView(directory, player, context, modifier, compact, controllerActive, onPadInput)
+        TerrainView(directory, player, entities, context, modifier, compact, controllerActive, onPadInput)
     }
 }
 
@@ -81,6 +85,7 @@ internal fun TerrainMapPane(
 private fun TerrainView(
     directory: java.io.File,
     player: TerrainPosition,
+    entities: List<TerrainEntity>,
     context: Context,
     modifier: Modifier,
     compact: Boolean,
@@ -153,6 +158,20 @@ private fun TerrainView(
         register?.invoke(TerrainPadInput({ input.action(it) }, { x, y -> input.pan(x, y) }, { input.managingWaypoints() }))
         onDispose { register?.invoke(null) }
     }
+    val faceIds = remember(entities) { entities.map { if (it.kind == EntityKind.PLAYER) "minecraft:player" else it.id }.toSet() }
+    var faces by remember { mutableStateOf<Map<String, ImageBitmap>>(emptyMap()) }
+    LaunchedEffect(faceIds, compact) {
+        val icons = ItemIcons.current
+        if (compact || icons == null) return@LaunchedEffect
+        val missing = faceIds - faces.keys
+        if (missing.isEmpty()) return@LaunchedEffect
+        val loaded = withContext(Dispatchers.IO) {
+            missing.mapNotNull { id -> icons.face(id)?.let { id to it.asImageBitmap() } }.toMap()
+        }
+        faces = faces + loaded
+    }
+    val names = rememberTextMeasurer()
+    val nameStyle = MaterialTheme.typography.labelSmall.copy(color = Color.White)
     val shape = RoundedCornerShape(if (compact) 12.dp else 16.dp)
     val frame = modifier.clip(shape).background(Color(0xff101c23)).border(1.dp, Color(0xff506372), shape)
     val liveCamera by rememberUpdatedState(camera)
@@ -213,6 +232,33 @@ private fun TerrainView(
                 } else anchor
                 drawWaypoint(active, target, radius, true)
             }
+            for (entity in entities) {
+                val at = screen(entity.x, entity.z)
+                if (at.x < -12f || at.y < -12f || at.x > size.width + 12f || at.y > size.height + 12f) continue
+                if (compact) {
+                    drawCircle(Color(0xff0b0e11), 3.5.dp.toPx(), at)
+                    drawCircle(entity.kind.color, 2.5.dp.toPx(), at)
+                    continue
+                }
+                val radius = 8.dp.toPx()
+                drawCircle(Color(0xff0b0e11), radius + 1.5.dp.toPx(), at)
+                drawCircle(entity.kind.color, radius, at)
+                val face = faces[if (entity.kind == EntityKind.PLAYER) "minecraft:player" else entity.id]
+                if (face != null) {
+                    val side = (radius * 1.3f).roundToInt()
+                    drawImage(face, dstOffset = IntOffset((at.x - side / 2f).roundToInt(), (at.y - side / 2f).roundToInt()),
+                        dstSize = IntSize(side, side), filterQuality = FilterQuality.None)
+                } else {
+                    drawCircle(Color(0xff0b0e11), radius * .45f, at)
+                }
+                if (entity.kind == EntityKind.PLAYER && entity.name.isNotBlank()) {
+                    val text = names.measure(entity.name, nameStyle)
+                    val origin = Offset(at.x - text.size.width / 2f, at.y - radius - text.size.height - 3.dp.toPx())
+                    drawRect(Color(0xcc0b0e11), origin - Offset(3.dp.toPx(), 1.dp.toPx()),
+                        androidx.compose.ui.geometry.Size(text.size.width + 6.dp.toPx(), text.size.height + 2.dp.toPx()))
+                    drawText(text, topLeft = origin)
+                }
+            }
             val cursor = screen(player.x, player.z)
             val cursorSize = (if (compact) 8.dp else 11.dp).toPx()
             rotate(player.yaw + 180f, cursor) {
@@ -229,6 +275,14 @@ private fun TerrainView(
         }
         Column(Modifier.align(Alignment.TopStart).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             MapLabel(if (compact) "N ↑" else "N ↑    ${camera.span.toInt()} bloques")
+            if (!compact && entities.isNotEmpty()) {
+                val hostile = entities.count { it.kind == EntityKind.HOSTILE }
+                val calm = entities.count { it.kind == EntityKind.PASSIVE }
+                val nearest = entities.firstOrNull { it.kind == EntityKind.HOSTILE }
+                MapLabel("Cerca: $hostile hostiles · $calm pacíficos")
+                if (nearest != null) MapLabel("⚠ ${nearest.label} a ${kotlin.math.hypot(nearest.x - player.x, nearest.z - player.z).roundToInt()} b",
+                    Modifier.widthIn(max = 200.dp))
+            }
             if (active != null && !compact) {
                 MapLabel(active.name, Modifier.widthIn(max = 170.dp))
                 MapLabel("${active.distanceFrom(player)} bloques")

@@ -154,7 +154,8 @@ fun JavaLaunchScreen(
             settings.getFloat("widget-scale-" + instance.id, 1f).coerceIn(.75f, 1.5f),
             settings.getFloat("widget-opacity-" + instance.id, .65f).coerceIn(.25f, 1f),
             normalizeFpsLimit(settings.getInt("fps-limit-" + instance.id, 0)),
-            settings.getBoolean("battery-saver-" + instance.id, false)))
+            settings.getBoolean("battery-saver-" + instance.id, false),
+            settings.getBoolean("map-entities-" + instance.id, true)))
     }
     val supported = supportsJavaLoader(instance.version, instance.loader)
 
@@ -177,7 +178,8 @@ fun JavaLaunchScreen(
             .putFloat("widget-scale-" + instance.id, updated.widgetScale)
             .putFloat("widget-opacity-" + instance.id, updated.widgetOpacity)
             .putInt("fps-limit-" + instance.id, updated.fpsLimit)
-            .putBoolean("battery-saver-" + instance.id, updated.batterySaver).apply()
+            .putBoolean("battery-saver-" + instance.id, updated.batterySaver)
+            .putBoolean("map-entities-" + instance.id, updated.showEntities).apply()
     }
     var crash by remember { mutableStateOf<CrashReading?>(null) }
     var crashLog by remember { mutableStateOf("") }
