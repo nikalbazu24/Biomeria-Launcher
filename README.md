@@ -1,6 +1,6 @@
 # Biomeria Launcher
 
-Un launcher de Minecraft para consolas Android (AYN Thor, AYN Odin 2 Portal y similares), pensado para jugar con mando. Reúne tres motores en un solo lugar, cada uno con su bioma:
+Un launcher de Minecraft para consolas Android de 1 y 2 pantallas, pensado para jugar con mando. Reúne tres motores en un solo lugar, cada uno con su bioma:
 
 | Bioma | Motor | Estado |
 |---|---|---|
