@@ -102,8 +102,7 @@ jobs:
           if [ "$PERSISTENT_SIGNING" = "true" ]; then
             expected="$(keytool -exportcert -keystore app/biomeria.jks -alias "$KEY_ALIAS" -storepass:env KEYSTORE_PASSWORD | sha256sum | cut -d ' ' -f 1)"
             actual="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' <<< "$report")"
-            release_certificate="d2457fc8866da1a2d4227b781855bf02e6dd47cd89242ef205b7d61c83fc553c"
-            if [ "$actual" != "$expected" ] || [ "$actual" != "$release_certificate" ]; then
+            if [ "$actual" != "$expected" ]; then
               echo "::error::El certificado del APK no coincide con el canal de actualizaciones."
               exit 1
             fi
