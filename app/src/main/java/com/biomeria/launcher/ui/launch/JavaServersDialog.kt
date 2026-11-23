@@ -1,5 +1,6 @@
 package com.biomeria.launcher.ui.launch
 
+import com.biomeria.launcher.ui.theme.Biomeria
 import com.biomeria.launcher.ui.components.BiomeriaDialog
 import com.biomeria.launcher.ui.components.BiomeriaTextField
 import androidx.compose.foundation.layout.*
