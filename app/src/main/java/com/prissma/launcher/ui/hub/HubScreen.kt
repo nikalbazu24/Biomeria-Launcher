@@ -266,7 +266,9 @@ internal fun HubScreen(
     }
 
     instances.firstOrNull { it.id == launchingId && it.engine == EngineType.JAVA }?.let {
-        JavaLaunchScreen(it, profile.playerName, profile.accountType, profile.language, launchingServer, onBack = { launchingId = null })
+        JavaLaunchScreen(it, profile.playerName, profile.accountType, profile.language, launchingServer,
+            onBack = { launchingId = null },
+            onWorkshop = { selectedId = it.id; launchingId = null; page = HubPage.WORKSHOP })
         return
     }
 

@@ -364,6 +364,7 @@ private fun JavaNativeViewportScreen(
     var gpuStatus by remember { mutableStateOf("Inicializando superficie EGL…") }
     var showConsole by remember { mutableStateOf(false) }
     var showOverlay by remember { mutableStateOf(true) }
+    var menuTab by remember { mutableStateOf(GameMenuTab.LOG) }
     var hasPresentedFrame by remember { mutableStateOf(false) }
     var captured by remember { mutableStateOf(false) }
     var hud by remember(initialHud) { mutableStateOf(initialHud) }
@@ -398,8 +399,11 @@ private fun JavaNativeViewportScreen(
     BackHandler { handleBack() }
     val toggle by rememberUpdatedState({ handleBack() })
     val quickToggle by rememberUpdatedState {
-        if (!showOverlay && !showKeyboard && !showHudDialog && !showLanDialog && !showInternetDialog && hasPresentedFrame) {
-            showQuickMenu = !showQuickMenu
+        if (!showKeyboard && !showHudDialog && !showLanDialog && !showInternetDialog && hasPresentedFrame) {
+            if (showOverlay) showOverlay = false else {
+                menuTab = GameMenuTab.GAME
+                showOverlay = true
+            }
         }
     }
     DisposableEffect(Unit) {
@@ -472,14 +476,12 @@ private fun JavaNativeViewportScreen(
             if (!hasPresentedFrame && NativeJavaBridge.nativeHasPresentedFrame()) {
                 hasPresentedFrame = true
                 showOverlay = false
+                menuTab = GameMenuTab.GAME
             }
             if (freshLogs.isNotEmpty()) {
                 logLines.addAll(freshLogs)
-                if (logLines.size > 150) {
-                    logLines.removeRange(0, logLines.size - 150)
-                }
-                if (showOverlay && showConsole) {
-                    logListState.scrollToItem(logLines.lastIndex)
+                if (logLines.size > 600) {
+                    logLines.removeRange(0, logLines.size - 600)
                 }
             }
             delay(150L)
@@ -592,110 +594,41 @@ private fun JavaNativeViewportScreen(
                     Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.displayCutout)
                         .padding(8.dp).size(114.dp), compact = true)
             }
-            Row(
-                modifier = Modifier.align(Alignment.TopEnd)
-                    .windowInsetsPadding(WindowInsets.displayCutout).padding(6.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                if (hasPresentedFrame) {
-                    LauncherButton("Atajos", { showQuickMenu = true })
-                    LauncherButton("Teclado", {
-                        if (captured) input.tapKey(84) // GLFW_KEY_T abre el chat con los controles predeterminados.
-                        showKeyboard = true
-                    })
-                }
-                LauncherButton(
-                    "II", { showOverlay = true },
-                    modifier = Modifier.graphicsLayer { alpha = hud.pauseOpacity }
-                        .semantics { contentDescription = "Menú de Biomeria" }
-                )
-            }
+            GameMenuPill(hud.pauseOpacity, { menuTab = GameMenuTab.GAME; showOverlay = true },
+                Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.displayCutout).padding(6.dp))
         }
 
-        if (showOverlay) Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.displayCutout)
-                .padding(12.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Prissma.colors.surfaceGlass, PanelShape)
-                    .border(1.dp, Prissma.colors.borderSubtle, PanelShape)
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "$instanceTitle · MC $version ($viewportSize · ${renderScale.percent}%)",
-                        color = Prissma.colors.textPrimary,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = if (gpuStatus.startsWith("Error:")) gpuStatus else "${renderer.label} · $gpuStatus",
-                        color = Prissma.colors.brandAccent,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (jvmStarted) {
-                        LauncherButton(if (hasPresentedFrame) "Reanudar" else "Ocultar panel",
-                            { showOverlay = false }, primary = true)
-                    }
-                    if (hasPresentedFrame) {
-                        LauncherButton("HUD", { showHudDialog = true })
-                    }
-                    LauncherButton(
-                        if (showConsole) "Ocultar registro" else "Ver registro",
-                        { showConsole = !showConsole }
-                    )
-                    LauncherButton("Salir", onExitGame)
-                }
-            }
-
-            if (showConsole) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight(.40f)
-                        .background(Prissma.colors.surfaceGlass, PanelShape)
-                        .border(1.dp, Prissma.colors.borderSubtle, PanelShape)
-                        .padding(12.dp)
-                ) {
-                    if (logLines.isEmpty()) {
-                        Text(
-                            text = "Esperando salida del motor Java...",
-                            color = Prissma.colors.textMuted,
-                            fontSize = 12.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    } else {
-                        LazyColumn(
-                            state = logListState,
-                            verticalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            items(logLines) { line ->
-                                Text(
-                                    text = line,
-                                    color = if (line.contains("[ERROR]")) Prissma.colors.error else Prissma.colors.textPrimary,
-                                    fontSize = 11.sp,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-                        }
-                    }
-                }
-            }
+        if (showOverlay) {
+            BiomeriaGameMenu(
+                title = instanceTitle,
+                version = version,
+                ready = hasPresentedFrame,
+                tab = menuTab,
+                onTab = { menuTab = it },
+                hud = hud,
+                onHud = { hud = it; onHudChanged(it) },
+                logLines = logLines,
+                technical = "${renderer.label} · $gpuStatus · Vista $viewportSize al ${renderScale.percent} %",
+                heapMb = javaHeapMb,
+                renderScale = renderScale,
+                renderer = renderer,
+                canOpenInventory = captured,
+                hasPanel = panelBridge != null,
+                actions = GameMenuActions(
+                    resume = { showOverlay = false },
+                    inventory = { showOverlay = false; pendingGameKey = 69 },
+                    capture = { showOverlay = false; pendingGameKey = 291 },
+                    keyboard = {
+                        showOverlay = false
+                        if (captured) input.tapKey(84) // GLFW_KEY_T opens the chat with the default controls.
+                        showKeyboard = true
+                    },
+                    minecraftPause = { showOverlay = false; pendingGameKey = 256 }, // GLFW_KEY_ESCAPE
+                    lan = { showOverlay = false; showLanDialog = true },
+                    internet = { showOverlay = false; showInternetDialog = true },
+                    exit = onExitGame
+                )
+            )
         }
     }
     if (showKeyboard) {

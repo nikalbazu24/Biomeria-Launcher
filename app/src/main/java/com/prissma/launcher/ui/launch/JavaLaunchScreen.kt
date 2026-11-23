@@ -17,6 +17,37 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.animation.Crossfade
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
+import com.prissma.launcher.data.EngineType
+import com.prissma.launcher.data.CrashReading
+import com.prissma.launcher.data.LaunchReports
+import com.prissma.launcher.data.LogLevel
+import com.prissma.launcher.data.classifyLogLine
+import com.prissma.launcher.data.readCrash
+import com.prissma.launcher.ui.components.LogView
+import com.prissma.launcher.ui.components.PrissmaMark
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import com.prissma.launcher.ui.components.BlockButton
+import com.prissma.launcher.ui.components.BlockButtons
+import com.prissma.launcher.ui.theme.biomeImage
+import com.prissma.launcher.ui.theme.biomeLabel
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -69,7 +100,7 @@ import java.util.UUID
 @Composable
 fun JavaLaunchScreen(
     instance: GameInstance, playerName: String, accountType: String, preferredLanguage: String = "",
-    requestedServer: String? = null, onBack: () -> Unit
+    requestedServer: String? = null, onBack: () -> Unit, onWorkshop: () -> Unit = {}
 ) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
@@ -148,8 +179,21 @@ fun JavaLaunchScreen(
             .putInt("fps-limit-" + instance.id, updated.fpsLimit)
             .putBoolean("battery-saver-" + instance.id, updated.batterySaver).apply()
     }
+    var crash by remember { mutableStateOf<CrashReading?>(null) }
+    var crashLog by remember { mutableStateOf("") }
     val gameActivity = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         result.data?.getBundleExtra("GAME_HUD")?.let { saveHud(GameHudSettings.fromBundle(it)) }
+        // The game runs in its own process; when it comes back, its log tells whether it crashed.
+        scope.launch {
+            val log = withContext(Dispatchers.IO) {
+                runCatching { readLogTail(File(context.filesDir, "instances/" + instance.id + "/prissma_last.log")) }.getOrDefault("")
+            }
+            val reading = readCrash(log)
+            if (reading.crashed) {
+                crashLog = log
+                crash = reading
+            }
+        }
     }
 
     LaunchedEffect(instance) {
@@ -233,69 +277,153 @@ fun JavaLaunchScreen(
         }
     }
 
-    Column(
-        Modifier.fillMaxSize().background(Prissma.colors.surfaceVoid).safeDrawingPadding().padding(14.dp)
+    var showLanguage by remember { mutableStateOf(false) }
+    crash?.let { reading ->
+        CrashScreen(
+            instance, reading, crashLog,
+            onWorkshop = { crash = null; onWorkshop() },
+            onRetry = { crash = null; start() },
+            onBack = { crash = null; onBack() }
+        )
+        return
+    }
+    val runtimeStep = stepOf(runtime != null, runtimeTask)
+    val gameStep = if (supported) stepOf(game != null, gameTask) else LaunchStep(StepState.FAILED, "Esta versión necesita otro motor.", 0f)
+    val ready = runtime != null && game != null
+    val progress = (runtimeStep.fraction + gameStep.fraction) / 2f
+    val statusLine = when {
+        opening -> "Abriendo Minecraft…"
+        ready -> "Todo listo para jugar."
+        runtimeStep.state == StepState.RUNNING || runtimeStep.state == StepState.WAITING -> runtimeStep.detail
+        else -> gameStep.detail
+    }
+
+    Box(
+        Modifier.fillMaxSize().background(Prissma.colors.ink)
             .onPreviewKeyEvent {
                 if (it.type == KeyEventType.KeyUp && (it.key == Key.ButtonB || it.key == Key.Escape)) {
                     onBack()
                     true
                 } else false
-            }.verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        PageHeader(instance.title, "Minecraft " + instance.version + " · " + instance.loader, onBack)
-        val gamePanel: @Composable (Modifier) -> Unit = { modifier ->
-            LaunchPanel("Archivos para jugar", modifier) {
-                DownloadRow("Java 21 · ARM64", runtime != null, runtimeTask) { downloads.runtime() }
-                HorizontalDivider(color = Prissma.colors.borderSubtle)
-                if (instance.version in experimentalVersions) Text("Vanilla con Java 21 · En pruebas",
-                    color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
-                if (instance.configuredModLoader == "neoforge") Text("NeoForge $NEOFORGE_VERSION · El primer arranque prepara el cliente.",
-                    color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
-                if (supported) DownloadRow("Minecraft " + instance.version, game != null, gameTask) { downloads.game(instance) }
-                else Text("La versión o el cargador de esta instancia requiere otro runtime.", color = Prissma.colors.error)
-                launchError?.let { Text(it, color = Prissma.colors.error) }
-                server?.let { Text("Servidor · ${it.text}", style = MaterialTheme.typography.bodySmall) }
-                LauncherButton(if (opening) "Abriendo…" else if (server == null) "Jugar" else "Conectar", ::start,
-                    primary = true, icon = Icons.Default.PlayArrow, enabled = runtime != null && game != null && !opening)
             }
-        }
-        val optionsPanel: @Composable (Modifier) -> Unit = { modifier ->
-            LaunchPanel("Opciones de partida", modifier) {
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    LauncherButton("Controles y HUD", { showControls = true })
-                    LauncherButton("Rendimiento y vídeo", { showPerformance = true })
-                }
-                Text("Idioma de Minecraft", style = MaterialTheme.typography.titleSmall)
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    gameLanguages.forEach { (code, title) ->
-                        val select = {
-                            language = code
-                            settings.edit().putString("language-" + instance.id, code).apply()
+    ) {
+        Image(painterResource(EngineType.JAVA.biomeImage), null, Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop, alignment = Alignment.CenterEnd)
+        Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(
+            0f to Color(0xF0080A0D), .5f to Color(0xD9080A0D), 1f to Color(0x59080A0D)
+        )))
+        BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 20.dp, vertical = 14.dp)) {
+            val wide = maxWidth >= 600.dp
+            val prepare: @Composable (Modifier) -> Unit = { modifier ->
+                Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    BlockButton(onBack, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) {
+                        PadKey("B", Prissma.colors.engineRust, Color(0xFF2B0E05))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Mis mundos", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+                    }
+                    Column {
+                        Text(EngineType.JAVA.biomeLabel,
+                            Modifier.background(Prissma.colors.engineJava, RoundedCornerShape(3.dp)).padding(horizontal = 10.dp, vertical = 3.dp),
+                            color = Prissma.colors.ink, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.ExtraBold)
+                        Spacer(Modifier.height(8.dp))
+                        Text(instance.title, style = MaterialTheme.typography.headlineLarge.copy(
+                            shadow = Shadow(Color(0x8C000000), Offset(5f, 5f))), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("Minecraft " + instance.version + " · " + instance.loader, color = Color(0xFFC3CDD2),
+                            style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                    }
+                    Column(
+                        Modifier.fillMaxWidth().background(Color(0xE0101418), PanelShape)
+                            .border(2.dp, Prissma.colors.surfaceElevated, PanelShape).padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text("Preparando tu mundo", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+                        StepRow("Java para Android", runtimeStep) { downloads.runtime() }
+                        StepRow("Archivos de Minecraft " + instance.version, gameStep) { if (supported) downloads.game(instance) }
+                        if (instance.version in experimentalVersions) Text("Vanilla con Java 21 · en pruebas",
+                            color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
+                        if (instance.configuredModLoader == "neoforge") Text("NeoForge $NEOFORGE_VERSION · el primer arranque prepara el cliente.",
+                            color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
+                        StepRow("Abrir el juego", LaunchStep(
+                            if (opening) StepState.RUNNING else StepState.WAITING,
+                            if (opening) "Abriendo…" else "Esperando", 0f), null)
+                        BlockProgress(if (ready) 1f else progress)
+                        Text(statusLine, color = Color(0xFFC3CDD2), style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                    launchError?.let { Text(it, color = Prissma.colors.error, fontWeight = FontWeight.Bold) }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        BlockButton(::start, Modifier.heightIn(min = 54.dp), BlockButtons.primary, ready && !opening,
+                            PaddingValues(horizontal = 28.dp, vertical = 6.dp)) {
+                            Icon(Icons.Default.PlayArrow, null, Modifier.size(22.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(when {
+                                opening -> "Abriendo…"
+                                !ready -> "Preparando…"
+                                server == null -> "Jugar"
+                                else -> "Conectar"
+                            }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
                         }
-                        FilterChip(language == code, select, { Text(title) }, modifier = Modifier.gamepadClick(onClick = select))
+                        Column {
+                            server?.let { Text("Servidor · ${it.text}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall) }
+                            if (!ready) Text("Puedes volver a tus mundos: la descarga sigue en segundo plano.",
+                                color = Color(0xFFC3CDD2), style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
-                if (runtime == null || game == null) {
-                    Text("Puedes volver a la biblioteca mientras se descargan los archivos.",
-                        style = MaterialTheme.typography.bodySmall, color = Prissma.colors.textMuted)
+            }
+            val side: @Composable (Modifier) -> Unit = { modifier ->
+                Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Bottom)) {
+                    TipCard()
+                    Column(
+                        Modifier.fillMaxWidth().background(Color(0xE00B0E11), PanelShape)
+                            .border(2.dp, Prissma.colors.surfaceElevated, PanelShape).padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text("Antes de entrar", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold)
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            OptionTile("Rendimiento", heapLabel(heapMb) + " · " + renderScale.percent + " %", Modifier.weight(1f)) { showPerformance = true }
+                            OptionTile("Controles y HUD", hudSummary(hud), Modifier.weight(1f)) { showControls = true }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            OptionTile("Doble pantalla", if (hud.dualScreen) "Activada · " + hud.panelHome.label else "Desactivada",
+                                Modifier.weight(1f)) { showControls = true }
+                            OptionTile("Idioma del juego", gameLanguages[language] ?: "Del juego", Modifier.weight(1f)) { showLanguage = true }
+                        }
+                    }
                 }
             }
-        }
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            if (maxWidth >= 535.dp) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    gamePanel(Modifier.weight(1.2f))
-                    optionsPanel(Modifier.weight(1f))
+            if (wide) {
+                Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+                    prepare(Modifier.weight(1.15f).fillMaxHeight().verticalScroll(rememberScrollState()))
+                    side(Modifier.weight(.85f).fillMaxHeight())
                 }
             } else {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    gamePanel(Modifier.fillMaxWidth())
-                    optionsPanel(Modifier.fillMaxWidth())
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    prepare(Modifier.fillMaxWidth())
+                    side(Modifier.fillMaxWidth())
                 }
             }
         }
     }
+    if (showLanguage) AlertDialog(
+        onDismissRequest = { showLanguage = false },
+        title = { Text("Idioma del juego") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                gameLanguages.forEach { (code, title) ->
+                    val select = {
+                        language = code
+                        settings.edit().putString("language-" + instance.id, code).apply()
+                        showLanguage = false
+                    }
+                    BlockButton(select, Modifier.fillMaxWidth(), if (language == code) BlockButtons.primary else BlockButtons.neutral) {
+                        Text(title, fontWeight = FontWeight.ExtraBold)
+                    }
+                }
+            }
+        },
+        confirmButton = { LauncherButton("Cerrar", { showLanguage = false }) }
+    )
     if (showPerformance) GamePerformanceDialog(
         heapMb, deviceRam, renderScale, renderer,
         onHeap = { heapMb = it; settings.edit().putInt("heap-" + instance.id, it).apply() },
@@ -312,33 +440,258 @@ fun JavaLaunchScreen(
 
 }
 
-@Composable
-private fun DownloadRow(title: String, ready: Boolean, task: WorkInfo?, retry: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(title, fontWeight = FontWeight.SemiBold)
-        if (ready) Text("Listo", color = Prissma.colors.brandAccent)
+internal enum class StepState { READY, RUNNING, WAITING, FAILED }
+
+internal data class LaunchStep(val state: StepState, val detail: String, val fraction: Float)
+
+/** What a download is doing, in words a player understands, and how far along it is. */
+private fun stepOf(ready: Boolean, task: WorkInfo?): LaunchStep {
+    if (ready) return LaunchStep(StepState.READY, "Listo", 1f)
+    if (task?.state == WorkInfo.State.FAILED || task?.state == WorkInfo.State.CANCELLED) {
+        return LaunchStep(StepState.FAILED, task?.outputData?.getString(DOWNLOAD_MESSAGE) ?: "La descarga se interrumpió.", 0f)
     }
-    if (ready) return
-    val failed = task?.state in listOf(WorkInfo.State.FAILED, WorkInfo.State.CANCELLED)
-    if (failed) {
-        Text(task?.outputData?.getString(DOWNLOAD_MESSAGE) ?: "Descarga interrumpida.", color = Prissma.colors.error)
-        LauncherButton("Reintentar", retry)
+    val percent = task?.progress?.getInt(DOWNLOAD_PERCENT, 0) ?: 0
+    val message = task?.progress?.getString(DOWNLOAD_MESSAGE)
+    return if (task?.state == WorkInfo.State.RUNNING) {
+        LaunchStep(StepState.RUNNING, message ?: "Descargando…", percent / 100f)
     } else {
-        val percent = task?.progress?.getInt(DOWNLOAD_PERCENT, 0) ?: 0
-        val message = task?.progress?.getString(DOWNLOAD_MESSAGE)
-            ?: if (task?.state == WorkInfo.State.RUNNING) "Preparando…" else "En cola · esperando conexión"
-        Text(message, color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
-        if (percent > 0) LinearProgressIndicator({ percent / 100f }, modifier = Modifier.fillMaxWidth())
-        else LinearProgressIndicator(Modifier.fillMaxWidth())
+        LaunchStep(StepState.WAITING, "Esperando conexión a internet", 0f)
+    }
+}
+
+private fun heapLabel(mb: Int) = if (mb % 1024 == 0) "${mb / 1024} GB de RAM" else "$mb MB de RAM"
+
+private fun hudSummary(hud: GameHudSettings): String {
+    val shown = listOfNotNull(
+        "FPS".takeIf { hud.showFps }, "coordenadas".takeIf { hud.showCoordinates },
+        "batería".takeIf { hud.showBattery }, "minimapa".takeIf { hud.showMinimap }
+    )
+    return if (shown.isEmpty()) "Mando · sin indicadores" else "Mando · " + shown.joinToString(", ")
+}
+
+@Composable
+private fun StepRow(title: String, step: LaunchStep, onRetry: (() -> Unit)?) {
+    val palette = Prissma.colors
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Box(Modifier.size(24.dp).clip(RoundedCornerShape(3.dp)).background(when (step.state) {
+            StepState.READY -> palette.brandAccent
+            StepState.FAILED -> palette.error
+            else -> Color.Transparent
+        }).border(if (step.state == StepState.READY || step.state == StepState.FAILED) 0.dp else 3.dp, palette.borderSubtle,
+            RoundedCornerShape(3.dp)), contentAlignment = Alignment.Center) {
+            when (step.state) {
+                StepState.READY -> Text("✓", color = palette.onBrandAccent, fontWeight = FontWeight.ExtraBold)
+                StepState.FAILED -> Text("!", color = palette.ink, fontWeight = FontWeight.ExtraBold)
+                StepState.RUNNING -> CircularProgressIndicator(Modifier.size(12.dp), color = palette.gold, strokeWidth = 3.dp)
+                StepState.WAITING -> Unit
+            }
+        }
+        Text(title, Modifier.weight(1f), fontWeight = if (step.state == StepState.RUNNING) FontWeight.ExtraBold else FontWeight.Bold,
+            color = if (step.state == StepState.WAITING) Color(0xFF8F9CA3) else palette.textPrimary, maxLines = 1,
+            overflow = TextOverflow.Ellipsis)
+        when (step.state) {
+            StepState.READY -> Text("Listo", color = palette.brandAccentLight, fontWeight = FontWeight.ExtraBold,
+                style = MaterialTheme.typography.labelLarge)
+            StepState.RUNNING -> Text(if (step.fraction > 0f) "${(step.fraction * 100).toInt()} %" else "…", color = palette.gold,
+                fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+            StepState.FAILED -> if (onRetry != null) LauncherButton("Reintentar", onRetry)
+            StepState.WAITING -> Text(step.detail, color = Color(0xFF8F9CA3), fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.labelMedium, maxLines = 1)
+        }
+    }
+    if (step.state == StepState.FAILED) Text(step.detail, color = palette.error, style = MaterialTheme.typography.bodySmall)
+}
+
+/** Progress drawn as blocks, like the bar of the splash screen. */
+@Composable
+private fun BlockProgress(fraction: Float, blocks: Int = 20) {
+    val filled = (fraction.coerceIn(0f, 1f) * blocks).toInt()
+    Row(Modifier.fillMaxWidth().background(Prissma.colors.ink).border(2.dp, Prissma.colors.borderSubtle).padding(4.dp)
+        .semantics { contentDescription = "Progreso ${(fraction * 100).toInt()} %" },
+        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        repeat(blocks) { index ->
+            Box(Modifier.weight(1f).height(14.dp).background(if (index < filled) Prissma.colors.brandAccent else Color(0xFF1E252C)))
+        }
+    }
+}
+
+private val tips = listOf(
+    "Pulsa Select en partida para abrir el menú de Biomeria.",
+    "En la AYN Thor, el inventario y el mapa pueden ir en la pantalla de abajo.",
+    "Si algo falla, Biomeria guarda el registro para que puedas compartirlo.",
+    "Con L1 y R1 cambias de bioma en Mis mundos."
+)
+
+@Composable
+private fun TipCard() {
+    var index by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(5_000)
+            index = (index + 1) % tips.size
+        }
+    }
+    Column(Modifier.fillMaxWidth().background(Color(0xE00B0E11), PanelShape)
+        .border(2.dp, Prissma.colors.surfaceElevated, PanelShape).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("CONSEJO", color = Prissma.colors.gold, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.ExtraBold)
+        Crossfade(index, label = "tip") { Text(tips[it], fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium, minLines = 2) }
     }
 }
 
 @Composable
-private fun LaunchPanel(title: String, modifier: Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Column(modifier.background(Prissma.colors.surfaceCard, PanelShape)
-        .border(1.dp, Prissma.colors.borderSubtle, PanelShape).padding(15.dp),
-        verticalArrangement = Arrangement.spacedBy(9.dp)) {
-        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        content()
+private fun OptionTile(title: String, detail: String, modifier: Modifier, onClick: () -> Unit) {
+    BlockButton(onClick, modifier.heightIn(min = 60.dp), BlockButtons.neutral,
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
+        Column(Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+            Text(detail, color = Prissma.colors.textMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1,
+                overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun PadKey(key: String, color: Color, onColor: Color) {
+    Box(Modifier.size(22.dp).clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
+        Text(key, color = onColor, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+    }
+}
+
+/** The end of a log file: enough to find the error without loading huge logs into memory. */
+private fun readLogTail(file: File, bytes: Int = 96 * 1024): String {
+    if (!file.isFile) return ""
+    java.io.RandomAccessFile(file, "r").use { raf ->
+        val length = raf.length()
+        val start = (length - bytes).coerceAtLeast(0)
+        raf.seek(start)
+        val buffer = ByteArray((length - start).toInt())
+        raf.readFully(buffer)
+        val text = buffer.toString(Charsets.UTF_8)
+        return if (start > 0) text.substringAfter('\n') else text
+    }
+}
+
+@Composable
+private fun CrashScreen(
+    instance: GameInstance,
+    reading: CrashReading,
+    log: String,
+    onWorkshop: () -> Unit,
+    onRetry: () -> Unit,
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
+    var shareStatus by remember { mutableStateOf<String?>(null) }
+    var sharing by remember { mutableStateOf(false) }
+    val errors = reading.tail.count { classifyLogLine(it) == LogLevel.ERROR }
+    val share = {
+        if (!sharing) {
+            sharing = true
+            shareStatus = "Subiendo el registro…"
+            scope.launch {
+                LaunchReports(context).upload(log)
+                    .onSuccess { url ->
+                        clipboard.setText(AnnotatedString(url))
+                        shareStatus = "Enlace copiado: $url"
+                    }
+                    .onFailure { shareStatus = it.message ?: "No se pudo subir el registro." }
+                sharing = false
+            }
+        }
+    }
+    BoxWithConstraints(
+        Modifier.fillMaxSize().background(Prissma.colors.surfaceVoid).safeDrawingPadding().padding(20.dp)
+            .onPreviewKeyEvent {
+                if (it.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
+                when (it.key) {
+                    Key.ButtonB, Key.Escape -> { onBack(); true }
+                    Key.ButtonX -> { onRetry(); true }
+                    Key.ButtonY -> { share(); true }
+                    else -> false
+                }
+            }
+    ) {
+        val wide = maxWidth >= 640.dp
+        val summary: @Composable (Modifier) -> Unit = { modifier ->
+            Column(modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Box(Modifier.size(64.dp, 70.dp)) {
+                        PrissmaMark(Modifier.fillMaxSize())
+                        androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+                            val w = size.width; val h = size.height
+                            val crack = androidx.compose.ui.graphics.Path().apply {
+                                moveTo(w * .5f, h * .12f); lineTo(w * .44f, h * .28f); lineTo(w * .54f, h * .36f)
+                                lineTo(w * .47f, h * .48f); lineTo(w * .56f, h * .62f); lineTo(w * .5f, h * .74f); lineTo(w * .57f, h * .9f)
+                            }
+                            drawPath(crack, Prissma.colors.ink, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 5.dp.toPx()))
+                        }
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text("Minecraft se cerró inesperadamente", style = MaterialTheme.typography.headlineSmall)
+                        Text(instance.title + " · Minecraft " + instance.version, color = Prissma.colors.textMuted,
+                            style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Column(
+                    Modifier.fillMaxWidth().background(Color(0xFF1E1715), PanelShape).border(2.dp, Color(0xFF5A2E22), PanelShape)
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("Lo que encontramos", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+                    Text(reading.cause ?: "No reconocemos este error. Abajo están las últimas líneas del registro: compártelo para pedir ayuda.",
+                        style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    CrashAction("A", "Ir al Taller y corregir", Modifier.weight(1f), BlockButtons.primary, onClick = onWorkshop)
+                    CrashAction("X", "Volver a intentar", Modifier.weight(1f), onClick = onRetry)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    CrashAction("Y", if (sharing) "Subiendo…" else "Compartir registro", Modifier.weight(1f), onClick = share)
+                    CrashAction("B", "Volver a mis mundos", Modifier.weight(1f), onClick = onBack)
+                }
+                Text(shareStatus ?: "\"Compartir registro\" lo sube a mclo.gs y copia el enlace para pedir ayuda. Tu sesión nunca se incluye.",
+                    color = Prissma.colors.textMuted, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        val logPanel: @Composable (Modifier) -> Unit = { modifier ->
+            Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Final del registro", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+                    if (errors > 0) Text(if (errors == 1) "1 error" else "$errors errores",
+                        Modifier.background(Prissma.colors.engineRust, RoundedCornerShape(3.dp)).padding(horizontal = 8.dp, vertical = 2.dp),
+                        color = Prissma.colors.ink, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.ExtraBold)
+                    Spacer(Modifier.weight(1f))
+                    LauncherButton("Copiar", { clipboard.setText(AnnotatedString(reading.tail.joinToString("\n"))) })
+                }
+                val listState = rememberLazyListState()
+                LaunchedEffect(reading) { if (reading.tail.isNotEmpty()) listState.scrollToItem(reading.tail.lastIndex) }
+                LogView(reading.tail, Modifier.fillMaxWidth().weight(1f), listState)
+            }
+        }
+        if (wide) {
+            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                summary(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()))
+                logPanel(Modifier.weight(1f).fillMaxHeight())
+            }
+        } else {
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                summary(Modifier.fillMaxWidth())
+                logPanel(Modifier.fillMaxWidth().weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun CrashAction(key: String, label: String, modifier: Modifier, colors: com.prissma.launcher.ui.components.BlockColors = BlockButtons.neutral,
+                        onClick: () -> Unit) {
+    BlockButton(onClick, modifier.heightIn(min = 52.dp), colors, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) {
+        PadKey(key, Color(0xFF0B0E11).copy(alpha = .35f), colors.content)
+        Spacer(Modifier.width(10.dp))
+        Text(label, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge, maxLines = 1,
+            overflow = TextOverflow.Ellipsis)
     }
 }
