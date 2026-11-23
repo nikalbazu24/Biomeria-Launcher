@@ -43,11 +43,13 @@ namespace {
     std::string pushLogLine(const std::string& line) {
         if (line.empty()) return {};
         std::lock_guard<std::mutex> lock(gLogMutex);
-        std::string safeLine = redactMinecraftToken(line, gMinecraftToken);
+        const std::string redacted = redactMinecraftToken(line, gMinecraftToken);
         if (gLogFile) {
-            fprintf(gLogFile, "%s\n", safeLine.c_str());
+            fprintf(gLogFile, "%s\n", redacted.c_str());
             fflush(gLogFile);
         }
+        // The queue feeds NewStringUTF, which aborts on emoji or broken UTF-8 under CheckJNI.
+        std::string safeLine = toJniSafeLogLine(redacted);
         if (gLogQueue.size() > 250) {
             gLogQueue.pop_front();
         }
@@ -97,8 +99,14 @@ namespace {
         while (true) {
             ssize_t count = read(readFd, buffer, sizeof(buffer) - 1);
             if (count <= 0) break;
-            buffer[count] = '\0';
-            pending += buffer;
+            pending.append(buffer, static_cast<size_t>(count));
+            // Output with no line break would grow without limit. Splitting it could cut a session
+            // token in two and slip past redaction, so the whole unfinished line is dropped instead.
+            if (pending.size() > 1024 * 1024 && pending.find('\n') == std::string::npos) {
+                pending.clear();
+                LOGI("%s", pushLogLine("[línea de registro demasiado larga omitida]").c_str());
+                continue;
+            }
 
             size_t pos;
             while ((pos = pending.find('\n')) != std::string::npos) {

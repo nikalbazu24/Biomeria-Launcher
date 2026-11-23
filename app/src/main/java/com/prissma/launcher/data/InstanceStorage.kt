@@ -140,7 +140,20 @@ class InstanceStorage(private val context: Context) {
                 )
             }
             list
-        }.getOrElse { defaultInstances() }
+        }.getOrElse {
+            // A damaged catalog used to be replaced by the samples on the next save, wiping the
+            // player's library for good. Keep the damaged file so it can be recovered by hand.
+            preserveDamagedCatalog()
+            defaultInstances()
+        }
+    }
+
+    private fun preserveDamagedCatalog() {
+        runCatching {
+            // Named after the damaged file's own timestamp: repeated loads keep a single copy.
+            val backup = File(context.filesDir, "prissma_catalog.damaged-" + catalogFile.lastModified() + ".json")
+            if (!backup.exists()) catalogFile.copyTo(backup)
+        }
     }
 
     fun saveInstances(instances: List<GameInstance>) {
@@ -216,9 +229,13 @@ class InstanceStorage(private val context: Context) {
      * Extrae el ID de la instancia cuando un frontend abre un archivo .mcinst.
      */
     fun extractInstanceIdFromUri(uri: Uri): String? {
+        // The intent filter accepts any file, so read at most 64 KB: a real cartridge is a few
+        // hundred bytes, and reading a large video or archive whole could exhaust memory.
         return runCatching {
-            context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { reader ->
-                JSONObject(reader.readText()).optString("instance_id").takeIf { it.isNotBlank() }
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                val bytes = input.readNBytesCompat(MAX_CARTRIDGE_BYTES + 1)
+                require(bytes.size <= MAX_CARTRIDGE_BYTES)
+                JSONObject(bytes.toString(Charsets.UTF_8)).optString("instance_id").takeIf { it.isNotBlank() }
             }
         }.getOrNull()
     }
@@ -237,9 +254,7 @@ class InstanceStorage(private val context: Context) {
             title = "Survival Con Mods",
             engine = EngineType.JAVA,
             version = "1.21.4",
-            loader = "Fabric 0.16.9",
-            playtimeHours = 42.0f,
-            friendsOnline = 1
+            loader = "Fabric 0.16.9"
         ),
         GameInstance(
             id = "rust-120fps",
@@ -253,9 +268,21 @@ class InstanceStorage(private val context: Context) {
             title = "Crossplay Amigos",
             engine = EngineType.BEDROCK,
             version = "26.10",
-            loader = "MCPE Oficial",
-            playtimeHours = 11.2f,
-            friendsOnline = 3
+            loader = "MCPE Oficial"
         )
     )
+}
+
+private const val MAX_CARTRIDGE_BYTES = 64 * 1024
+
+/** InputStream.readNBytes only exists from Android 13 (API 33). */
+private fun java.io.InputStream.readNBytesCompat(limit: Int): ByteArray {
+    val output = java.io.ByteArrayOutputStream()
+    val buffer = ByteArray(8192)
+    while (output.size() < limit) {
+        val count = read(buffer, 0, minOf(buffer.size, limit - output.size()))
+        if (count < 0) break
+        output.write(buffer, 0, count)
+    }
+    return output.toByteArray()
 }
