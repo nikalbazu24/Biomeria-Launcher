@@ -9,11 +9,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -21,7 +18,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.alpha
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -66,12 +71,57 @@ internal fun PrissmaMark(modifier: Modifier = Modifier) {
     }
 }
 
-/** Raised edge like the game's buttons: a light line on top, a dark ledge below. */
-internal fun Modifier.blockBevel(light: Color, dark: Color, ledge: Float = 4f) = drawWithContent {
-    drawContent()
-    val px = density
-    drawRect(light.copy(alpha = .55f), Offset(0f, 0f), Size(size.width, 2f * px))
-    drawRect(dark.copy(alpha = .65f), Offset(0f, size.height - ledge * px), Size(size.width, ledge * px))
+/** Colors of a block button: face, the light line on top, the dark ledge below and the label. */
+internal data class BlockColors(val face: Color, val light: Color, val ledge: Color, val content: Color)
+
+internal object BlockButtons {
+    val primary = BlockColors(Color(0xFF7BC74D), Color(0xFFA6E07E), Color(0xFF4C8A2B), Color(0xFF0E1A08))
+    val neutral = BlockColors(Color(0xFF2A333B), Color(0xFF3E4A54), Color(0xFF1A2026), Color(0xFFF2F5EF))
+    val ocean = BlockColors(Color(0xFF4FB3D9), Color(0xFF8FD3EC), Color(0xFF2E86B5), Color(0xFF08202B))
+    val gold = BlockColors(Color(0xFFF5E663), Color(0xFFFFF4A8), Color(0xFFC9B93A), Color(0xFF2A2508))
+    val danger = BlockColors(Color(0xFF3A1F19), Color(0xFF55302A), Color(0xFF24120E), Color(0xFFFFD2C4))
+}
+
+/**
+ * Flat button shaped like a game block: a solid face with a thin light line on top and a
+ * darker ledge at the bottom, inside a dark outline. Focus turns the outline gold.
+ */
+@Composable
+internal fun BlockButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    colors: BlockColors = BlockButtons.neutral,
+    enabled: Boolean = true,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+    content: @Composable RowScope.() -> Unit
+) {
+    val source = remember { MutableInteractionSource() }
+    val focused by source.collectIsFocusedAsState()
+    val pressed by source.collectIsPressedAsState()
+    val face = if (pressed) colors.ledge else colors.face
+    Row(
+        modifier
+            .heightIn(min = 44.dp)
+            .alpha(if (enabled) 1f else .45f)
+            .clip(ControlShape)
+            .background(face)
+            .drawBehind {
+                if (!pressed) {
+                    drawRect(colors.light, size = Size(size.width, 2.dp.toPx()))
+                    val ledge = 4.dp.toPx()
+                    drawRect(colors.ledge, Offset(0f, size.height - ledge), Size(size.width, ledge))
+                }
+            }
+            .border(if (focused) 3.dp else 2.dp, if (focused) Prissma.colors.gold else Prissma.colors.ink, ControlShape)
+            .gamepadClick(enabled, onClick)
+            .clickable(source, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(contentPadding)
+            .padding(bottom = if (pressed) 0.dp else 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        CompositionLocalProvider(LocalContentColor provides colors.content) { content() }
+    }
 }
 
 @Composable
@@ -83,52 +133,29 @@ internal fun LauncherButton(
     primary: Boolean = false,
     enabled: Boolean = true
 ) {
-    val source = remember { MutableInteractionSource() }
-    val focused by source.collectIsFocusedAsState()
-    val border = androidx.compose.foundation.BorderStroke(
-        if (focused) 3.dp else 2.dp,
-        if (focused) Prissma.colors.gold else Prissma.colors.ink
-    )
-    val content: @Composable RowScope.() -> Unit = {
+    BlockButton(onClick, modifier, if (primary) BlockButtons.primary else BlockButtons.neutral, enabled) {
         icon?.let {
-            Icon(it, contentDescription = null, modifier = Modifier.size(17.dp))
+            Icon(it, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
         }
-        Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+        Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.ExtraBold,
+            style = MaterialTheme.typography.labelLarge)
     }
-    if (primary) {
-        Button(
-            onClick = onClick,
-            modifier = modifier.gamepadClick(enabled, onClick).heightIn(min = 44.dp).clip(ControlShape)
-                .then(if (enabled) Modifier.blockBevel(Prissma.colors.brandAccentLight, Prissma.colors.brandAccentDark) else Modifier),
-            enabled = enabled,
-            shape = ControlShape,
-            border = if (focused) androidx.compose.foundation.BorderStroke(3.dp, Prissma.colors.gold)
-                else androidx.compose.foundation.BorderStroke(2.dp, Prissma.colors.ink),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Prissma.colors.brandAccent,
-                contentColor = Prissma.colors.onBrandAccent
-            ),
-            interactionSource = source,
-            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 7.dp),
-            content = content
-        )
-    } else {
-        OutlinedButton(
-            onClick = onClick,
-            modifier = modifier.gamepadClick(enabled, onClick).heightIn(min = 44.dp).clip(ControlShape)
-                .then(if (enabled) Modifier.blockBevel(Color(0xFF3E4A54), Color(0xFF0B0E11)) else Modifier),
-            enabled = enabled,
-            shape = ControlShape,
-            border = border,
-            colors = ButtonDefaults.outlinedButtonColors(
-                containerColor = if (focused) Color(0xFF34404A) else Color(0xFF2A333B),
-                contentColor = Prissma.colors.textPrimary
-            ),
-            interactionSource = source,
-            contentPadding = PaddingValues(horizontal = 13.dp, vertical = 7.dp),
-            content = content
-        )
+}
+
+/** Square block button for a single icon, such as the favourite star. */
+@Composable
+internal fun BlockIconButton(
+    label: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    tint: Color = Prissma.colors.textPrimary,
+    enabled: Boolean = true
+) {
+    BlockButton(onClick, modifier.size(48.dp).semantics { contentDescription = label },
+        BlockButtons.neutral, enabled, PaddingValues(0.dp)) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
     }
 }
 

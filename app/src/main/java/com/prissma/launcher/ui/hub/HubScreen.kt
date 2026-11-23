@@ -6,6 +6,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.*
@@ -15,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
@@ -52,6 +55,7 @@ import com.prissma.launcher.engine.java.MojangDownloader
 import com.prissma.launcher.engine.java.supportsJavaLoader
 import com.prissma.launcher.engine.rust.StarlingInstallation
 import com.prissma.launcher.engine.rust.StarlingLauncher
+import com.prissma.launcher.ui.components.BlockButton
 import com.prissma.launcher.ui.components.ControlShape
 import com.prissma.launcher.ui.components.LauncherButton
 import com.prissma.launcher.ui.components.PrissmaMark
@@ -297,6 +301,7 @@ internal fun HubScreen(
             onPage = { page = it },
             playerName = profile.label,
             playerAvatar = storage.profileAvatar(profile),
+            accountLabel = profile.accountType,
             updateAvailable = update != null,
             onProfile = { showAccount = true },
             downloadsLabel = workshopDownloadsLabel(workshopJobs),
@@ -321,6 +326,11 @@ internal fun HubScreen(
                     }
                     page == HubPage.LIBRARY && event.key == Key.ButtonX && selected != null -> {
                         page = HubPage.WORKSHOP
+                        true
+                    }
+                    page == HubPage.LIBRARY && event.key == Key.ButtonY && selected != null -> {
+                        favorites = if (selected.id in favorites) favorites - selected.id else favorites + selected.id
+                        preferences.setFavorites(favorites)
                         true
                     }
                     else -> false
@@ -458,6 +468,7 @@ private fun HubFrame(
     onPage: (HubPage) -> Unit,
     playerName: String,
     playerAvatar: File?,
+    accountLabel: String,
     updateAvailable: Boolean,
     onProfile: () -> Unit,
     downloadsLabel: String,
@@ -467,85 +478,187 @@ private fun HubFrame(
 ) {
     val firstFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { firstFocus.requestFocus() }
-    BoxWithConstraints(modifier) {
+    val palette = Prissma.colors
+    BoxWithConstraints(modifier.background(palette.surfaceVoid)) {
         val landscape = maxWidth >= 585.dp && maxHeight >= 275.dp
-        val navigation: @Composable () -> Unit = {
-            HubPage.entries.forEach { item ->
-                val action = { onPage(item) }
-                NavigationItem(
-                    item, page == item, updateAvailable && item == HubPage.SETTINGS, action,
-                    modifier = if (item == HubPage.LIBRARY) Modifier.focusRequester(firstFocus) else Modifier
-                )
+        val hints: @Composable () -> Unit = {
+            Row(
+                Modifier.fillMaxWidth().background(palette.ink).drawBehind {
+                    drawRect(palette.surfaceElevated, size = androidx.compose.ui.geometry.Size(size.width, 2.dp.toPx()))
+                }.padding(horizontal = 14.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                PadHint("A", if (page == HubPage.LIBRARY) "Jugar" else "Elegir", palette.engineJava, palette.onBrandAccent)
+                if (page == HubPage.LIBRARY) {
+                    PadHint("X", "Taller", palette.engineBedrock, Color(0xFF08202B))
+                    PadHint("Y", "Favorito", palette.gold, Color(0xFF2A2508))
+                }
+                PadHint("B", "Volver", palette.engineRust, Color(0xFF2B0E05))
+                Spacer(Modifier.weight(1f))
+                if (page == HubPage.LIBRARY) Text("L1 / R1 cambian de bioma", color = palette.textMuted,
+                    style = MaterialTheme.typography.labelSmall, maxLines = 1)
             }
         }
-        val mainPanel: @Composable (Modifier) -> Unit = { panelModifier ->
-            Column(panelModifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
-                Row(Modifier.fillMaxWidth().padding(bottom = 9.dp), verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(page.label, Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold)
-                    LauncherButton(downloadsLabel, onDownloads)
-                    OutlinedButton(onProfile, Modifier.widthIn(max = 170.dp).gamepadClick(onClick = onProfile),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp)) {
-                        ProfileAvatar(playerName, playerAvatar, Modifier.size(25.dp))
-                        Spacer(Modifier.width(7.dp))
-                        Text(playerName, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-                Box(Modifier.fillMaxWidth().weight(1f)) { content() }
+        val header: @Composable () -> Unit = {
+            if (page != HubPage.LIBRARY) {
+                Text(page.label, Modifier.padding(bottom = 10.dp), style = MaterialTheme.typography.headlineSmall,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         if (landscape) {
             Row(Modifier.fillMaxSize()) {
                 Column(
-                    Modifier.fillMaxHeight().width(96.dp).background(Prissma.colors.ink)
-                        .border(width = 2.dp, color = Prissma.colors.surfaceElevated)
-                        .verticalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 10.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    Modifier.fillMaxHeight().width(168.dp).background(palette.ink)
+                        .drawBehind {
+                            drawRect(palette.surfaceElevated, androidx.compose.ui.geometry.Offset(size.width - 2.dp.toPx(), 0f),
+                                androidx.compose.ui.geometry.Size(2.dp.toPx(), size.height))
+                        }
+                        .padding(horizontal = 10.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
-                    PrissmaMark(Modifier.size(38.dp, 42.dp))
-                    Text("Biomeria", fontFamily = PixelFont, fontSize = 15.sp, fontWeight = FontWeight.Bold,
-                        color = Prissma.colors.textPrimary, maxLines = 1)
-                    Spacer(Modifier.height(4.dp))
-                    navigation()
+                    Row(Modifier.padding(start = 4.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PrissmaMark(Modifier.size(26.dp, 29.dp))
+                        Text("Biomeria", fontFamily = PixelFont, fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                            color = palette.textPrimary, maxLines = 1)
+                    }
+                    Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        HubPage.entries.forEach { item ->
+                            NavigationItem(
+                                item, page == item, updateAvailable && item == HubPage.SETTINGS, { onPage(item) },
+                                modifier = if (item == HubPage.LIBRARY) Modifier.focusRequester(firstFocus) else Modifier
+                            )
+                        }
+                        RailButton(downloadsLabel, Icons.Default.Refresh, onDownloads)
+                    }
+                    ProfileChip(playerName, playerAvatar, accountLabel, onProfile)
                 }
-                mainPanel(Modifier.weight(1f).fillMaxHeight())
+                Column(Modifier.weight(1f).fillMaxHeight()) {
+                    Column(Modifier.weight(1f).fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp)) {
+                        header()
+                        Box(Modifier.fillMaxWidth().weight(1f)) { content() }
+                    }
+                    hints()
+                }
             }
         } else {
             Column(Modifier.fillMaxSize()) {
-                mainPanel(Modifier.weight(1f).fillMaxWidth())
-                Row(Modifier.fillMaxWidth().background(Prissma.colors.ink).padding(4.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly) { navigation() }
+                Row(Modifier.fillMaxWidth().background(palette.ink).padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PrissmaMark(Modifier.size(24.dp, 26.dp))
+                    Text("Biomeria", Modifier.weight(1f), fontFamily = PixelFont, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                    LauncherButton(downloadsLabel, onDownloads)
+                    BlockButton(onProfile, contentPadding = PaddingValues(6.dp)) {
+                        ProfileAvatar(playerName, playerAvatar, Modifier.size(28.dp))
+                    }
+                }
+                Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    header()
+                    Box(Modifier.fillMaxWidth().weight(1f)) { content() }
+                }
+                Row(Modifier.fillMaxWidth().background(palette.ink).padding(4.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly) {
+                    HubPage.entries.forEach { item ->
+                        NavigationItem(item, page == item, updateAvailable && item == HubPage.SETTINGS, { onPage(item) },
+                            compact = true,
+                            modifier = if (item == HubPage.LIBRARY) Modifier.focusRequester(firstFocus) else Modifier)
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
+private fun PadHint(key: String, label: String, color: Color, onColor: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(Modifier.size(20.dp).clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
+            Text(key, color = onColor, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+        }
+        Text(label, color = Prissma.colors.textPrimary, style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold, maxLines = 1)
+    }
+}
+
+@Composable
+private fun ProfileChip(name: String, avatar: File?, account: String, onClick: () -> Unit) {
+    val source = remember { MutableInteractionSource() }
+    val focus by source.collectIsFocusedAsState()
+    Row(
+        Modifier.fillMaxWidth().clip(ControlShape).background(Prissma.colors.surfaceCard)
+            .border(if (focus) 3.dp else 2.dp, if (focus) Prissma.colors.gold else Prissma.colors.surfaceElevated, ControlShape)
+            .gamepadClick(onClick = onClick)
+            .clickable(source, indication = null, role = Role.Button, onClick = onClick)
+            .padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        ProfileAvatar(name, avatar, Modifier.size(32.dp))
+        Column(Modifier.weight(1f)) {
+            Text(name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.ExtraBold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(if (account == "Offline") "Sin conexión" else account, style = MaterialTheme.typography.labelSmall,
+                color = Prissma.colors.textMuted, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun RailButton(label: String, icon: ImageVector, onClick: () -> Unit) {
+    val source = remember { MutableInteractionSource() }
+    val focus by source.collectIsFocusedAsState()
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 40.dp).clip(ControlShape)
+            .background(if (focus) Prissma.colors.surfaceElevated else Color.Transparent)
+            .border(if (focus) 3.dp else 0.dp, if (focus) Prissma.colors.gold else Color.Transparent, ControlShape)
+            .gamepadClick(onClick = onClick)
+            .clickable(source, indication = null, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Icon(icon, null, Modifier.size(18.dp), tint = Prissma.colors.textMuted)
+        Text(label, color = Prissma.colors.textMuted, style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
 private fun NavigationItem(page: HubPage, selected: Boolean, update: Boolean, onClick: () -> Unit,
-                           modifier: Modifier = Modifier) {
+                           modifier: Modifier = Modifier, compact: Boolean = false) {
     val source = remember { MutableInteractionSource() }
     val focus by source.collectIsFocusedAsState()
     val tint = if (selected || focus) Prissma.colors.textPrimary else Prissma.colors.textMuted
     val accent = Prissma.colors.brandAccent
-    Column(
-        modifier.widthIn(min = 76.dp).clip(ControlShape)
-            .background(if (selected || focus) Prissma.colors.surfaceElevated else Color.Transparent)
-            .drawBehind {
-                if (selected) drawRect(accent, size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height))
-            }
-            .border(if (focus) 3.dp else 0.dp, if (focus) Prissma.colors.gold else Color.Transparent, ControlShape)
-            .gamepadClick(onClick = onClick)
-            .selectable(selected, interactionSource = source, indication = null, role = Role.Tab, onClick = onClick)
-            .heightIn(min = 43.dp).padding(horizontal = 4.dp, vertical = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
+    val base = modifier.clip(ControlShape)
+        .background(if (selected || focus) Prissma.colors.surfaceElevated else Color.Transparent)
+        .drawBehind {
+            if (selected && !compact) drawRect(accent, size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height))
+        }
+        .border(if (focus) 3.dp else 0.dp, if (focus) Prissma.colors.gold else Color.Transparent, ControlShape)
+        .gamepadClick(onClick = onClick)
+        .selectable(selected, interactionSource = source, indication = null, role = Role.Tab, onClick = onClick)
+    val icon: @Composable () -> Unit = {
         BadgedBox(badge = { if (update) Badge(containerColor = Prissma.colors.gold) }) {
             Icon(page.icon, null, Modifier.size(20.dp), tint = if (selected) accent else tint)
         }
-        Text(page.label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold,
-            maxLines = 1, color = tint)
+    }
+    if (compact) {
+        Column(base.widthIn(min = 72.dp).heightIn(min = 46.dp).padding(4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally) {
+            icon()
+            Text(page.label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold,
+                maxLines = 1, color = tint)
+        }
+    } else {
+        Row(base.fillMaxWidth().heightIn(min = 44.dp).padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            icon()
+            Text(page.label, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, color = tint)
+        }
     }
 }
 
