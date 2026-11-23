@@ -130,6 +130,14 @@ internal fun GameHudControls(settings: GameHudSettings, onChange: (GameHudSettin
         }
         PanelSwitch("Nivel de batería", settings.showBattery) { onChange(settings.copy(showBattery = it)) }
         PanelSwitch("Consejos de Biomeria con el mando", settings.biomeriaTips) { onChange(settings.copy(biomeriaTips = it)) }
+        PanelSwitch("Consejos en la franja de abajo", settings.panelTips) { onChange(settings.copy(panelTips = it)) }
+        PanelSwitch("Indicador del mando en la pantalla de abajo", settings.showPadChip) { onChange(settings.copy(showPadChip = it)) }
+        Text("Tamaño de la interfaz de abajo", style = MaterialTheme.typography.labelMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            com.biomeria.launcher.engine.java.InterfaceSize.entries.forEach { size ->
+                FilterChip(settings.interfaceSize == size, { onChange(settings.copy(interfaceSize = size)) }, label = { Text(size.label) })
+            }
+        }
         PanelSwitch("Tutorial de Minecraft (teclado, al volver a entrar)", settings.minecraftTutorial) {
             onChange(settings.copy(minecraftTutorial = it))
         }

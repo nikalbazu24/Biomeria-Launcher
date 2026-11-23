@@ -635,7 +635,12 @@ private fun JavaNativeViewportScreen(
                 remember(activity) { activity.intent.getStringExtra("GAME_DIR_PATH")?.let(::File) },
                 lessMotion = hud.reduceMotion)
             BiomeriaTipHost(hud.biomeriaTips, captured && !showOverlay,
-                Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.displayCutout).padding(top = 52.dp, end = 12.dp))
+                Modifier.align(when (hud.tipCorner) {
+                    TipCorner.TOP_START -> Alignment.TopStart
+                    TipCorner.TOP_END -> Alignment.TopEnd
+                    TipCorner.BOTTOM_START -> Alignment.BottomStart
+                    TipCorner.BOTTOM_END -> Alignment.BottomEnd
+                }).windowInsetsPadding(WindowInsets.displayCutout).padding(8.dp))
             if (!hud.widgetsBelow || !activity.lowerPanelVisible) {
                 GameWidgets(hud, fps, panelBridge,
                     Modifier.align(Alignment.TopStart).windowInsetsPadding(WindowInsets.displayCutout)

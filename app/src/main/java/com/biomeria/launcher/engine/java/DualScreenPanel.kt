@@ -392,8 +392,8 @@ private fun DualScreenPanel(
     var rootOrigin by remember { mutableStateOf(Offset.Zero) }
     val look = remember(hud.panelStyle, hud.highContrast) { panelLook(hud.panelStyle, hud.highContrast) }
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val scaled = remember(density, hud.textSize) {
-        androidx.compose.ui.unit.Density(density.density, density.fontScale * hud.textSize.scale)
+    val scaled = remember(density, hud.textSize, hud.interfaceSize) {
+        androidx.compose.ui.unit.Density(density.density * hud.interfaceSize.scale, density.fontScale * hud.textSize.scale)
     }
     CompositionLocalProvider(LocalSlotDrag provides dragState, LocalPanelLook provides look,
         androidx.compose.ui.platform.LocalDensity provides scaled) {
@@ -432,7 +432,7 @@ private fun DualScreenPanel(
             if (hud.widgetsBelow) GameWidgets(hud, fps, bridge)
             else if (live != null) Text("X ${live.x} · Y ${live.y} · Z ${live.z}", color = Biomeria.colors.textMuted,
                 fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium, maxLines = 1)
-            ControllerChip(controllerActive) { activity.releaseLowerGamepad() }
+            if (hud.showPadChip) ControllerChip(controllerActive) { activity.releaseLowerGamepad() }
         }
 
         Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
@@ -495,7 +495,8 @@ private fun DualScreenPanel(
             }
         }
 
-        if (hints.isNotEmpty()) PanelTipStrip(hints, "Mando", null)
+        if (!hud.panelTips) Unit
+        else if (hints.isNotEmpty()) PanelTipStrip(hints, "Mando", null)
         else if (pageTips.isNotEmpty()) PanelTipStrip(pageTips[tipIndex % pageTips.size], "Consejo",
             if (pageTips.size > 1) ({ tipIndex++ }) else null)
     }

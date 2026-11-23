@@ -163,7 +163,11 @@ fun JavaLaunchScreen(
             settings.getBoolean("reduce-motion-" + instance.id, false),
             settings.getBoolean("biomeria-tips-" + instance.id, true),
             settings.getBoolean("minecraft-tutorial-" + instance.id, false),
-            com.biomeria.launcher.engine.java.CameraSpeed.fromPreference(settings.getString("camera-speed-" + instance.id, null))))
+            com.biomeria.launcher.engine.java.CameraSpeed.fromPreference(settings.getString("camera-speed-" + instance.id, null)),
+            com.biomeria.launcher.engine.java.InterfaceSize.fromPreference(settings.getString("interface-size-" + instance.id, null)),
+            settings.getBoolean("panel-tips-" + instance.id, true),
+            settings.getBoolean("pad-chip-" + instance.id, true),
+            com.biomeria.launcher.engine.java.TipCorner.fromPreference(settings.getString("tip-corner-" + instance.id, null))))
     }
     val supported = supportsJavaLoader(instance.version, instance.loader)
 
@@ -195,7 +199,11 @@ fun JavaLaunchScreen(
             .putBoolean("reduce-motion-" + instance.id, updated.reduceMotion)
             .putBoolean("biomeria-tips-" + instance.id, updated.biomeriaTips)
             .putBoolean("minecraft-tutorial-" + instance.id, updated.minecraftTutorial)
-            .putString("camera-speed-" + instance.id, updated.cameraSpeed.name).apply()
+            .putString("camera-speed-" + instance.id, updated.cameraSpeed.name)
+            .putString("interface-size-" + instance.id, updated.interfaceSize.name)
+            .putBoolean("panel-tips-" + instance.id, updated.panelTips)
+            .putBoolean("pad-chip-" + instance.id, updated.showPadChip)
+            .putString("tip-corner-" + instance.id, updated.tipCorner.name).apply()
     }
     var crash by remember { mutableStateOf<CrashReading?>(null) }
     var crashLog by remember { mutableStateOf("") }

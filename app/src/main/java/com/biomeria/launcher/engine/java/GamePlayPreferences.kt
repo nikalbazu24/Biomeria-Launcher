@@ -59,7 +59,15 @@ internal data class GameHudSettings(
     val biomeriaTips: Boolean = true,
     /** Minecraft's keyboard tutorial toasts ("use W A S D…"). Off: options.txt gets tutorialStep:none. */
     val minecraftTutorial: Boolean = false,
-    val cameraSpeed: CameraSpeed = CameraSpeed.MEDIUM
+    val cameraSpeed: CameraSpeed = CameraSpeed.MEDIUM,
+    /** Scales everything on the lower screen (slots, buttons, text), not just the text. */
+    val interfaceSize: InterfaceSize = InterfaceSize.SMALL,
+    /** The tip strip along the bottom of the lower screen. */
+    val panelTips: Boolean = true,
+    /** The "controller drives game / panel" chip in the lower screen's top bar. */
+    val showPadChip: Boolean = true,
+    /** Which corner of the top screen the Biomeria tips appear in. */
+    val tipCorner: TipCorner = TipCorner.TOP_END
 ) {
     fun routes(layout: PanelLayout) = when (layout) {
         PanelLayout.PERSONAL -> false
@@ -96,6 +104,10 @@ internal data class GameHudSettings(
         putBoolean("biomeriaTips", biomeriaTips)
         putBoolean("minecraftTutorial", minecraftTutorial)
         putString("cameraSpeed", cameraSpeed.name)
+        putString("interfaceSize", interfaceSize.name)
+        putBoolean("panelTips", panelTips)
+        putBoolean("showPadChip", showPadChip)
+        putString("tipCorner", tipCorner.name)
     }
 
     companion object {
@@ -126,7 +138,11 @@ internal data class GameHudSettings(
             bundle?.getBoolean("reduceMotion", false) ?: false,
             bundle?.getBoolean("biomeriaTips", true) ?: true,
             bundle?.getBoolean("minecraftTutorial", false) ?: false,
-            CameraSpeed.fromPreference(bundle?.getString("cameraSpeed"))
+            CameraSpeed.fromPreference(bundle?.getString("cameraSpeed")),
+            InterfaceSize.fromPreference(bundle?.getString("interfaceSize")),
+            bundle?.getBoolean("panelTips", true) ?: true,
+            bundle?.getBoolean("showPadChip", true) ?: true,
+            TipCorner.fromPreference(bundle?.getString("tipCorner"))
         )
     }
 }
@@ -161,5 +177,23 @@ internal enum class CameraSpeed(val label: String, val factor: Double) {
 
     companion object {
         fun fromPreference(value: String?) = entries.firstOrNull { it.name == value } ?: MEDIUM
+    }
+}
+
+/** How big the whole lower screen is drawn; [scale] multiplies every dp and sp in it. */
+internal enum class InterfaceSize(val label: String, val scale: Float) {
+    TINY("Muy chica", .7f), SMALL("Chica", .85f), NORMAL("Normal", 1f);
+
+    companion object {
+        fun fromPreference(value: String?) = entries.firstOrNull { it.name == value } ?: SMALL
+    }
+}
+
+/** Corner of the top screen where Biomeria's tips show. */
+internal enum class TipCorner(val label: String) {
+    TOP_START("Arriba izquierda"), TOP_END("Arriba derecha"), BOTTOM_START("Abajo izquierda"), BOTTOM_END("Abajo derecha");
+
+    companion object {
+        fun fromPreference(value: String?) = entries.firstOrNull { it.name == value } ?: TOP_END
     }
 }

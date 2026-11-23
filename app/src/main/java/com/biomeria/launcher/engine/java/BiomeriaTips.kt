@@ -65,8 +65,8 @@ internal fun BiomeriaTipHost(enabled: Boolean, playing: Boolean, modifier: Modif
     AnimatedVisibility(current != null, modifier, enter = fadeIn() + slideInVertically { -it / 3 }, exit = fadeOut()) {
         val index = current ?: shown.coerceAtMost(biomeriaTips.lastIndex)
         val tip = biomeriaTips[index]
-        Column(Modifier.widthIn(max = 420.dp).background(Color(0xF00B0E11), RoundedCornerShape(6.dp))
-            .border(3.dp, Color(0xFF7BC74D), RoundedCornerShape(6.dp)).padding(horizontal = 16.dp, vertical = 12.dp),
+        Column(Modifier.widthIn(max = 340.dp).background(Color(0xF00B0E11), RoundedCornerShape(6.dp))
+            .border(3.dp, Color(0xFF7BC74D), RoundedCornerShape(6.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Box(Modifier.size(12.dp).background(Color(0xFF7BC74D)).border(2.dp, Color(0xFF0B0E11)))
@@ -74,7 +74,7 @@ internal fun BiomeriaTipHost(enabled: Boolean, playing: Boolean, modifier: Modif
                 Text("${index + 1} de ${biomeriaTips.size}", color = Color(0xFFB9C4CA), fontWeight = FontWeight.ExtraBold,
                     style = MaterialTheme.typography.labelSmall)
             }
-            Text(tip.title, color = Color(0xFFF2F5EF), fontFamily = PixelFont, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text(tip.title, color = Color(0xFFF2F5EF), fontFamily = PixelFont, fontSize = 17.sp, fontWeight = FontWeight.Bold)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 tip.parts.forEach { part ->
                     if (part.key) PadKey(part.text)

@@ -673,6 +673,8 @@ internal fun OptionsPage(
             Text(group.label, color = Color(0xFFF2F5EF), fontFamily = PixelFont, fontSize = 24.sp, fontWeight = FontWeight.Bold)
             when (group) {
                 OptionGroup.TEXT -> {
+                    ChoiceRow("Tamaño de la interfaz", "Achica o agranda todo este panel", InterfaceSize.entries, hud.interfaceSize,
+                        { it.label }) { onHud(hud.copy(interfaceSize = it)) }
                     ChoiceRow("Tamaño del texto", "Para los paneles de esta pantalla", PanelTextSize.entries, hud.textSize, { it.label }) {
                         onHud(hud.copy(textSize = it))
                     }
@@ -697,6 +699,11 @@ internal fun OptionsPage(
                     SwitchRow("Consejos de Biomeria", "Avisos con los botones de tu mando, solo la primera vez", hud.biomeriaTips) {
                         onHud(hud.copy(biomeriaTips = it))
                     }
+                    SwitchRow("Consejos de abajo", "La franja con consejos en esta pantalla", hud.panelTips) {
+                        onHud(hud.copy(panelTips = it))
+                    }
+                    ChoiceRow("Dónde salen los consejos", "Esquina de la pantalla de arriba", TipCorner.entries, hud.tipCorner,
+                        { it.label }) { onHud(hud.copy(tipCorner = it)) }
                     SwitchRow("Tutorial de Minecraft", "Los avisos de teclado. Cambia al volver a entrar al mundo", hud.minecraftTutorial) {
                         onHud(hud.copy(minecraftTutorial = it))
                     }
@@ -716,6 +723,9 @@ internal fun OptionsPage(
                     SwitchRow("Mesa de crafteo abajo", "Se abre en esta pantalla", hud.routeCrafting) { onHud(hud.copy(routeCrafting = it)) }
                     SwitchRow("Cofres, tolvas y dispensadores abajo", "Se abren en esta pantalla", hud.routeChests) { onHud(hud.copy(routeChests = it)) }
                     SwitchRow("Hornos abajo", "Se abren en esta pantalla", hud.routeFurnaces) { onHud(hud.copy(routeFurnaces = it)) }
+                    SwitchRow("Indicador del mando", "El botón \"Juego · Select\" de arriba", hud.showPadChip) {
+                        onHud(hud.copy(showPadChip = it))
+                    }
                     SwitchRow("Indicadores en esta pantalla", "FPS y coordenadas aquí en vez de arriba", hud.widgetsBelow) {
                         onHud(hud.copy(widgetsBelow = it))
                     }
