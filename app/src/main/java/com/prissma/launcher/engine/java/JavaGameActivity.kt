@@ -628,6 +628,8 @@ private fun JavaNativeViewportScreen(
                 FpsCounter(fps, Modifier.align(Alignment.TopStart).windowInsetsPadding(WindowInsets.displayCutout)
                     .padding(start = 6.dp, top = 4.dp))
             }
+            AchievementHost(panelBridge, hud.achievements,
+                remember(activity) { activity.intent.getStringExtra("INSTANCE_ID") ?: instanceTitle })
             if (!hud.widgetsBelow || !activity.lowerPanelVisible) {
                 GameWidgets(hud, fps, panelBridge,
                     Modifier.align(Alignment.TopStart).windowInsetsPadding(WindowInsets.displayCutout)

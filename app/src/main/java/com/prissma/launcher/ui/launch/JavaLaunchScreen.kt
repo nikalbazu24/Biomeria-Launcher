@@ -155,7 +155,8 @@ fun JavaLaunchScreen(
             settings.getFloat("widget-opacity-" + instance.id, .65f).coerceIn(.25f, 1f),
             normalizeFpsLimit(settings.getInt("fps-limit-" + instance.id, 0)),
             settings.getBoolean("battery-saver-" + instance.id, false),
-            settings.getBoolean("map-entities-" + instance.id, true)))
+            settings.getBoolean("map-entities-" + instance.id, true),
+            com.prissma.launcher.engine.java.AchievementStyle.fromPreference(settings.getString("achievements-" + instance.id, null))))
     }
     val supported = supportsJavaLoader(instance.version, instance.loader)
 
@@ -179,7 +180,8 @@ fun JavaLaunchScreen(
             .putFloat("widget-opacity-" + instance.id, updated.widgetOpacity)
             .putInt("fps-limit-" + instance.id, updated.fpsLimit)
             .putBoolean("battery-saver-" + instance.id, updated.batterySaver)
-            .putBoolean("map-entities-" + instance.id, updated.showEntities).apply()
+            .putBoolean("map-entities-" + instance.id, updated.showEntities)
+            .putString("achievements-" + instance.id, updated.achievements.name).apply()
     }
     var crash by remember { mutableStateOf<CrashReading?>(null) }
     var crashLog by remember { mutableStateOf("") }
@@ -241,6 +243,7 @@ fun JavaLaunchScreen(
                 )
                 gameActivity.launch(Intent(context, JavaGameActivity::class.java).apply {
                     putExtra("INSTANCE_TITLE", instance.title)
+                    putExtra("INSTANCE_ID", instance.id)
                     putExtra("RESOLVED_VERSION", instance.version)
                     putExtra("MAIN_CLASS", ready.mainClass)
                     putExtra("GAME_DIR_PATH", gameDir.absolutePath)

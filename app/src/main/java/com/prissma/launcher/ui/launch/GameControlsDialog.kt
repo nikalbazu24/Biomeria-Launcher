@@ -121,6 +121,13 @@ internal fun GameHudControls(settings: GameHudSettings, onChange: (GameHudSettin
             onChange(settings.copy(showEntities = it))
         }
         PanelSwitch("Coordenadas (Fabric 1.21.4)", settings.showCoordinates) { onChange(settings.copy(showCoordinates = it)) }
+        Text("Logros (Fabric 1.21.4)", style = MaterialTheme.typography.labelMedium)
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            com.prissma.launcher.engine.java.AchievementStyle.entries.forEach { style ->
+                FilterChip(settings.achievements == style, { onChange(settings.copy(achievements = style)) },
+                    label = { Text(style.label) })
+            }
+        }
         PanelSwitch("Nivel de batería", settings.showBattery) { onChange(settings.copy(showBattery = it)) }
         if (settings.dualScreen) {
             PanelSwitch("Indicadores en la pantalla inferior", settings.widgetsBelow) { onChange(settings.copy(widgetsBelow = it)) }

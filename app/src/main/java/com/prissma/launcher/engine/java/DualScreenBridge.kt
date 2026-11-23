@@ -160,6 +160,9 @@ internal class DualScreenBridge(val directory: File, val terrainDirectory: File?
 
     fun viewRecipes(generation: Long?) = setGenerationMarker("recipes-open", generation)
 
+    /** Asks the mod to hand advancements to Biomeria instead of showing Minecraft's toast. */
+    fun celebrateAchievements(enabled: Boolean) = setGenerationMarker("achievements-enabled", if (enabled) 1L else null)
+
     fun collectEntities(enabled: Boolean) = setGenerationMarker("entities-enabled", if (enabled) 1L else null)
 
     fun collectTerrain(tiles: Boolean, position: Boolean) {

@@ -47,7 +47,9 @@ internal data class GameHudSettings(
     val fpsLimit: Int = 0,
     val batterySaver: Boolean = false,
     /** Creatures on the Biomeria map. Only singleplayer and this device's LAN room send them. */
-    val showEntities: Boolean = true
+    val showEntities: Boolean = true,
+    /** How unlocked advancements are announced on the top screen. */
+    val achievements: AchievementStyle = AchievementStyle.FULL
 ) {
     fun routes(layout: PanelLayout) = when (layout) {
         PanelLayout.PERSONAL -> false
@@ -76,6 +78,7 @@ internal data class GameHudSettings(
         putInt("fpsLimit", fpsLimit)
         putBoolean("batterySaver", batterySaver)
         putBoolean("entities", showEntities)
+        putString("achievements", achievements.name)
     }
 
     companion object {
@@ -98,7 +101,16 @@ internal data class GameHudSettings(
             bundle?.getFloat("widgetOpacity", .65f)?.coerceIn(.25f, 1f) ?: .65f,
             normalizeFpsLimit(bundle?.getInt("fpsLimit") ?: 0),
             bundle?.getBoolean("batterySaver", false) ?: false,
-            bundle?.getBoolean("entities", true) ?: true
+            bundle?.getBoolean("entities", true) ?: true,
+            AchievementStyle.fromPreference(bundle?.getString("achievements"))
         )
+    }
+}
+
+internal enum class AchievementStyle(val label: String) {
+    FULL("Animación de Biomeria"), SMALL("Solo aviso chico"), VANILLA("El aviso de Minecraft");
+
+    companion object {
+        fun fromPreference(value: String?) = entries.firstOrNull { it.name == value } ?: FULL
     }
 }
