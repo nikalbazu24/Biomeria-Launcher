@@ -106,7 +106,7 @@ internal fun BiomeriaPauseMenu(
             }
             Spacer(Modifier.height(2.dp))
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                PauseButton("▶  Volver al juego", BlockButtons.primary, Modifier.focusRequester(focus), actions.resume)
+                PauseButton("▶  Volver al juego", BlockButtons.primary, Modifier.focusRequester(focus), onClick = actions.resume)
                 PauseButton("⚙  Opciones", block(0xFF4FB3D9, 0xFF2E86B5, 0xFF08202B), onClick = actions.options)
                 PauseButton("★  Logros", block(0xFFF5E663, 0xFFC9B93A, 0xFF2A2508), onClick = actions.advancements)
                 PauseButton("⇄  Jugar con amigos", block(0xFFB48CE0, 0xFF7E5BAE, 0xFF1C1028), onClick = actions.share)
