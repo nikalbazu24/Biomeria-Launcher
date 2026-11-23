@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -84,23 +86,20 @@ internal fun CharacterCard(
     modifier: Modifier = Modifier
 ) {
     val look = rememberCharacterLook()
-    var back by remember { mutableStateOf(false) }
+    // Small here; tapping the figure opens it in its own window to look at and customise.
     Row(
         modifier.background(Prissma.colors.ink, RoundedCornerShapeSmall)
-            .border(2.dp, Color(0xFF232B33), RoundedCornerShapeSmall).padding(10.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+            .border(2.dp, Color(0xFF232B33), RoundedCornerShapeSmall).padding(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp), content = armor)
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            CharacterFigure(look, bridge, back, 168.dp)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                LauncherButton(if (back) "Ver de frente" else "Ver de espalda", { back = !back })
-                BlockButton(onCustomize, colors = BlockButtons.ocean) {
-                    Text("Personalizar", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
-                }
-            }
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp), content = armor)
+        Column(Modifier.clip(RoundedCornerShapeSmall).clickable(onClickLabel = "Personalizar personaje", onClick = onCustomize)
+            .background(Color(0xFF161B21)).padding(horizontal = 6.dp, vertical = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally) {
+            CharacterFigure(look, bridge, false, 92.dp)
+            Text("Tocar para ver", color = Prissma.colors.textMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
-        Box(Modifier.align(Alignment.Bottom)) { offHand() }
+        offHand()
     }
 }
 

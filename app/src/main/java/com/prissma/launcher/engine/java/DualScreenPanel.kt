@@ -23,6 +23,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.blur
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
@@ -363,36 +364,43 @@ private fun DualScreenPanel(
     var rootOrigin by remember { mutableStateOf(Offset.Zero) }
     CompositionLocalProvider(LocalSlotDrag provides dragState) {
     Box(Modifier.fillMaxSize().onGloballyPositioned { rootOrigin = it.positionInRoot() }) {
-    Column(Modifier.fillMaxSize().background(Prissma.colors.surfaceVoid).safeDrawingPadding()) {
+    Column(Modifier.fillMaxSize().background(Prissma.colors.surfaceVoid).safeDrawingPadding()
+        .then(if (customizing) Modifier.blur(14.dp) else Modifier)) {
         Column(
             Modifier.fillMaxWidth().background(Prissma.colors.ink)
                 .drawBehind { drawRect(Prissma.colors.surfaceElevated, Offset(0f, size.height - 3.dp.toPx()), Size(size.width, 3.dp.toPx())) }
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+                .padding(horizontal = 8.dp, vertical = 5.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                PanelKeyChip("LB")
-                PanelPage.entries.filter { it != PanelPage.STORAGE || menuPage == PanelPage.STORAGE }.forEach { tab ->
-                    BlockButton({ page = tab; click = PanelCommand.PICK }, Modifier.heightIn(min = 52.dp),
-                        if (page == tab) BlockButtons.primary else BlockButtons.neutral,
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
-                        Text(if (tab == PanelPage.STORAGE) live?.menuTitle?.takeIf { it.isNotBlank() } ?: tab.label else tab.label,
-                            style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+            // One slim row: tabs on the left; coordinates and who the controller drives on the right.
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    PanelKeyChip("LB")
+                    PanelPage.entries.filter { it != PanelPage.STORAGE || menuPage == PanelPage.STORAGE }.forEach { tab ->
+                        BlockButton({ page = tab; click = PanelCommand.PICK }, Modifier.heightIn(min = 34.dp),
+                            if (page == tab) BlockButtons.primary else BlockButtons.neutral,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
+                            Text(if (tab == PanelPage.STORAGE) live?.menuTitle?.takeIf { it.isNotBlank() } ?: tab.label else tab.label,
+                                style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                        }
                     }
+                    PanelKeyChip("RB")
                 }
-                PanelKeyChip("RB")
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(title, Modifier.weight(1f), color = Prissma.colors.textMuted, style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (hud.widgetsBelow) GameWidgets(hud, fps, bridge)
-                else if (live != null) Text("X ${live.x}  Y ${live.y}  Z ${live.z}", color = Prissma.colors.textPrimary,
-                    fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelLarge)
+                else if (live != null) Text("${live.x} ${live.y} ${live.z}", color = Prissma.colors.textMuted,
+                    fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                ControllerChip(controllerActive) { activity.releaseLowerGamepad() }
+            }
+            if (controllerActive && hints.isNotEmpty()) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    hints.forEach { (key, label) -> PanelHint(key, label) }
+                }
             }
         }
         Column(
-            Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+            Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
         if (editingSearch && searchable) {
@@ -403,12 +411,6 @@ private fun DualScreenPanel(
         if (showingMap && bridge != null) {
             TerrainMapPane(bridge, Modifier.weight(1f).fillMaxWidth(), controllerActive = controllerActive,
                 onPadInput = { mapPadInput = it })
-            return@Column
-        }
-        if (customizing && bridge != null) {
-            CharacterEditor(bridge, onUpload = { activity.pickSkinImage() }, onDone = { customizing = false },
-                modifier = Modifier.weight(1f).fillMaxWidth(), controllerActive = controllerActive,
-                onPadInput = { characterPadInput = it })
             return@Column
         }
         if (showingRecipes && bridge != null && live != null) {
@@ -503,8 +505,8 @@ private fun DualScreenPanel(
                         }
                     } else if (page == PanelPage.INVENTORY && live.layout == PanelLayout.PERSONAL && matchingSlots == null) {
                         CharacterCard(bridge, armor = {
-                            for (slot in 5..8) SlotRow(listOf(slot), live, interactive, compact = true, padFocus = padFocus,
-                                onSlot = sendSlot)
+                            SlotRow(listOf(5, 6), live, interactive, compact = true, padFocus = padFocus, onSlot = sendSlot)
+                            SlotRow(listOf(7, 8), live, interactive, compact = true, padFocus = padFocus, onSlot = sendSlot)
                         }, offHand = {
                             SlotRow(listOf(45), live, interactive, compact = true, padFocus = padFocus, onSlot = sendSlot)
                         }, onCustomize = { customizing = true })
@@ -543,7 +545,21 @@ private fun DualScreenPanel(
             }
         }
         }
-        PanelFooter(hints, controllerActive) { activity.releaseLowerGamepad() }
+    }
+    // The character in its own window, over the blurred panel.
+    if (customizing && bridge != null) {
+        Box(Modifier.fillMaxSize().background(Color(0x99000000))
+            .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                indication = null) { customizing = false }
+            .safeDrawingPadding().padding(14.dp), contentAlignment = Alignment.Center) {
+            CharacterEditor(bridge, onUpload = { activity.pickSkinImage() }, onDone = { customizing = false },
+                modifier = Modifier.fillMaxSize().background(Prissma.colors.surfaceCard, RoundedCornerShape(8.dp))
+                    .border(3.dp, Prissma.colors.borderSubtle, RoundedCornerShape(8.dp))
+                    .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null) {}
+                    .padding(14.dp),
+                controllerActive = controllerActive, onPadInput = { characterPadInput = it })
+        }
     }
     // The stack follows the finger while it is being dragged.
     val finger = dragState.finger
@@ -564,14 +580,27 @@ private fun DualScreenPanel(
 /** Small key label for the shoulder buttons on either side of the tabs. */
 @Composable
 private fun PanelKeyChip(key: String) {
-    Text(key, Modifier.background(Prissma.colors.borderSubtle, RoundedCornerShape(4.dp)).padding(horizontal = 8.dp, vertical = 5.dp),
-        color = Prissma.colors.textPrimary, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+    Text(key, Modifier.background(Prissma.colors.borderSubtle, RoundedCornerShape(3.dp)).padding(horizontal = 5.dp, vertical = 3.dp),
+        color = Prissma.colors.textPrimary, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelSmall)
 }
 
 /**
- * Bottom bar: which screen the controller drives and what each button does right now.
- * Touch can hand the controller back to the game; taking it here is done by holding Select.
+ * Small chip showing which screen the controller drives. Tapping it while the panel has the
+ * controller hands it back to the game; holding Select takes it here.
  */
+@Composable
+private fun ControllerChip(active: Boolean, onRelease: () -> Unit) {
+    val palette = Prissma.colors
+    Text(if (active) "🎮 Panel" else "🎮 Juego · Select",
+        Modifier.background(if (active) palette.gold else palette.surfaceElevated, RoundedCornerShape(4.dp))
+            .clickable(enabled = active, onClick = onRelease)
+            .semantics { contentDescription = if (active) "El mando controla este panel. Toca para devolverlo al juego"
+                else "El mando controla el juego. Mantén Select para usarlo aquí" }
+            .padding(horizontal = 8.dp, vertical = 5.dp),
+        color = if (active) palette.ink else palette.textPrimary, fontWeight = FontWeight.ExtraBold,
+        style = MaterialTheme.typography.labelMedium, maxLines = 1)
+}
+
 @Composable
 private fun PanelFooter(hints: List<Pair<String, String>>, controllerActive: Boolean, onRelease: () -> Unit) {
     val palette = Prissma.colors
@@ -608,11 +637,11 @@ private fun PanelHint(key: String, label: String) {
         else -> Color(0xFF34404A) to Color(0xFFF2F5EF)
     }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Box(Modifier.heightIn(min = 26.dp).widthIn(min = 26.dp).background(back, RoundedCornerShape(13.dp)).padding(horizontal = 6.dp),
+        Box(Modifier.heightIn(min = 20.dp).widthIn(min = 20.dp).background(back, RoundedCornerShape(10.dp)).padding(horizontal = 5.dp),
             contentAlignment = Alignment.Center) {
-            Text(key, color = front, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelMedium)
+            Text(key, color = front, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelSmall)
         }
-        Text(label, color = Prissma.colors.textPrimary, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge,
+        Text(label, color = Prissma.colors.textPrimary, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium,
             maxLines = 1)
     }
 }
@@ -718,9 +747,9 @@ private fun SlotRow(
                 }
                 Box(
                     (if (fit) Modifier.weight(1f) else Modifier.width(when {
-                        live == null -> 52.dp
-                        compact -> 56.dp
-                        else -> 70.dp
+                        live == null -> 48.dp
+                        compact -> 46.dp
+                        else -> 58.dp
                     }))
                         .aspectRatio(1f)
                         .bringIntoViewRequester(bringIntoView)

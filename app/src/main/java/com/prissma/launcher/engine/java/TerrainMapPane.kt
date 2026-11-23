@@ -5,6 +5,14 @@ import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.os.SystemClock
 import androidx.compose.foundation.Canvas
+import com.prissma.launcher.ui.theme.Prissma
+import com.prissma.launcher.ui.components.BlockButtons
+import com.prissma.launcher.ui.components.BlockButton
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -173,9 +181,13 @@ private fun TerrainView(
     val names = rememberTextMeasurer()
     val nameStyle = MaterialTheme.typography.labelSmall.copy(color = Color.White)
     val shape = RoundedCornerShape(if (compact) 12.dp else 16.dp)
-    val frame = modifier.clip(shape).background(Color(0xff101c23)).border(1.dp, Color(0xff506372), shape)
     val liveCamera by rememberUpdatedState(camera)
-    Box(frame) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val sidePanel = !compact && !expanded && !managingWaypoints
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    Box(if (sidePanel) Modifier.fillMaxHeight().aspectRatio(1f, matchHeightConstraintsFirst = true).clip(shape)
+            .background(Color(0xff101c23)).border(3.dp, Color(0xff0b0e11), shape)
+        else Modifier.weight(1f).fillMaxHeight().clip(shape).background(Color(0xff101c23)).border(3.dp, Color(0xff0b0e11), shape)) {
         if (managingWaypoints) {
             TerrainWaypointPane(waypoints, player, TerrainWaypoint(
                 floor(camera.x).toInt(), floor(player.y).toInt(), floor(camera.z).toInt(), "Marca ${waypoints.points.size + 1}"
@@ -288,23 +300,77 @@ private fun TerrainView(
                 MapLabel("${active.distanceFrom(player)} bloques")
             }
         }
+        if (!compact) MapLabel("X ${floor(player.x).toInt()}   Y ${floor(player.y).toInt()}   Z ${floor(player.z).toInt()}",
+            Modifier.align(Alignment.BottomStart).padding(8.dp))
         if (active != null && compact) {
             MapLabel("${active.distanceFrom(player)} b", Modifier.align(Alignment.BottomStart).padding(5.dp))
         }
-        if (!compact) {
+        if (!compact && expanded) {
+            // Enlarged: the map takes the whole panel; small controls float over it.
             Row(Modifier.align(Alignment.TopEnd).padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                FilledTonalButton(onClick = { view = camera.zoom(1.25f) }, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("−") }
-                FilledTonalButton(onClick = { view = camera.zoom(.8f) }, contentPadding = PaddingValues(horizontal = 10.dp)) { Text("+") }
-                FilledTonalButton(onClick = { view = camera.copy(follow = true) }) { Text("Centrar") }
-            }
-            MapLabel("X ${floor(player.x).toInt()}   Y ${floor(player.y).toInt()}   Z ${floor(player.z).toInt()}",
-                Modifier.align(Alignment.BottomStart).padding(8.dp))
-            Row(Modifier.align(Alignment.BottomEnd).padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                FilledTonalButton(onClick = { openWaypoints(true) }, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("+ Marca") }
-                FilledTonalButton(onClick = { openWaypoints(false) },
-                    contentPadding = PaddingValues(horizontal = 8.dp)) { Text("Marcas ${waypoints.points.size}") }
+                MapBlock("−", "Alejar") { view = camera.zoom(1.25f) }
+                MapBlock("+", "Acercar") { view = camera.zoom(.8f) }
+                MapBlock("⤡", "Reducir mapa") { expanded = false }
             }
         }
+    }
+    if (sidePanel) {
+        Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                MapBlock("−", "Alejar", Modifier.weight(1f)) { view = camera.zoom(1.25f) }
+                MapBlock("+", "Acercar", Modifier.weight(1f)) { view = camera.zoom(.8f) }
+                MapBlock("Centrar", "Centrar en ti", Modifier.weight(2f)) { view = camera.copy(follow = true) }
+            }
+            MapBlock("⤢ Ampliar mapa", "Ampliar el mapa a todo el panel", Modifier.fillMaxWidth()) { expanded = true }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Marcas · ${waypoints.points.size}/$WAYPOINT_LIMIT", Modifier.weight(1f), fontWeight = FontWeight.ExtraBold,
+                    style = MaterialTheme.typography.titleSmall)
+                BlockButton({ openWaypoints(true) }, colors = BlockButtons.primary,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
+                    Text("+ Nueva", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+                }
+            }
+            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (waypoints.points.isEmpty()) item {
+                    Text("Sin marcas todavía. Crea una donde estás para volver después.", color = Prissma.colors.textMuted,
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                items(waypoints.points, key = { it.id }) { point ->
+                    val on = point.id == waypoints.activeId
+                    Row(Modifier.fillMaxWidth().background(if (on) Color(0xFF1E252C) else Color(0xFF161B21), RoundedCornerShape(5.dp))
+                        .border(2.dp, if (on) Prissma.colors.gold else Color(0xFF232B33), RoundedCornerShape(5.dp))
+                        .clickable { view = camera.copy(x = point.x.toDouble(), z = point.z.toDouble(), follow = false) }
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Canvas(Modifier.size(22.dp)) { drawWaypoint(point, center, 5.dp.toPx(), on) }
+                        Column(Modifier.weight(1f)) {
+                            Text(point.name, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.labelLarge)
+                            Text("X ${point.x} · Z ${point.z} · ${point.distanceFrom(player)} b", color = Prissma.colors.textMuted,
+                                style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                        }
+                        BlockButton({ saveBook(waypoints.follow(if (on) null else point.id)) },
+                            colors = if (on) BlockButtons.gold else BlockButtons.neutral,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
+                            Text(if (on) "Dejar" else "Seguir", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
+            }
+            if (waypoints.points.isNotEmpty()) MapBlock("Editar marcas", "Editar o borrar marcas", Modifier.fillMaxWidth()) {
+                openWaypoints(false)
+            }
+        }
+    }
+    }
+}
+
+@Composable
+private fun MapBlock(label: String, description: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    BlockButton(onClick, modifier.semantics { contentDescription = description }, BlockButtons.neutral,
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
+        Text(label, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge, maxLines = 1,
+            modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }
 

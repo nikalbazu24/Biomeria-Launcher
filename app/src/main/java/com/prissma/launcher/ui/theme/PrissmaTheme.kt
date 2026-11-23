@@ -72,7 +72,27 @@ private val scheme = Prissma.colors.run {
         primaryContainer = surfaceElevated,
         onPrimaryContainer = textPrimary,
         secondary = netP2P,
+        onSecondary = ink,
+        // Without these Material falls back to its purple baseline (tonal buttons, chips, cards).
+        secondaryContainer = surfaceElevated,
+        onSecondaryContainer = textPrimary,
         tertiary = gold,
+        onTertiary = ink,
+        tertiaryContainer = surfaceElevated,
+        onTertiaryContainer = gold,
+        surfaceVariant = surfaceElevated,
+        surfaceTint = brandAccent,
+        surfaceContainerLowest = ink,
+        surfaceContainerLow = surfaceVoid,
+        surfaceDim = surfaceVoid,
+        surfaceBright = surfaceElevated,
+        inverseSurface = textPrimary,
+        inverseOnSurface = ink,
+        inversePrimary = brandAccentDark,
+        scrim = Color(0xCC000000),
+        onError = ink,
+        errorContainer = Color(0xFF3A1C17),
+        onErrorContainer = error,
         background = surfaceVoid,
         surface = surfaceCard,
         surfaceContainer = surfaceCard,
@@ -110,5 +130,10 @@ private val shapes = Shapes(
 
 @Composable
 fun PrissmaTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = scheme, typography = typography, shapes = shapes, content = content)
+    MaterialTheme(colorScheme = scheme, typography = typography, shapes = shapes) {
+        // Text outside a Surface would otherwise be black on Biomeria's dark backgrounds.
+        androidx.compose.runtime.CompositionLocalProvider(
+            androidx.compose.material3.LocalContentColor provides Prissma.colors.textPrimary, content = content
+        )
+    }
 }
