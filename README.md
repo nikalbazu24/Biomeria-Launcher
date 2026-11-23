@@ -46,7 +46,7 @@ Las capturas que sacas en Minecraft (tecla F2) aparecen dentro de la app, juntas
 Una pantalla dentro de la app que explica qué hace cada botón del mando (en el juego, pantalla de abajo, mapa grande y launcher) y cómo se usa cada parte de Biomeria.
 
 ### Cuentas
-Sin conexión, Microsoft o Ely.by. Guías: [Microsoft](docs/cuentas-microsoft-java.md) · [Ely.by](docs/cuentas-ely-by.md).
+No premium, Microsoft o Ely.by. Guías: [Microsoft](docs/cuentas-microsoft-java.md) · [Ely.by](docs/cuentas-ely-by.md).
 
 ### Integración con frontends
 Biomeria se puede abrir y consultar desde frontends como **Cocoon, iiSU y Díptico**: catálogo de mundos, estadísticas y lanzamiento por enlace. Detalles en [docs/frontends.md](docs/frontends.md).
