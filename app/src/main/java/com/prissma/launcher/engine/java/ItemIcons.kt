@@ -46,6 +46,10 @@ internal class ItemIcons(private val archives: List<File>) {
         return result
     }
 
+    /** Raw bytes of a file in the game's assets, such as the default player skin. */
+    @Synchronized
+    fun resource(namespace: String, path: String): ByteArray? = runCatching { read(namespace, path) }.getOrNull()
+
     /** A mob's face cut from the game's own entity texture, for the map. Null for unknown mobs. */
     @Synchronized
     fun face(entityId: String): Bitmap? {

@@ -195,6 +195,8 @@ private fun DualScreenPanel(
         hud.routes(it.layout)
     }?.generation
     var showRecipes by remember(menuSession) { mutableStateOf(false) }
+    var customizing by remember { mutableStateOf(false) }
+    var characterPadInput by remember { mutableStateOf<((PanelPadAction) -> Unit)?>(null) }
     var recipePadInput by remember(menuSession) { mutableStateOf<((PanelPadAction) -> Unit)?>(null) }
     LaunchedEffect(menuSession, menuPage) {
         if (menuSession != null && menuPage != null) {
@@ -231,9 +233,9 @@ private fun DualScreenPanel(
     var searchKey by remember(live?.generation, page) { mutableStateOf(PanelPadSlot(0)) }
     val canShowRecipes = table && routed != null && live?.recipeBookAvailable == true
     val showingRecipes = showRecipes && canShowRecipes
-    val unfilteredRows = remember(bridge, live?.layout, page, showingRecipes) {
+    val unfilteredRows = remember(bridge, live?.layout, page, showingRecipes, customizing) {
         when {
-            showingRecipes || (bridge != null && live == null) -> emptyList()
+            showingRecipes || customizing || (bridge != null && live == null) -> emptyList()
             else -> panelPadRows(live?.layout, page)
         }
     }
@@ -267,6 +269,9 @@ private fun DualScreenPanel(
             showingMap && page == actionPage && mapPadInput?.managingWaypoints?.invoke() == true ->
                 mapPadInput?.action?.invoke(action)
             canShowRecipes && showRecipes -> recipePadInput?.invoke(action)
+            customizing -> characterPadInput?.invoke(action)
+            action == PanelPadAction.MARK && page == PanelPage.INVENTORY && live?.layout == PanelLayout.PERSONAL &&
+                bridge != null -> customizing = true
             editingSearch && searchable && page == actionPage -> when {
                 action == PanelPadAction.BACK || action == PanelPadAction.SEARCH -> editingSearch = false
                 action == PanelPadAction.PICK -> applySearchKey(searchKey.number)
@@ -323,10 +328,13 @@ private fun DualScreenPanel(
     val hints: List<Pair<String, String>> = when {
         !controllerActive -> emptyList()
         showingRecipes -> listOf("↕" to "Recorrer", "A" to "Elegir", "B" to "Atrás")
+        customizing -> listOf("✛" to "Recorrer", "A" to "Elegir", "B" to "Listo")
         editingSearch && searchable -> listOf("✛" to "Teclado", "A" to "Elegir", "B" to "Aplicar")
         showingMap -> listOf("R" to "Mover", "X" to "Alejar", "Y" to "Acercar", "A" to "Centrar", "R3" to "Nueva marca", "Start" to "Marcas")
         matchingSlots != null -> listOf("✛" to "Coincidencias", "A" to "Tomar o colocar", "B" to "Limpiar")
-        searchable -> listOf("A" to "Tomar o colocar", "X" to "Dividir", "Y" to "Mover rápido", "Start" to "Buscar", "B" to "Devolver mando")
+        searchable -> listOfNotNull("A" to "Tomar o colocar", "X" to "Dividir", "Y" to "Mover rápido", "Start" to "Buscar",
+            ("R3" to "Personaje").takeIf { page == PanelPage.INVENTORY && live?.layout == PanelLayout.PERSONAL },
+            "B" to "Devolver mando")
         padFocus != null && !padFocus.selectsHotbar -> listOf("A" to "Tomar o colocar", "X" to "Dividir", "Y" to "Mover rápido", "B" to "Volver")
         padFocus?.selectsHotbar == true -> listOf("A" to "Llevar en la mano", "B" to "Volver")
         else -> listOf("LB/RB" to "Pestañas", "B" to "Devolver mando")
@@ -371,6 +379,12 @@ private fun DualScreenPanel(
         if (showingMap && bridge != null) {
             TerrainMapPane(bridge, Modifier.weight(1f).fillMaxWidth(), controllerActive = controllerActive,
                 onPadInput = { mapPadInput = it })
+            return@Column
+        }
+        if (customizing && bridge != null) {
+            CharacterEditor(bridge, onUpload = { activity.pickSkinImage() }, onDone = { customizing = false },
+                modifier = Modifier.weight(1f).fillMaxWidth(), controllerActive = controllerActive,
+                onPadInput = { characterPadInput = it })
             return@Column
         }
         if (showingRecipes && bridge != null && live != null) {
@@ -463,6 +477,13 @@ private fun DualScreenPanel(
                             SlotRow(listOf(0), live, interactive, "Resultado", compact = hud.compactPanel,
                                 padFocus = padFocus, onSlot = sendSlot)
                         }
+                    } else if (page == PanelPage.INVENTORY && live.layout == PanelLayout.PERSONAL && matchingSlots == null) {
+                        CharacterCard(bridge, armor = {
+                            for (slot in 5..8) SlotRow(listOf(slot), live, interactive, compact = true, padFocus = padFocus,
+                                onSlot = sendSlot)
+                        }, offHand = {
+                            SlotRow(listOf(45), live, interactive, compact = true, padFocus = padFocus, onSlot = sendSlot)
+                        }, onCustomize = { customizing = true })
                     } else {
                         SlotRow(listOf(5, 6, 7, 8, 45), live, interactive, "Armadura y mano secundaria",
                             compact = hud.compactPanel, padFocus = padFocus, matchingSlots = matchingSlots, onSlot = sendSlot)

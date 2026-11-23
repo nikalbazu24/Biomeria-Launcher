@@ -17,7 +17,7 @@ import java.util.stream.Stream;
 public final class GamePanelBridge {
     private static final int MAGIC = 0x50525336;
     private static final int MAP_PIXELS = 128 * 128;
-    private static final String SESSION = System.getProperty("prissma.dualscreen.session", "");
+    static final String SESSION = System.getProperty("prissma.dualscreen.session", "");
     private static final String TERRAIN = System.getProperty("prissma.map.directory", "");
     private static final int SNAPSHOT_TICKS = 4;
     private static final long MENU_OPEN_GRACE_NS = 550_000_000L;
@@ -59,6 +59,7 @@ public final class GamePanelBridge {
     public static void tick(Object client) {
         if (SESSION.isEmpty()) return;
         checkQuit(client);
+        PlayerSkin.tick(client, Path.of(SESSION));
         if (disabled || ++ticks % 2 != 0) return;
         Path root = Path.of(SESSION);
         Path lanRequest = root.resolve("lan-open");

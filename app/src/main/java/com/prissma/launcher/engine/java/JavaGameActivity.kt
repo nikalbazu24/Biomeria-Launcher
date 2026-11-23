@@ -59,6 +59,7 @@ import com.prissma.launcher.data.accounts.AccountError
 import com.prissma.launcher.data.accounts.JavaAccountMode
 import com.prissma.launcher.data.accounts.MinecraftAccounts
 import kotlinx.coroutines.delay
+import androidx.activity.result.contract.ActivityResultContracts
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -71,6 +72,21 @@ internal const val ELY_PROFILE_ID = "ELY_PROFILE_ID"
 class JavaGameActivity : ComponentActivity() {
     private lateinit var gameInput: GameInput
     private var controlsActive = false
+    private val skinPicker = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) Thread {
+            CharacterLooks.importMessage.value = CharacterLooks.importSkin(applicationContext, uri)
+        }.start()
+    }
+
+    /** Opens the system picker for a skin image; the editor shows the result. */
+    internal fun pickSkinImage() {
+        CharacterLooks.importMessage.value = null
+        try {
+            skinPicker.launch("image/png")
+        } catch (error: android.content.ActivityNotFoundException) {
+            CharacterLooks.importMessage.value = "No hay una app para elegir imágenes en este equipo."
+        }
+    }
     private var togglePanel: (() -> Unit)? = null
     private var toggleQuickMenu: (() -> Unit)? = null
     private var dualScreenBridge: DualScreenBridge? = null
@@ -190,6 +206,7 @@ class JavaGameActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CharacterLooks.load(applicationContext)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         enableImmersiveMode()
 
@@ -423,6 +440,12 @@ private fun JavaNativeViewportScreen(
     val canSendInput = jvmStarted && !showOverlay && !showKeyboard && !showQuickMenu && !showHudDialog &&
         !showLanDialog && !showInternetDialog && !mapExpanded
     val collectTerrain = hud.showMinimap || (hud.dualScreen && hud.panelMap == PanelMapSource.PRISSMA)
+    val characterLook by CharacterLooks.look.collectAsState()
+    val customSkin by CharacterLooks.customRevision.collectAsState()
+    LaunchedEffect(panelBridge, characterLook, customSkin) {
+        val bridge = panelBridge ?: return@LaunchedEffect
+        withContext(Dispatchers.IO) { runCatching { CharacterLooks.send(activity.applicationContext, bridge, characterLook) } }
+    }
     LaunchedEffect(panelBridge, collectTerrain, hud.showCoordinates, hud.showEntities) {
         withContext(Dispatchers.IO) {
             panelBridge?.collectTerrain(collectTerrain, hud.showCoordinates)
@@ -637,6 +660,7 @@ private fun JavaNativeViewportScreen(
                 renderer = renderer,
                 canOpenInventory = captured,
                 hasPanel = panelBridge != null,
+                bridge = panelBridge,
                 actions = GameMenuActions(
                     resume = { showOverlay = false },
                     inventory = { showOverlay = false; pendingGameKey = 69 },

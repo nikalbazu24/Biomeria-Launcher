@@ -69,13 +69,15 @@ import kotlinx.coroutines.launch
 
 internal enum class GameMenuTab(val label: String, val color: Color) {
     GAME("Partida", Color(0xFF7BC74D)),
+    CHARACTER("Personaje", Color(0xFFE0B48C)),
     PERFORMANCE("Rendimiento", Color(0xFFF5E663)),
     HUD("Controles y HUD", Color(0xFF4FB3D9)),
     LOG("Registro", Color(0xFFF07D4A)),
     EXIT("Salir del mundo", Color(0xFFFF8A6B))
 }
 
-private val browsableTabs = listOf(GameMenuTab.GAME, GameMenuTab.PERFORMANCE, GameMenuTab.HUD, GameMenuTab.LOG)
+private fun browsableTabs(hasPanel: Boolean) = listOfNotNull(GameMenuTab.GAME, GameMenuTab.CHARACTER.takeIf { hasPanel },
+    GameMenuTab.PERFORMANCE, GameMenuTab.HUD, GameMenuTab.LOG)
 
 /** What the game menu can do; the activity owns the game, the menu only asks for actions. */
 internal class GameMenuActions(
@@ -112,9 +114,11 @@ internal fun BiomeriaGameMenu(
     canOpenInventory: Boolean,
     hasPanel: Boolean,
     actions: GameMenuActions,
-    saving: Boolean = false
+    saving: Boolean = false,
+    bridge: DualScreenBridge? = null
 ) {
     val palette = Prissma.colors
+    val browsableTabs = browsableTabs(hasPanel)
     val resumeFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { resumeFocus.requestFocus() } }
     Row(
@@ -175,9 +179,16 @@ internal fun BiomeriaGameMenu(
                         style = MaterialTheme.typography.bodySmall)
                 }
             }
-            Text(if (tab == GameMenuTab.GAME) "Atajos" else tab.label, style = MaterialTheme.typography.headlineSmall)
+            if (tab != GameMenuTab.CHARACTER) {
+                Text(if (tab == GameMenuTab.GAME) "Atajos" else tab.label, style = MaterialTheme.typography.headlineSmall)
+            }
             when (tab) {
                 GameMenuTab.GAME -> GameTab(hud, onHud, canOpenInventory, hasPanel, ready, actions)
+                GameMenuTab.CHARACTER -> {
+                    val activity = androidx.compose.ui.platform.LocalContext.current as? JavaGameActivity
+                    CharacterEditor(bridge, onUpload = { activity?.pickSkinImage() }, onDone = { onTab(GameMenuTab.GAME) },
+                        modifier = Modifier.weight(1f).fillMaxWidth())
+                }
                 GameMenuTab.PERFORMANCE -> PerformanceTab(hud, onHud, heapMb, renderScale, renderer)
                 GameMenuTab.HUD -> HudTab(hud, onHud)
                 GameMenuTab.LOG -> LogTab(logLines, technical)
