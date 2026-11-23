@@ -1,5 +1,7 @@
 package com.biomeria.launcher.ui.launch
 
+import com.biomeria.launcher.ui.components.BiomeriaDialog
+import com.biomeria.launcher.ui.components.BiomeriaTextField
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -32,8 +34,8 @@ internal fun JavaServersDialog(instance: GameInstance, onPlay: (JavaServerAddres
         servers = updated
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
+    BiomeriaDialog(
+        onDismissRequest = onDismiss, accent = Biomeria.colors.gold, chip = "Multijugador", width = 720.dp,
         title = { Text("Servidores · ${instance.title}") },
         text = {
             Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState()),
@@ -64,9 +66,8 @@ internal fun JavaServersDialog(instance: GameInstance, onPlay: (JavaServerAddres
                     }
                 }
                 if (servers.size < 32) {
-                    OutlinedTextField(name, { name = it.take(48) }, label = { Text("Nombre") }, singleLine = true)
-                    OutlinedTextField(rawAddress, { rawAddress = it.take(260) }, label = { Text("Dirección o IP:puerto") },
-                        isError = rawAddress.isNotBlank() && address == null, singleLine = true)
+                    BiomeriaTextField(name, { name = it.take(48) }, label = "Nombre", singleLine = true)
+                    BiomeriaTextField(rawAddress, { rawAddress = it.take(260) }, label = "Dirección o IP:puerto", singleLine = true)
                     LauncherButton("Guardar servidor", {
                         val valid = address ?: return@LauncherButton
                         save((servers.filterNot { it.address == valid }) + JavaServer(name.trim().ifBlank { valid.text }, valid))

@@ -35,7 +35,8 @@ data class ModrinthItem(
     val description: String,
     val iconUrl: String?,
     val downloads: Int,
-    val category: WorkshopCategory
+    val category: WorkshopCategory,
+    val gallery: List<String> = emptyList()
 )
 
 data class InstalledFileItem(
@@ -93,7 +94,10 @@ class ModrinthRepository internal constructor(
                         description = obj.optString("description", ""),
                         iconUrl = obj.optString("icon_url").takeIf { it.isNotBlank() && it != "null" },
                         downloads = obj.optInt("downloads", 0),
-                        category = category
+                        category = category,
+                        gallery = obj.optJSONArray("gallery")?.let { array ->
+                            (0 until array.length()).mapNotNull { array.optString(it).takeIf { url -> url.startsWith("https://") } }
+                        }.orEmpty()
                     )
                 )
             }

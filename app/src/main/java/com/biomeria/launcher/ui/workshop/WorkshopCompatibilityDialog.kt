@@ -1,5 +1,7 @@
 package com.biomeria.launcher.ui.workshop
 
+import com.biomeria.launcher.ui.components.BiomeriaDialog
+import com.biomeria.launcher.ui.components.BiomeriaTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -53,8 +55,8 @@ internal fun WorkshopCompatibilityDialog(
 
     val plan = result?.getOrNull()
     val failure = result?.exceptionOrNull()
-    AlertDialog(
-        onDismissRequest = onDismiss,
+    BiomeriaDialog(
+        onDismissRequest = onDismiss, accent = Biomeria.colors.brandAccent, chip = "Instalar",
         title = { Text(item.title) },
         text = {
             Column(Modifier.fillMaxWidth().heightIn(max = 260.dp).verticalScroll(rememberScrollState()),

@@ -1,5 +1,9 @@
 package com.biomeria.launcher.ui.hub
 
+import com.biomeria.launcher.ui.components.BlockButton
+import com.biomeria.launcher.ui.components.BlockButtons
+import com.biomeria.launcher.ui.components.BiomeriaDialog
+import com.biomeria.launcher.ui.components.BiomeriaTextField
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -39,13 +43,14 @@ internal fun InstanceEditor(
         EngineType.RUST -> true
     }
     val playable = version in supportedVersions
-    AlertDialog(
-        onDismissRequest = onDismiss,
+    BiomeriaDialog(
+        onDismissRequest = onDismiss, accent = Biomeria.colors.brandAccent,
+        chip = if (instance == null) "Nuevo" else "Mundo", width = 640.dp,
         title = { Text(if (instance == null) "Nueva instancia" else "Gestionar instancia") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                OutlinedTextField(name, { name = it.take(72) }, modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Nombre") }, singleLine = true)
+                BiomeriaTextField(name, { name = it.take(72) }, modifier = Modifier.fillMaxWidth(),
+                    label = "Nombre", singleLine = true)
                 if (instance == null) {
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         EngineType.entries.forEach { type ->
@@ -117,11 +122,11 @@ internal fun InstanceEditor(
 
 @Composable
 internal fun RemoveInstanceDialog(instance: GameInstance, onDismiss: () -> Unit, onRemove: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
+    BiomeriaDialog(
+        onDismissRequest = onDismiss, accent = Biomeria.colors.engineRust, chip = "Cuidado",
         title = { Text("¿Quitar " + instance.title + "?") },
         text = { Text("Se quitarán la ficha y el cartucho generado. Los archivos del juego seguirán en el dispositivo.") },
-        confirmButton = { LauncherButton("Quitar instancia", onRemove) },
+        confirmButton = { BlockButton(onRemove, colors = BlockButtons.danger) { Text("Quitar instancia", fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold) } },
         dismissButton = { LauncherButton("Cancelar", onDismiss, primary = true) }
     )
 }

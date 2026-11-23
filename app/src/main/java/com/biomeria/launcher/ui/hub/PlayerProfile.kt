@@ -1,5 +1,7 @@
 package com.biomeria.launcher.ui.hub
 
+import com.biomeria.launcher.ui.components.BiomeriaDialog
+import com.biomeria.launcher.ui.components.BiomeriaTextField
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -57,8 +59,8 @@ internal fun ProfileDialog(
             removePhoto = false
         }
     }
-    AlertDialog(
-        onDismissRequest = { if (!saving) onDismiss() },
+    BiomeriaDialog(
+        onDismissRequest = { if (!saving) onDismiss() }, accent = Biomeria.colors.netP2P, chip = "Tu cuenta", width = 640.dp,
         title = { Text("Perfil de jugador") },
         text = {
             Column(Modifier.heightIn(max = 430.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -70,14 +72,14 @@ internal fun ProfileDialog(
                         TextButton({ photo = null; removePhoto = true }, enabled = !saving) { Text("Quitar") }
                     }
                 }
-                OutlinedTextField(name, { name = it.take(32) }, Modifier.fillMaxWidth(),
-                    label = { Text("Usuario para jugar Offline") }, singleLine = true)
-                OutlinedTextField(display, { display = it.take(32) }, Modifier.fillMaxWidth(),
-                    label = { Text("Nombre en Biomeria") }, singleLine = true)
-                OutlinedTextField(bio, { bio = it.take(240) }, Modifier.fillMaxWidth(),
-                    label = { Text("Sobre mí") }, maxLines = 3)
-                OutlinedTextField(playStyle, { playStyle = it.take(40) }, Modifier.fillMaxWidth(),
-                    label = { Text("Modo o estilo favorito") }, singleLine = true)
+                BiomeriaTextField(name, { name = it.take(32) }, Modifier.fillMaxWidth(),
+                    label = "Usuario para jugar Offline", singleLine = true)
+                BiomeriaTextField(display, { display = it.take(32) }, Modifier.fillMaxWidth(),
+                    label = "Nombre en Biomeria", singleLine = true)
+                BiomeriaTextField(bio, { bio = it.take(240) }, Modifier.fillMaxWidth(),
+                    label = "Sobre mí", maxLines = 3)
+                BiomeriaTextField(playStyle, { playStyle = it.take(40) }, Modifier.fillMaxWidth(),
+                    label = "Modo o estilo favorito", singleLine = true)
                 Text("Idioma preferido para nuevas partidas", style = MaterialTheme.typography.titleSmall)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     gameLanguages.forEach { (code, label) ->

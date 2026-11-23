@@ -1,5 +1,7 @@
 package com.biomeria.launcher.ui.hub
 
+import com.biomeria.launcher.ui.components.BiomeriaDialog
+import com.biomeria.launcher.ui.components.BiomeriaTextField
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -437,14 +439,14 @@ internal fun HubScreen(
     }
 
     instances.firstOrNull { it.id == confirmWebLaunchId }?.let { item ->
-        AlertDialog(
-            onDismissRequest = { confirmWebLaunchId = null },
+        BiomeriaDialog(
+            onDismissRequest = { confirmWebLaunchId = null }, accent = Biomeria.colors.engineRust, chip = "Cuidado",
             title = { Text("¿Abrir " + item.title + "?") },
             text = { Text("Un enlace de una página web quiere iniciar esta instancia. Ábrela solo si tú pulsaste el enlace.") },
             confirmButton = {
-                TextButton(onClick = { confirmWebLaunchId = null; launchInstance(item) }) { Text("Jugar") }
+                LauncherButton("Jugar", { confirmWebLaunchId = null; launchInstance(item) }, primary = true)
             },
-            dismissButton = { TextButton(onClick = { confirmWebLaunchId = null }) { Text("Cancelar") } }
+            dismissButton = { LauncherButton("Cancelar", { confirmWebLaunchId = null }) }
         )
     }
 
