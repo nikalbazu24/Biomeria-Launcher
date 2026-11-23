@@ -40,6 +40,15 @@ import com.prissma.launcher.ui.theme.PixelFont
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.geometry.Offset
+import kotlin.math.roundToInt
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.draw.alpha
@@ -339,6 +348,20 @@ private fun DualScreenPanel(
         padFocus?.selectsHotbar == true -> listOf("A" to "Llevar en la mano", "B" to "Volver")
         else -> listOf("LB/RB" to "Pestañas", "B" to "Devolver mando")
     }
+    val latestLive by rememberUpdatedState(live)
+    val moveStack = remember(bridge) {
+        { from: Int, to: Int ->
+            val now = latestLive
+            if (now != null && bridge != null) {
+                bridge.send(now, PanelCommand.PICK, from)
+                bridge.send(now, PanelCommand.PICK, to)
+            }
+        }
+    }
+    val dragState = remember(bridge) { SlotDrag(moveStack) }
+    var rootOrigin by remember { mutableStateOf(Offset.Zero) }
+    CompositionLocalProvider(LocalSlotDrag provides dragState) {
+    Box(Modifier.fillMaxSize().onGloballyPositioned { rootOrigin = it.positionInRoot() }) {
     Column(Modifier.fillMaxSize().background(Prissma.colors.surfaceVoid).safeDrawingPadding()) {
         Column(
             Modifier.fillMaxWidth().background(Prissma.colors.ink)
@@ -521,6 +544,20 @@ private fun DualScreenPanel(
         }
         PanelFooter(hints, controllerActive) { activity.releaseLowerGamepad() }
     }
+    // The stack follows the finger while it is being dragged.
+    val finger = dragState.finger
+    val icon = dragState.icon
+    if (finger != null && dragState.from != null) {
+        val size = 64.dp
+        val half = with(androidx.compose.ui.platform.LocalDensity.current) { size.toPx() / 2 }
+        Box(Modifier.offset { IntOffset((finger.x - rootOrigin.x - half).roundToInt(), (finger.y - rootOrigin.y - half - 48.dp.toPx()).roundToInt()) }
+            .size(size).background(Color(0xCC1A2026), RoundedCornerShape(4.dp))
+            .border(3.dp, Prissma.colors.gold, RoundedCornerShape(4.dp)), contentAlignment = Alignment.Center) {
+            if (icon != null) Image(icon, null, Modifier.fillMaxSize(.8f), filterQuality = FilterQuality.None)
+        }
+    }
+    }
+    }
 }
 
 /** Small key label for the shoulder buttons on either side of the tabs. */
@@ -624,6 +661,21 @@ private fun FurnaceMeter(label: String, progress: Float, modifier: Modifier) {
 }
 
 @OptIn(ExperimentalFoundationApi::class)
+/**
+ * Finger drag between slots: lift the stack where the finger starts, drop it where it ends.
+ * It sends the same two "pick" clicks as tapping the source and then the target.
+ */
+internal class SlotDrag(val onMove: (from: Int, to: Int) -> Unit) {
+    val bounds = mutableStateMapOf<Int, Rect>()
+    var from by mutableStateOf<Int?>(null)
+    var finger by mutableStateOf<Offset?>(null)
+    var icon by mutableStateOf<ImageBitmap?>(null)
+
+    fun slotAt(point: Offset): Int? = bounds.entries.firstOrNull { point in it.value }?.key
+}
+
+internal val LocalSlotDrag = compositionLocalOf<SlotDrag?> { null }
+
 @Composable
 private fun SlotRow(
     slots: List<Int>,
@@ -651,6 +703,9 @@ private fun SlotRow(
                     if (padSelected) bringIntoView.bringIntoView()
                 }
                 val item = live?.slots?.get(number)
+                val drag = LocalSlotDrag.current
+                var origin by remember { mutableStateOf(Offset.Zero) }
+                val dragIcon = item?.takeIf { it.count > 0 }?.let { rememberItemIcon(it.id) }
                 val name = item?.name?.takeIf { it.isNotBlank() } ?: if (live == null) "${number + 1}" else "—"
                 val description = if (item == null) "Ranura $name" else if (item.count == 0) "Ranura vacía" else "$name, ${item.count}"
                 val palette = Prissma.colors
@@ -668,12 +723,34 @@ private fun SlotRow(
                     }))
                         .aspectRatio(1f)
                         .bringIntoViewRequester(bringIntoView)
+                        .onGloballyPositioned { drag?.bounds?.set(number, it.boundsInRoot()); origin = it.positionInRoot() }
                         .alpha(if (matches) 1f else .3f)
                         .clip(RoundedCornerShape(3.dp))
                         .background(if (number == selected) Color(0xFF2A333B) else Color(0xFF1A2026))
                         .border(3.dp, Color(0xFF232B33), RoundedCornerShape(3.dp))
                         .border(if (padSelected) 4.dp else 3.dp, outline, RoundedCornerShape(3.dp))
                         .clickable(enabled = enabled && matches, role = Role.Button) { onSlot(number) }
+                        .pointerInput(enabled, matches, item?.count, live?.generation, live?.held?.count) {
+                            val canLift = drag != null && enabled && matches && (item?.count ?: 0) > 0 && (live?.held?.count ?: 0) == 0
+                            if (!canLift || drag == null) return@pointerInput
+                            detectDragGestures(
+                                onDragStart = { start ->
+                                    drag.from = number
+                                    drag.icon = dragIcon
+                                    drag.finger = origin + start
+                                },
+                                onDrag = { change, amount ->
+                                    change.consume()
+                                    drag.finger = (drag.finger ?: origin) + amount
+                                },
+                                onDragEnd = {
+                                    val target = drag.finger?.let(drag::slotAt)
+                                    if (target != null && target != number) drag.onMove(number, target)
+                                    drag.from = null; drag.finger = null; drag.icon = null
+                                },
+                                onDragCancel = { drag.from = null; drag.finger = null; drag.icon = null }
+                            )
+                        }
                         .semantics { contentDescription = description },
                     contentAlignment = Alignment.Center
                 ) {
