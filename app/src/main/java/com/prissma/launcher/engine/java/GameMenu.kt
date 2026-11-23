@@ -86,7 +86,9 @@ internal class GameMenuActions(
     val minecraftPause: () -> Unit,
     val lan: () -> Unit,
     val internet: () -> Unit,
-    val exit: () -> Unit
+    val exit: () -> Unit,
+    /** Saves the world and closes Minecraft properly; null when this version has no Biomeria mod. */
+    val saveAndQuit: (() -> Unit)? = null
 )
 
 /**
@@ -109,7 +111,8 @@ internal fun BiomeriaGameMenu(
     renderer: JavaRenderer,
     canOpenInventory: Boolean,
     hasPanel: Boolean,
-    actions: GameMenuActions
+    actions: GameMenuActions,
+    saving: Boolean = false
 ) {
     val palette = Prissma.colors
     val resumeFocus = remember { FocusRequester() }
@@ -178,7 +181,7 @@ internal fun BiomeriaGameMenu(
                 GameMenuTab.PERFORMANCE -> PerformanceTab(hud, onHud, heapMb, renderScale, renderer)
                 GameMenuTab.HUD -> HudTab(hud, onHud)
                 GameMenuTab.LOG -> LogTab(logLines, technical)
-                GameMenuTab.EXIT -> ExitTab(actions, onBack = { onTab(GameMenuTab.GAME) })
+                GameMenuTab.EXIT -> ExitTab(actions, saving, onBack = { onTab(GameMenuTab.GAME) })
             }
         }
     }
@@ -408,22 +411,58 @@ private fun LogSearch(query: String, onQuery: (String) -> Unit, modifier: Modifi
 }
 
 @Composable
-private fun ExitTab(actions: GameMenuActions, onBack: () -> Unit) {
+private fun ExitTab(actions: GameMenuActions, saving: Boolean, onBack: () -> Unit) {
     val palette = Prissma.colors
-    Column(Modifier.widthIn(max = 520.dp).background(palette.surfaceCard, PanelShape).border(2.dp, Color(0xFF4A2620), PanelShape)
+    var waited by remember { mutableIntStateOf(0) }
+    LaunchedEffect(saving) {
+        while (saving) {
+            kotlinx.coroutines.delay(1000)
+            waited++
+        }
+    }
+    Column(Modifier.widthIn(max = 560.dp).background(palette.surfaceCard, PanelShape).border(2.dp, Color(0xFF4A2620), PanelShape)
         .padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Antes de salir, guarda en Minecraft: abre la Pausa de Minecraft y elige «Guardar y salir al título».",
-            style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-        Text("Salir ahora cierra el juego de inmediato y puedes perder lo último que hiciste.",
-            color = palette.textMuted, style = MaterialTheme.typography.bodyMedium)
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            BlockButton(actions.minecraftPause, colors = BlockButtons.primary) {
-                Text("Abrir la pausa para guardar", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+        val saveAndQuit = actions.saveAndQuit
+        when {
+            saving -> {
+                Text("Guardando el mundo y cerrando Minecraft…", style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.ExtraBold)
+                LinearProgressIndicator(Modifier.fillMaxWidth(), color = palette.brandAccent, trackColor = palette.surfaceElevated)
+                Text(if (waited < 60) "Volverás a Biomeria cuando termine. Los mundos grandes tardan más."
+                    else "Minecraft está tardando. Puedes seguir esperando o salir ahora, aunque se pierda lo último.",
+                    color = palette.textMuted, style = MaterialTheme.typography.bodyMedium)
+                if (waited >= 60) BlockButton(actions.exit, colors = BlockButtons.danger) {
+                    Text("Salir ahora", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+                }
             }
-            BlockButton(actions.exit, colors = BlockButtons.danger) {
-                Text("Salir ahora", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+            saveAndQuit != null -> {
+                Text("Biomeria le pedirá a Minecraft que guarde el mundo y se cierre, igual que al cerrar su ventana.",
+                    style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    BlockButton(saveAndQuit, colors = BlockButtons.primary) {
+                        Text("Guardar y salir", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+                    }
+                    LauncherButton("Seguir jugando", onBack)
+                    BlockButton(actions.exit, colors = BlockButtons.danger) {
+                        Text("Salir sin guardar", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+                    }
+                }
             }
-            LauncherButton("Seguir jugando", onBack)
+            else -> {
+                Text("Antes de salir, guarda en Minecraft: abre la Pausa de Minecraft y elige «Guardar y salir al título».",
+                    style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                Text("Al volver al título, sal del juego desde ahí y Biomeria se abrirá sola. Salir ahora cierra el juego de inmediato.",
+                    color = palette.textMuted, style = MaterialTheme.typography.bodyMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    BlockButton(actions.minecraftPause, colors = BlockButtons.primary) {
+                        Text("Abrir la pausa para guardar", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+                    }
+                    BlockButton(actions.exit, colors = BlockButtons.danger) {
+                        Text("Salir ahora", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+                    }
+                    LauncherButton("Seguir jugando", onBack)
+                }
+            }
         }
     }
 }

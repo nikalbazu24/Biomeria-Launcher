@@ -22,6 +22,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -560,7 +565,18 @@ private fun SlotRow(
                     },
                     contentPadding = PaddingValues(horizontal = 3.dp)
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    // The game's own icon when the mod sent the item id; the name otherwise.
+                    val shown = item?.takeIf { it.count > 0 }
+                    val icon = shown?.let { rememberItemIcon(it.id) }
+                    if (icon != null && shown != null) {
+                        Box(Modifier.size(if (compact) 34.dp else 42.dp)) {
+                            Image(icon, contentDescription = null, modifier = Modifier.fillMaxSize(),
+                                filterQuality = FilterQuality.None)
+                            if (shown.count > 1) Text(shown.count.toString(), Modifier.align(Alignment.BottomEnd),
+                                color = Color.White, fontWeight = FontWeight.ExtraBold,
+                                style = MaterialTheme.typography.labelMedium.copy(shadow = Shadow(Color.Black, Offset(2f, 2f))))
+                        }
+                    } else Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(name, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (item != null && item.count > 1) Text("×${item.count}", style = MaterialTheme.typography.labelSmall)
                     }

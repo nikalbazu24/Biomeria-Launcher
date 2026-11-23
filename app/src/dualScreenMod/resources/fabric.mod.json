@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "id": "prissma_dual_screen",
-  "version": "1.4.0",
-  "name": "PRISSMA Dual Screen",
+  "version": "1.5.0",
+  "name": "Biomeria Dual Screen",
   "environment": "client",
   "mixins": ["prissma-dual-screen.mixins.json"],
   "depends": {

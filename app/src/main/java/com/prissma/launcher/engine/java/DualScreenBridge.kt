@@ -57,7 +57,8 @@ internal enum class PanelLayout(
     }
 }
 
-internal data class PanelStack(val name: String, val count: Int)
+/** One slot. [id] is the item id (minecraft:torch) when the Biomeria mod could read it. */
+internal data class PanelStack(val name: String, val count: Int, val id: String = "")
 internal data class PanelFurnace(val cook: Float, val fuel: Float, val burning: Boolean)
 internal data class PanelInventory(
     val generation: Long,
@@ -160,6 +161,9 @@ internal class DualScreenBridge(val directory: File, val terrainDirectory: File?
         setGenerationMarker("terrain-position", if (position && terrainDirectory != null) 1L else null)
     }
 
+    /** Asks Minecraft to save the world and close, like closing its window. */
+    fun requestQuit(): Boolean = writeMarker("quit", "1")
+
     fun requestInternetWorld(token: UUID): Boolean = writeMarker("internet-open", token.toString())
 
     fun stopInternetWorld() {
@@ -261,7 +265,15 @@ private fun decodePanelSnapshot(input: DataInputStream): PanelSnapshot? {
         if (!cook.isFinite() || !fuel.isFinite()) return null
         PanelFurnace(cook.coerceIn(0f, 1f), fuel.coerceIn(0f, 1f), input.readBoolean())
     } else null
+    // Optional trailer with item ids: held stack first, then every slot.
+    val ids = if (input.available() > 0) {
+        val count = input.readUnsignedShort()
+        if (count != layout.slotCount + 1) return null
+        List(count) { input.readUTF().takeIf { it.length <= 128 } ?: throw IOException("Invalid item id") }
+    } else null
+    fun withId(stack: PanelStack, index: Int) = ids?.getOrNull(index)?.let { stack.copy(id = it) } ?: stack
     return PanelSnapshot(PanelInventory(generation, interactive, layout, selected,
         kotlin.math.floor(x).toInt(), kotlin.math.floor(y).toInt(), kotlin.math.floor(z).toInt(),
-        held, slots, mapRevision, recipeBookAvailable, menuTitle, furnace))
+        withId(held, 0), slots.mapIndexed { index, stack -> withId(stack, index + 1) }, mapRevision, recipeBookAvailable,
+        menuTitle, furnace))
 }

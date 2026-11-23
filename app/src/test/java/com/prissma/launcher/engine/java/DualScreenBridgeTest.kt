@@ -233,6 +233,31 @@ class DualScreenBridgeTest {
         assertFalse(supportsDualInventory("1.21.5", "fabric"))
     }
 
+    @Test
+    fun readsItemIdsWhenTheModSendsThem() {
+        val bridge = DualScreenBridge.create(temporary.root)
+        val ids = listOf("minecraft:oak_log", "minecraft:oak_planks") + List(PanelLayout.PERSONAL.slotCount - 1) { "" }
+        val stamp = writeSnapshot(bridge.directory, ids = ids)
+        val inventory = requireNotNull(bridge.readInventory(stamp))
+        assertEquals("minecraft:oak_log", inventory.held.id)
+        assertEquals("minecraft:oak_planks", inventory.slots[0].id)
+        assertEquals("", inventory.slots[1].id)
+    }
+
+    @Test
+    fun rejectsAnIdBlockOfTheWrongSize() {
+        val bridge = DualScreenBridge.create(temporary.root)
+        val stamp = writeSnapshot(bridge.directory, ids = listOf("minecraft:stone"))
+        assertNull(bridge.readInventory(stamp))
+    }
+
+    @Test
+    fun readsSnapshotsWithoutIds() {
+        val bridge = DualScreenBridge.create(temporary.root)
+        val stamp = writeSnapshot(bridge.directory)
+        assertEquals("", requireNotNull(bridge.readInventory(stamp)).held.id)
+    }
+
     private fun writeSnapshot(
         dir: File,
         generation: Long = 7,
@@ -245,6 +270,7 @@ class DualScreenBridgeTest {
         heldCount: Int = 8,
         menuTitle: String = "",
         furnace: PanelFurnace = PanelFurnace(0f, 0f, false),
+        ids: List<String>? = null,
     ): Long {
         val file = File(dir, "snapshot")
         DataOutputStream(file.outputStream()).use { out ->
@@ -271,6 +297,10 @@ class DualScreenBridgeTest {
                 out.writeFloat(furnace.cook)
                 out.writeFloat(furnace.fuel)
                 out.writeBoolean(furnace.burning)
+            }
+            if (ids != null) {
+                out.writeShort(ids.size)
+                ids.forEach(out::writeUTF)
             }
         }
         return file.lastModified()

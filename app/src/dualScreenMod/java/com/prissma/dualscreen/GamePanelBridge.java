@@ -55,7 +55,9 @@ public final class GamePanelBridge {
     private GamePanelBridge() {}
 
     public static void tick(Object client) {
-        if (SESSION.isEmpty() || disabled || ++ticks % 2 != 0) return;
+        if (SESSION.isEmpty()) return;
+        checkQuit(client);
+        if (disabled || ++ticks % 2 != 0) return;
         Path root = Path.of(SESSION);
         Path lanRequest = root.resolve("lan-open");
         boolean shareRequested = Files.isRegularFile(lanRequest);
@@ -158,6 +160,28 @@ public final class GamePanelBridge {
             System.err.println("[PRISSMA] El panel Fabric no pudo leer la sesión del juego: " + error.getClass().getSimpleName());
         } catch (IOException ignored) {
             // Android can close the panel or dispose the session between ticks.
+        }
+    }
+
+    private static boolean quitting;
+
+    /**
+     * Android asks to leave by writing "quit". MinecraftClient.scheduleStop (method_1592) ends the
+     * game loop the same way as closing the window: the world is saved before Minecraft exits.
+     * Checked before the panel guards so it works even when the inventory panel is off.
+     */
+    private static void checkQuit(Object client) {
+        if (quitting) return;
+        Path request = Path.of(SESSION).resolve("quit");
+        if (!Files.isRegularFile(request)) return;
+        quitting = true;
+        try {
+            Files.deleteIfExists(request);
+            client.getClass().getMethod("method_1592").invoke(client);
+            System.out.println("[PRISSMA] Guardando el mundo y cerrando Minecraft.");
+        } catch (IOException | ReflectiveOperationException | LinkageError error) {
+            quitting = false;
+            System.err.println("[PRISSMA] No se pudo cerrar Minecraft de forma ordenada: " + error);
         }
     }
 
@@ -323,9 +347,10 @@ public final class GamePanelBridge {
                 data.writeDouble((double) game.x.invoke(player));
                 data.writeDouble((double) game.y.invoke(player));
                 data.writeDouble((double) game.z.invoke(player));
-                writeStack(data, game.cursorStack.invoke(handler));
+                List<String> ids = new java.util.ArrayList<>(layout.slots + 1);
+                ids.add(writeStack(data, game.cursorStack.invoke(handler)));
                 List<?> slots = (List<?>) game.slots.get(handler);
-                for (int i = 0; i < layout.slots; i++) writeStack(data, i < slots.size() ? game.slotStack.invoke(slots.get(i)) : null);
+                for (int i = 0; i < layout.slots; i++) ids.add(writeStack(data, i < slots.size() ? game.slotStack.invoke(slots.get(i)) : null));
                 data.writeInt(publishHeldMap(root, player, world));
                 data.writeBoolean(layout == Layout.CRAFTING_TABLE && recipeBook != null);
                 String title = layout == Layout.PERSONAL ? "" : (String) game.text.invoke(game.title.invoke(screen));
@@ -335,6 +360,10 @@ public final class GamePanelBridge {
                     data.writeFloat((float) game.fuelProgress.invoke(handler));
                     data.writeBoolean((boolean) game.furnaceBurning.invoke(handler));
                 }
+                // Item ids (minecraft:torch, mod:item) after everything else, so Android can draw the
+                // game's own icons. Older readers stop before this block and keep working.
+                data.writeShort(ids.size());
+                for (String id : ids) data.writeUTF(id);
             }
         }
         byte[] snapshot = bytes.toByteArray();
@@ -346,15 +375,28 @@ public final class GamePanelBridge {
         }
     }
 
-    private static void writeStack(DataOutputStream data, Object stack) throws IOException, ReflectiveOperationException {
+    /** Writes the name and count of a stack and returns its item id ("" when empty or unknown). */
+    private static String writeStack(DataOutputStream data, Object stack) throws IOException, ReflectiveOperationException {
         if (stack == null || (boolean) game.empty.invoke(stack)) {
             data.writeUTF("");
             data.writeInt(0);
-            return;
+            return "";
         }
         String name = (String) game.text.invoke(game.name.invoke(stack));
         data.writeUTF(name.substring(0, Math.min(name.length(), 96)));
         data.writeInt((int) game.count.invoke(stack));
+        return itemId(stack);
+    }
+
+    private static String itemId(Object stack) {
+        if (game.itemOf == null) return "";
+        try {
+            Object id = game.registryId.invoke(game.itemRegistry, game.itemOf.invoke(stack));
+            String value = id == null ? "" : id.toString();
+            return value.length() <= 128 ? value : "";
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError error) {
+            return "";
+        }
     }
 
     private static int publishHeldMap(Path root, Object player, Object world) throws IOException, ReflectiveOperationException {
@@ -398,6 +440,9 @@ public final class GamePanelBridge {
         final Method screenHandler, closeScreen, title, chestRows, cookProgress, fuelProgress, furnaceBurning;
         final Class<?> craftingScreen, craftingHandler, chestScreen, chestHandler, furnaceScreen, furnaceHandler;
         final Object pickup, quickMove, mapId;
+        /** Optional: ItemStack.getItem, Registries.ITEM and Registry.getId. Icons are skipped if missing. */
+        final Method itemOf, registryId;
+        final Object itemRegistry;
 
         Access(ClassLoader loader) throws ReflectiveOperationException {
             Class<?> client = type(loader, 310);
@@ -454,6 +499,20 @@ public final class GamePanelBridge {
             mapColor = type(loader, 3620).getMethod("method_38480", int.class);
             pickup = field(action, "field_7790").get(null);
             quickMove = field(action, "field_7794").get(null);
+            Method item = null;
+            Method id = null;
+            Object registry = null;
+            try {
+                item = stack.getMethod("method_7909");
+                registry = field(type(loader, 7923), "field_41178").get(null);
+                id = type(loader, 2378).getMethod("method_10221", Object.class);
+            } catch (ReflectiveOperationException | LinkageError error) {
+                item = null;
+                System.err.println("[PRISSMA] Íconos de objetos no disponibles: " + error);
+            }
+            itemOf = item;
+            registryId = id;
+            itemRegistry = registry;
         }
 
         Layout layout(Object screen, Object handler) throws ReflectiveOperationException {

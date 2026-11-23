@@ -218,6 +218,8 @@ class JavaGameActivity : ComponentActivity() {
             runCatching { DualScreenBridge.create(cacheDir, File(gameDirPath, "prissma-map")) }.getOrNull()
         }
         dualScreenBridge = panelBridge
+        // Icons for the lower screen come from the jars this game runs with; indexing is lazy.
+        if (panelBridge != null) ItemIcons.install(classpath, File(gameDirPath))
         val jvmArguments = if (panelMod != null && panelBridge != null) {
             baseJvmArguments + arrayOf(
                 "-Dfabric.addMods=" + panelMod.absolutePath,
@@ -365,6 +367,9 @@ private fun JavaNativeViewportScreen(
     var showConsole by remember { mutableStateOf(false) }
     var showOverlay by remember { mutableStateOf(true) }
     var menuTab by remember { mutableStateOf(GameMenuTab.LOG) }
+    var saving by remember { mutableStateOf(false) }
+    var sessionEnded by remember { mutableStateOf(false) }
+    var mapExpanded by remember { mutableStateOf(false) }
     var hasPresentedFrame by remember { mutableStateOf(false) }
     var captured by remember { mutableStateOf(false) }
     var hud by remember(initialHud) { mutableStateOf(initialHud) }
@@ -391,6 +396,7 @@ private fun JavaNativeViewportScreen(
             showQuickMenu -> showQuickMenu = false
             showLanDialog -> showLanDialog = false
             showInternetDialog -> showInternetDialog = false
+            mapExpanded -> mapExpanded = false
             libJvmPath.isBlank() -> onExitGame()
             else -> showOverlay = !showOverlay
         }
@@ -415,7 +421,7 @@ private fun JavaNativeViewportScreen(
         }
     }
     val canSendInput = jvmStarted && !showOverlay && !showKeyboard && !showQuickMenu && !showHudDialog &&
-        !showLanDialog && !showInternetDialog
+        !showLanDialog && !showInternetDialog && !mapExpanded
     val collectTerrain = hud.showMinimap || (hud.dualScreen && hud.panelMap == PanelMapSource.PRISSMA)
     LaunchedEffect(panelBridge, collectTerrain, hud.showCoordinates) {
         withContext(Dispatchers.IO) { panelBridge?.collectTerrain(collectTerrain, hud.showCoordinates) }
@@ -479,12 +485,24 @@ private fun JavaNativeViewportScreen(
                 menuTab = GameMenuTab.GAME
             }
             if (freshLogs.isNotEmpty()) {
+                // Minecraft's main() returned (quit from the game or a crash): go back to Biomeria
+                // instead of leaving a black screen. The launcher then reads the log for errors.
+                if (freshLogs.any { it.contains("[PRISSMA] Sesión Java finalizada") || it.contains("[ERROR] Excepción en Minecraft") }) {
+                    sessionEnded = true
+                }
                 logLines.addAll(freshLogs)
                 if (logLines.size > 600) {
                     logLines.removeRange(0, logLines.size - 600)
                 }
             }
             delay(150L)
+        }
+    }
+
+    LaunchedEffect(sessionEnded) {
+        if (sessionEnded) {
+            delay(1500L) // let the last lines of a crash reach the log file
+            onExitGame()
         }
     }
 
@@ -590,14 +608,16 @@ private fun JavaNativeViewportScreen(
                         .padding(start = 9.dp, top = if (hud.showFps) 24.dp else 9.dp))
             }
             if (hud.showMinimap && captured && panelBridge != null) {
-                TerrainMapPane(panelBridge,
-                    Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.displayCutout)
-                        .padding(8.dp).size(114.dp), compact = true)
+                FloatingMap(panelBridge, expanded = false, onExpanded = { mapExpanded = it },
+                    modifier = Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.displayCutout).padding(8.dp))
             }
             GameMenuPill(hud.pauseOpacity, { menuTab = GameMenuTab.GAME; showOverlay = true },
                 Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.displayCutout).padding(6.dp))
         }
 
+        if (mapExpanded && panelBridge != null) {
+            FloatingMap(panelBridge, expanded = true, onExpanded = { mapExpanded = it })
+        }
         if (showOverlay) {
             BiomeriaGameMenu(
                 title = instanceTitle,
@@ -626,8 +646,10 @@ private fun JavaNativeViewportScreen(
                     minecraftPause = { showOverlay = false; pendingGameKey = 256 }, // GLFW_KEY_ESCAPE
                     lan = { showOverlay = false; showLanDialog = true },
                     internet = { showOverlay = false; showInternetDialog = true },
-                    exit = onExitGame
-                )
+                    exit = onExitGame,
+                    saveAndQuit = panelBridge?.let { bridge -> { if (bridge.requestQuit()) saving = true } }
+                ),
+                saving = saving
             )
         }
     }
