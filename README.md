@@ -51,13 +51,5 @@ Sin conexión, Microsoft o Ely.by. Guías: [Microsoft](docs/cuentas-microsoft-ja
 ### Integración con frontends
 Biomeria se puede abrir y consultar desde frontends como **Cocoon, iiSU y Díptico**: catálogo de mundos, estadísticas y lanzamiento por enlace. Detalles en [docs/frontends.md](docs/frontends.md).
 
-## Galería
-
-| Crafteo en la pantalla de abajo | Inventario en la pantalla de abajo |
-|---|---|
-| ![Crafteo en la AYN Thor](docs/capturas/thor-crafteo.jpg) | ![Inventario en la AYN Thor](docs/capturas/thor-inventario.jpg) |
-
-*Biomeria en una AYN Thor: el juego arriba, el panel de Biomeria abajo.*
-
 ## Instalación
 Descarga el APK de la sección de [Releases](../../releases). Los APK están firmados con la misma llave, así que cada versión se instala encima de la anterior.
