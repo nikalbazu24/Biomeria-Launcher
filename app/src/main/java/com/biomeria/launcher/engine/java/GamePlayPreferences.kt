@@ -69,7 +69,7 @@ internal data class GameHudSettings(
     /** Which corner of the top screen the Biomeria tips appear in. */
     val tipCorner: TipCorner = TipCorner.TOP_END,
     /** Floating map for single-screen play: corner, size, see-through, how much land it shows, marks and coordinates. */
-    val mapCorner: TipCorner = TipCorner.TOP_END,
+    val mapCorner: TipCorner = TipCorner.TOP_START,
     val mapSize: FloatingMapSize = FloatingMapSize.MEDIUM,
     val mapSoft: Boolean = false,
     val mapZoom: FloatingMapZoom = FloatingMapZoom.NORMAL,
@@ -156,7 +156,7 @@ internal data class GameHudSettings(
             bundle?.getBoolean("panelTips", true) ?: true,
             bundle?.getBoolean("showPadChip", true) ?: true,
             TipCorner.fromPreference(bundle?.getString("tipCorner")),
-            TipCorner.fromPreference(bundle?.getString("mapCorner")),
+            TipCorner.fromPreference(bundle?.getString("mapCorner"), TipCorner.TOP_START),
             FloatingMapSize.fromPreference(bundle?.getString("mapSize")),
             bundle?.getBoolean("mapSoft", false) ?: false,
             FloatingMapZoom.fromPreference(bundle?.getString("mapZoom")),
@@ -213,7 +213,7 @@ internal enum class TipCorner(val label: String) {
     TOP_START("Arriba izquierda"), TOP_END("Arriba derecha"), BOTTOM_START("Abajo izquierda"), BOTTOM_END("Abajo derecha");
 
     companion object {
-        fun fromPreference(value: String?) = entries.firstOrNull { it.name == value } ?: TOP_END
+        fun fromPreference(value: String?, default: TipCorner = TOP_END) = entries.firstOrNull { it.name == value } ?: default
     }
 }
 

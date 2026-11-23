@@ -1,5 +1,6 @@
 package com.biomeria.launcher.ui.launch
 
+import com.biomeria.launcher.ui.components.BiomeriaDialog
 import android.app.ActivityManager
 import android.content.Context
 import androidx.compose.foundation.horizontalScroll
@@ -41,11 +42,13 @@ internal fun GamePerformanceDialog(
     var audioTest by remember { mutableStateOf<String?>(null) }
     var testingAudio by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    AlertDialog(
+    BiomeriaDialog(
+        width = 620.dp,
+        accent = Biomeria.colors.engineBedrock,
         onDismissRequest = onDismiss,
         title = { Text("Rendimiento y vídeo") },
         text = {
-            Column(Modifier.heightIn(max = 325.dp).verticalScroll(rememberScrollState()),
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("RAM máxima de Minecraft", style = MaterialTheme.typography.titleSmall)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {

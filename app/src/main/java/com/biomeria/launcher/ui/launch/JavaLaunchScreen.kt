@@ -1,5 +1,6 @@
 package com.biomeria.launcher.ui.launch
 
+import com.biomeria.launcher.ui.components.BiomeriaDialog
 import android.content.Context
 import android.content.Intent
 import androidx.activity.compose.BackHandler
@@ -168,7 +169,7 @@ fun JavaLaunchScreen(
             settings.getBoolean("panel-tips-" + instance.id, true),
             settings.getBoolean("pad-chip-" + instance.id, true),
             com.biomeria.launcher.engine.java.TipCorner.fromPreference(settings.getString("tip-corner-" + instance.id, null)),
-            com.biomeria.launcher.engine.java.TipCorner.fromPreference(settings.getString("map-corner-" + instance.id, null)),
+            com.biomeria.launcher.engine.java.TipCorner.fromPreference(settings.getString("map-corner-" + instance.id, null), com.biomeria.launcher.engine.java.TipCorner.TOP_START),
             com.biomeria.launcher.engine.java.FloatingMapSize.fromPreference(settings.getString("map-size-" + instance.id, null)),
             settings.getBoolean("map-soft-" + instance.id, false),
             com.biomeria.launcher.engine.java.FloatingMapZoom.fromPreference(settings.getString("map-zoom-" + instance.id, null)),
@@ -445,7 +446,7 @@ fun JavaLaunchScreen(
             }
         }
     }
-    if (showLanguage) AlertDialog(
+    if (showLanguage) BiomeriaDialog(
         onDismissRequest = { showLanguage = false },
         title = { Text("Idioma del juego") },
         text = {
@@ -462,7 +463,8 @@ fun JavaLaunchScreen(
                 }
             }
         },
-        confirmButton = { LauncherButton("Cerrar", { showLanguage = false }) }
+        confirmButton = { LauncherButton("Cerrar", { showLanguage = false }) },
+        width = 460.dp
     )
     if (showPerformance) GamePerformanceDialog(
         heapMb, deviceRam, renderScale, renderer,

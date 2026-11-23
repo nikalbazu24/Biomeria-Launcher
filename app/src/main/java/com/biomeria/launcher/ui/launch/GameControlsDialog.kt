@@ -16,6 +16,7 @@ import com.biomeria.launcher.engine.java.PanelPage
 import com.biomeria.launcher.engine.java.defaultGamepadActions
 import com.biomeria.launcher.engine.java.remappableGamepadButtons
 import com.biomeria.launcher.engine.java.javaFpsLimits
+import com.biomeria.launcher.ui.components.BiomeriaDialog
 import com.biomeria.launcher.ui.components.LauncherButton
 
 @Composable
@@ -26,11 +27,13 @@ internal fun GameControlsDialog(
     onHud: (GameHudSettings) -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
+    BiomeriaDialog(
+        width = 680.dp,
+        accent = com.biomeria.launcher.ui.theme.Biomeria.colors.engineJava,
         onDismissRequest = onDismiss,
         title = { Text("Controles y HUD") },
         text = {
-            Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("En menús, mueve el cursor con un stick, pulsa A para confirmar y B para volver.")
                 Text("En partida, el stick izquierdo mueve al jugador y el derecho controla la cámara. Select abre el menú de Biomeria.")
