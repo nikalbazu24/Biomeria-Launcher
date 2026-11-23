@@ -174,7 +174,8 @@ fun JavaLaunchScreen(
             settings.getBoolean("map-soft-" + instance.id, false),
             com.biomeria.launcher.engine.java.FloatingMapZoom.fromPreference(settings.getString("map-zoom-" + instance.id, null)),
             settings.getBoolean("map-marks-" + instance.id, true),
-            settings.getBoolean("map-coords-" + instance.id, true)))
+            settings.getBoolean("map-coords-" + instance.id, true),
+            settings.getBoolean("biomeria-menus-" + instance.id, true)))
     }
     val supported = supportsJavaLoader(instance.version, instance.loader)
 
@@ -216,7 +217,8 @@ fun JavaLaunchScreen(
             .putBoolean("map-soft-" + instance.id, updated.mapSoft)
             .putString("map-zoom-" + instance.id, updated.mapZoom.name)
             .putBoolean("map-marks-" + instance.id, updated.mapMarks)
-            .putBoolean("map-coords-" + instance.id, updated.mapCoords).apply()
+            .putBoolean("map-coords-" + instance.id, updated.mapCoords)
+            .putBoolean("biomeria-menus-" + instance.id, updated.biomeriaMenus).apply()
     }
     var crash by remember { mutableStateOf<CrashReading?>(null) }
     var crashLog by remember { mutableStateOf("") }

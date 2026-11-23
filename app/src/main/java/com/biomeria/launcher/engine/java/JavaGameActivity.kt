@@ -490,6 +490,10 @@ private fun JavaNativeViewportScreen(
     val touchStore = remember(activity) { TouchLayoutStore(activity) }
     var touchLayout by remember { mutableStateOf(touchStore.load()) }
     var editingTouch by remember { mutableStateOf(false) }
+    var showPause by remember { mutableStateOf(false) }
+    var pauseDismissed by remember { mutableStateOf(false) }
+    var showGameOptions by remember { mutableStateOf(false) }
+    val sessionStart = remember { android.os.SystemClock.elapsedRealtime() }
     LaunchedEffect(input, panelBridge) {
         input.onHotbarSwap = { from, to -> panelBridge?.swapHotbar(from, to) }
         input.slotScreen = { panelBridge?.slotScreen() == true }
@@ -521,6 +525,8 @@ private fun JavaNativeViewportScreen(
     fun handleBack() {
         when {
             editingTouch -> editingTouch = false
+            showGameOptions -> showGameOptions = false
+            showPause && !showOverlay -> { pauseDismissed = true; showPause = false; input.tapKey(256) }
             showKeyboard -> showKeyboard = false
             showQuickMenu -> showQuickMenu = false
             showLanDialog -> showLanDialog = false
@@ -550,9 +556,22 @@ private fun JavaNativeViewportScreen(
             onToggleQuickMenu(null)
         }
     }
-    val canSendInput = jvmStarted && !editingTouch && !showOverlay && !showKeyboard && !showQuickMenu && !showHudDialog &&
+    val canSendInput = jvmStarted && !editingTouch && !showPause && !showGameOptions && !showOverlay && !showKeyboard && !showQuickMenu && !showHudDialog &&
         !showLanDialog && !showInternetDialog && !mapExpanded
     val singleScreenMap = hud.showMinimap && !activity.lowerPanelVisible
+    LaunchedEffect(panelBridge, hud.biomeriaMenus) { panelBridge?.useBiomeriaMenus(hud.biomeriaMenus) }
+    // Minecraft's pause screen opened (Start, Esc, losing focus): show Biomeria's on top while the world stays paused.
+    val pauseBlocked = showOverlay || showGameOptions || showLanDialog || showInternetDialog || showKeyboard || editingTouch
+    LaunchedEffect(panelBridge, hud.biomeriaMenus, pauseBlocked) {
+        val bridge = panelBridge ?: return@LaunchedEffect
+        while (hud.biomeriaMenus) {
+            val open = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { bridge.pauseOpen() }
+            if (!open) { showPause = false; pauseDismissed = false }
+            else if (!pauseDismissed && !pauseBlocked) showPause = true
+            kotlinx.coroutines.delay(120)
+        }
+        showPause = false
+    }
     val collectTerrain = singleScreenMap || mapExpanded || (hud.dualScreen && hud.panelMap == PanelMapSource.BIOMERIA)
     val selectMap by rememberUpdatedState {
         if (showOverlay || showKeyboard || showQuickMenu || showHudDialog || panelBridge == null || !hasPresentedFrame) false
@@ -849,12 +868,26 @@ private fun JavaNativeViewportScreen(
                 saving = saving
             )
         }
-    }
-    if (editingTouch) {
-        TouchLayoutEditor(touchLayout) { updated ->
-            touchLayout = updated
-            touchStore.save(updated)
-            editingTouch = false
+        if (showPause && !showOverlay) {
+            BiomeriaPauseMenu(instanceTitle, version, sessionStart, panelBridge, PauseActions(
+                resume = { pauseDismissed = true; showPause = false; input.tapKey(256) },
+                options = { showGameOptions = true },
+                advancements = { pauseDismissed = true; showPause = false; input.tapKey(256); pendingGameKey = 76 },
+                share = { showPause = false; menuTab = GameMenuTab.GAME; showOverlay = true },
+                biomeriaMenu = { showPause = false; menuTab = GameMenuTab.HUD; showOverlay = true },
+                vanilla = { panelBridge?.showVanillaPause(); showPause = false },
+                saveAndQuit = { if (panelBridge?.requestQuit() == true) saving = true }
+            ), saving)
+        }
+        if (showGameOptions) {
+            BiomeriaOptionsScreen(File(gameDirPath), panelBridge) { showGameOptions = false }
+        }
+        if (editingTouch) {
+            TouchLayoutEditor(touchLayout) { updated ->
+                touchLayout = updated
+                touchStore.save(updated)
+                editingTouch = false
+            }
         }
     }
     if (showKeyboard) {

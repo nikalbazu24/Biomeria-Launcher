@@ -109,6 +109,9 @@ private fun PanelSwitch(label: String, enabled: Boolean, onChange: (Boolean) -> 
 @Composable
 internal fun GameHudControls(settings: GameHudSettings, onChange: (GameHudSettings) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        PanelSwitch("Menús de Biomeria (pausa y opciones del juego)", settings.biomeriaMenus) {
+            onChange(settings.copy(biomeriaMenus = it))
+        }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Controles táctiles", Modifier.weight(1f))
             Switch(settings.showTouch, { onChange(settings.copy(showTouch = it)) })

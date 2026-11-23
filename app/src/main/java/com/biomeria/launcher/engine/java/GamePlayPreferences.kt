@@ -74,7 +74,9 @@ internal data class GameHudSettings(
     val mapSoft: Boolean = false,
     val mapZoom: FloatingMapZoom = FloatingMapZoom.NORMAL,
     val mapMarks: Boolean = true,
-    val mapCoords: Boolean = true
+    val mapCoords: Boolean = true,
+    /** Biomeria's own pause menu and options instead of Minecraft's. */
+    val biomeriaMenus: Boolean = true
 ) {
     fun routes(layout: PanelLayout) = when (layout) {
         PanelLayout.PERSONAL -> false
@@ -121,6 +123,7 @@ internal data class GameHudSettings(
         putString("mapZoom", mapZoom.name)
         putBoolean("mapMarks", mapMarks)
         putBoolean("mapCoords", mapCoords)
+        putBoolean("biomeriaMenus", biomeriaMenus)
     }
 
     companion object {
@@ -161,7 +164,8 @@ internal data class GameHudSettings(
             bundle?.getBoolean("mapSoft", false) ?: false,
             FloatingMapZoom.fromPreference(bundle?.getString("mapZoom")),
             bundle?.getBoolean("mapMarks", true) ?: true,
-            bundle?.getBoolean("mapCoords", true) ?: true
+            bundle?.getBoolean("mapCoords", true) ?: true,
+            bundle?.getBoolean("biomeriaMenus", true) ?: true
         )
     }
 }

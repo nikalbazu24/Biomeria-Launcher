@@ -178,6 +178,24 @@ internal class DualScreenBridge(val directory: File, val terrainDirectory: File?
     fun guiScale(): Int? = runCatching { File(directory, "gui-scale").readText(Charsets.US_ASCII).trim().toInt() }
         .getOrNull()?.takeIf { it in 1..16 }
 
+    /** Turns Biomeria's pause menu on or off; the mod then hides Minecraft's. */
+    fun useBiomeriaMenus(enabled: Boolean) = setGenerationMarker("biomeria-menus", if (enabled) 1L else null)
+
+    /** Minecraft's pause screen is open (and hidden): Android should show its own. */
+    fun pauseOpen(): Boolean = File(directory, "pause-open").isFile
+
+    /** Shows Minecraft's own pause screen this time. */
+    fun showVanillaPause(): Boolean = writeMarker("vanilla-pause", "1")
+
+    /** Asks the mod to reload options.txt after Biomeria changed it; the answer comes in [optionsApplied]. */
+    fun reloadOptions(): Boolean {
+        File(directory, "options-result").delete()
+        return writeMarker("options-reload", "1")
+    }
+
+    /** null while waiting, true when the game applied the options, false when they apply on restart. */
+    fun optionsApplied(): Boolean? = runCatching { File(directory, "options-result").readText().trim() == "1" }.getOrNull()
+
     /** True while Minecraft shows a screen with item slots (inventory, chest, crafting table…). */
     fun slotScreen(): Boolean = File(directory, "slot-screen").isFile
 

@@ -61,6 +61,7 @@ public final class GamePanelBridge {
         checkQuit(client);
         PlayerSkin.tick(client, Path.of(SESSION));
         HotbarTouch.tick(client, Path.of(SESSION));
+        MenuBridge.tick(client, Path.of(SESSION));
         if (disabled || ++ticks % 2 != 0) return;
         Path root = Path.of(SESSION);
         Path lanRequest = root.resolve("lan-open");
@@ -259,6 +260,7 @@ public final class GamePanelBridge {
     }
 
     public static boolean hidesRoutedScreen(Object screen) {
+        if (MenuBridge.hides(screen)) return true;
         if (screen == null || disabled) return false;
         if (routedScreen == screen) {
             openingScreen = screen;
