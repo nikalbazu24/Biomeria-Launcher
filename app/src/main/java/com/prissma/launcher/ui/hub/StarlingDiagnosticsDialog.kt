@@ -80,7 +80,7 @@ internal fun StarlingDiagnosticsDialog(
         text = {
             Column(Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Desde el diagnóstico de Starling, exporta y comparte el ZIP. Elige PRISSMA en el menú de Android.")
+                Text("Desde el diagnóstico de Starling, exporta y comparte el ZIP. Elige Biomeria en el menú de Android.")
                 if (installation?.canOpen == true) {
                     LauncherButton("Abrir diagnóstico de Starling", { errorMessage = launcher.openDiagnostics(instance) }, enabled = !busy)
                 }

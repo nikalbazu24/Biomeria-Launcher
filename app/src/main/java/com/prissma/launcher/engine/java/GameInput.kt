@@ -21,7 +21,7 @@ internal enum class GamepadAction(val event: GameInputEvent, val code: Int, val 
     SPRINT(GameInputEvent.KEY, 341, "Correr"),
     ESCAPE(GameInputEvent.KEY, 256, "Abrir pausa"),
     INVENTORY(GameInputEvent.KEY, 69, "Abrir inventario"),
-    QUICK_MENU(GameInputEvent.KEY, 0, "Menú rápido de PRISSMA"),
+    QUICK_MENU(GameInputEvent.KEY, 0, "Menú rápido de Biomeria"),
     SWAP_HANDS(GameInputEvent.KEY, 70, "Intercambiar manos"),
     DROP(GameInputEvent.KEY, 81, "Soltar objeto"),
     PREVIOUS_SLOT(GameInputEvent.SCROLL, 1, "Casilla anterior"),

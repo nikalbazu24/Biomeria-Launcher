@@ -73,7 +73,7 @@ internal fun ProfileDialog(
                 OutlinedTextField(name, { name = it.take(32) }, Modifier.fillMaxWidth(),
                     label = { Text("Usuario para jugar Offline") }, singleLine = true)
                 OutlinedTextField(display, { display = it.take(32) }, Modifier.fillMaxWidth(),
-                    label = { Text("Nombre en PRISSMA") }, singleLine = true)
+                    label = { Text("Nombre en Biomeria") }, singleLine = true)
                 OutlinedTextField(bio, { bio = it.take(240) }, Modifier.fillMaxWidth(),
                     label = { Text("Sobre mí") }, maxLines = 3)
                 OutlinedTextField(playStyle, { playStyle = it.take(40) }, Modifier.fillMaxWidth(),

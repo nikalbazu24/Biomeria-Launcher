@@ -33,6 +33,9 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.drawBehind
+import com.prissma.launcher.ui.theme.PixelFont
 import androidx.work.WorkInfo
 import com.prissma.launcher.data.AppUpdater
 import com.prissma.launcher.data.EngineType
@@ -69,9 +72,9 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 private enum class HubPage(val label: String, val icon: ImageVector) {
-    LIBRARY("Biblioteca", Icons.Default.Home),
+    LIBRARY("Mis mundos", Icons.Default.Home),
     WORKSHOP("Taller", Icons.Default.Build),
-    CONNECTIONS("Conexiones", Icons.Default.Share),
+    CONNECTIONS("Jugar juntos", Icons.Default.Share),
     SETTINGS("Ajustes", Icons.Default.Settings)
 }
 
@@ -87,6 +90,7 @@ internal fun HubScreen(
     onOpenStarling: (GameInstance) -> String?,
     onConsumeStarlingReport: (Uri) -> Unit,
     externalLaunchInstanceId: String? = null,
+    externalLaunchFromWeb: Boolean = false,
     updateSettingsRequest: Int = 0,
     sourceFrontendPackage: String? = null,
     onConsumeExternalLaunch: () -> Unit = {}
@@ -126,6 +130,7 @@ internal fun HubScreen(
     var launchingId by rememberSaveable { mutableStateOf<String?>(null) }
     var launchingServer by rememberSaveable { mutableStateOf<String?>(null) }
     var serversId by rememberSaveable { mutableStateOf<String?>(null) }
+    var confirmWebLaunchId by rememberSaveable { mutableStateOf<String?>(null) }
     var update by remember { mutableStateOf<UpdateInfo?>(null) }
     var installedNotes by remember(updater, version) { mutableStateOf<String?>(null) }
     var releaseNotesSeen by remember(updater, version) { mutableStateOf(updater.hasSeenReleaseNotes(version)) }
@@ -250,7 +255,8 @@ internal fun HubScreen(
         val instance = instances.firstOrNull { it.id == id }
         if (instance != null) {
             selectedId = instance.id
-            launchInstance(instance)
+            // A web page can open prissma:// links on its own; only launch after the player agrees.
+            if (externalLaunchFromWeb) confirmWebLaunchId = instance.id else launchInstance(instance)
         } else notify("El cartucho apunta a una instancia que no está en la biblioteca.")
         onConsumeExternalLaunch()
     }
@@ -380,6 +386,18 @@ internal fun HubScreen(
         installedNotes?.let { ReleaseNotesDialog(version, it, ::acknowledgeReleaseNotes) }
     }
 
+    instances.firstOrNull { it.id == confirmWebLaunchId }?.let { item ->
+        AlertDialog(
+            onDismissRequest = { confirmWebLaunchId = null },
+            title = { Text("¿Abrir " + item.title + "?") },
+            text = { Text("Un enlace de una página web quiere iniciar esta instancia. Ábrela solo si tú pulsaste el enlace.") },
+            confirmButton = {
+                TextButton(onClick = { confirmWebLaunchId = null; launchInstance(item) }) { Text("Jugar") }
+            },
+            dismissButton = { TextButton(onClick = { confirmWebLaunchId = null }) { Text("Cancelar") } }
+        )
+    }
+
     if (showAccount) ProfileDialog(profile, storage.profileAvatar(profile), { showAccount = false }, savingProfile) { updated, photo ->
         savingProfile = true
         scope.launch {
@@ -480,14 +498,16 @@ private fun HubFrame(
         if (landscape) {
             Row(Modifier.fillMaxSize()) {
                 Column(
-                    Modifier.fillMaxHeight().width(84.dp).background(Prissma.colors.surfaceCard)
-                        .verticalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 9.dp),
+                    Modifier.fillMaxHeight().width(96.dp).background(Prissma.colors.ink)
+                        .border(width = 2.dp, color = Prissma.colors.surfaceElevated)
+                        .verticalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 10.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    PrissmaMark(Modifier.size(36.dp))
-                    Text("PRISSMA", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold)
-                    Spacer(Modifier.height(3.dp))
+                    PrissmaMark(Modifier.size(38.dp, 42.dp))
+                    Text("Biomeria", fontFamily = PixelFont, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+                        color = Prissma.colors.textPrimary, maxLines = 1)
+                    Spacer(Modifier.height(4.dp))
                     navigation()
                 }
                 mainPanel(Modifier.weight(1f).fillMaxHeight())
@@ -495,7 +515,7 @@ private fun HubFrame(
         } else {
             Column(Modifier.fillMaxSize()) {
                 mainPanel(Modifier.weight(1f).fillMaxWidth())
-                Row(Modifier.fillMaxWidth().background(Prissma.colors.surfaceCard).padding(4.dp),
+                Row(Modifier.fillMaxWidth().background(Prissma.colors.ink).padding(4.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly) { navigation() }
             }
         }
@@ -507,18 +527,25 @@ private fun NavigationItem(page: HubPage, selected: Boolean, update: Boolean, on
                            modifier: Modifier = Modifier) {
     val source = remember { MutableInteractionSource() }
     val focus by source.collectIsFocusedAsState()
-    val tint = if (selected || focus) Prissma.colors.brandAccent else Prissma.colors.textMuted
+    val tint = if (selected || focus) Prissma.colors.textPrimary else Prissma.colors.textMuted
+    val accent = Prissma.colors.brandAccent
     Column(
-        modifier.widthIn(min = 65.dp).clip(ControlShape)
+        modifier.widthIn(min = 76.dp).clip(ControlShape)
             .background(if (selected || focus) Prissma.colors.surfaceElevated else Color.Transparent)
-            .border(1.dp, if (focus) tint else Color.Transparent, ControlShape)
+            .drawBehind {
+                if (selected) drawRect(accent, size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height))
+            }
+            .border(if (focus) 3.dp else 0.dp, if (focus) Prissma.colors.gold else Color.Transparent, ControlShape)
             .gamepadClick(onClick = onClick)
             .selectable(selected, interactionSource = source, indication = null, role = Role.Tab, onClick = onClick)
             .heightIn(min = 43.dp).padding(horizontal = 4.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        BadgedBox(badge = { if (update) Badge() }) { Icon(page.icon, null, Modifier.size(17.dp), tint = tint) }
-        Text(page.label, style = MaterialTheme.typography.labelSmall, maxLines = 1, color = tint)
+        BadgedBox(badge = { if (update) Badge(containerColor = Prissma.colors.gold) }) {
+            Icon(page.icon, null, Modifier.size(20.dp), tint = if (selected) accent else tint)
+        }
+        Text(page.label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold,
+            maxLines = 1, color = tint)
     }
 }
 

@@ -58,7 +58,7 @@ internal fun BedrockAppsDialog(
                 val installed = games
                 when {
                     installed == null -> LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    installed.isEmpty() -> Text("Si ya tienes Minecraft, abre PRISSMA en el mismo perfil de Android.")
+                    installed.isEmpty() -> Text("Si ya tienes Minecraft, abre Biomeria en el mismo perfil de Android.")
                     else -> {
                         Text("Elige la aplicación que abrirán las tarjetas Bedrock.")
                         installed.forEach { game ->

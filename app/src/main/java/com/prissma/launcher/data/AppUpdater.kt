@@ -1,6 +1,7 @@
 package com.prissma.launcher.data
 
 import android.content.Context
+import com.prissma.launcher.BuildConfig
 import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
@@ -80,6 +81,8 @@ class AppUpdater(private val context: Context) {
 
     suspend fun checkForUpdate(): Result<UpdateInfo?> = withContext(Dispatchers.IO) {
         runCatching {
+            // A sample build is a separate app: the beta channel belongs to the real one.
+            if (BuildConfig.SAMPLE_BUILD) return@runCatching null
             val release = JSONObject(fetchReleases("/latest"))
             if (release.optBoolean("prerelease")) return@runCatching null
             val update = parseRelease(release) ?: return@runCatching null
@@ -90,6 +93,8 @@ class AppUpdater(private val context: Context) {
 
     suspend fun checkForPreview(): Result<UpdateInfo?> = withContext(Dispatchers.IO) {
         runCatching {
+            // A sample build is a separate app: the beta channel belongs to the real one.
+            if (BuildConfig.SAMPLE_BUILD) return@runCatching null
             val releases = JSONArray(fetchReleases("?per_page=100"))
             val previews = (0 until releases.length()).asSequence()
                 .map(releases::getJSONObject)
@@ -151,7 +156,7 @@ class AppUpdater(private val context: Context) {
 
     private suspend fun download(apkUrl: String, onProgress: (Float) -> Unit) {
         require(apkUrl.startsWith(DOWNLOAD_PREFIX)) { "Origen de actualización inválido." }
-        check(canInstall()) { "Permite instalar apps de PRISSMA para continuar." }
+        check(canInstall()) { "Permite instalar apps de Biomeria para continuar." }
         val directory = File(context.cacheDir, "updates").apply { mkdirs() }
         directory.listFiles()?.filter { it.lastModified() < System.currentTimeMillis() - 86_400_000 }
             ?.forEach { it.delete() }

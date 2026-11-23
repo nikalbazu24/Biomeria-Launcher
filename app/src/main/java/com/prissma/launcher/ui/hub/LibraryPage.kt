@@ -57,6 +57,11 @@ import com.prissma.launcher.ui.components.PanelShape
 import com.prissma.launcher.ui.components.StatusDot
 import com.prissma.launcher.ui.components.gamepadClick
 import com.prissma.launcher.ui.theme.Prissma
+import com.prissma.launcher.ui.theme.biomeImage
+import com.prissma.launcher.ui.theme.biomeLabel
+import androidx.compose.animation.Crossfade
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Shadow
 
 @Composable
 internal fun LibraryPage(
@@ -128,16 +133,19 @@ private fun InstanceHero(
 ) {
     val palette = Prissma.colors
     Box(modifier.clip(PanelShape).background(palette.surfaceCard).border(1.dp, palette.borderSubtle, PanelShape)) {
-        Image(
-            painterResource(R.drawable.prissma_valley), contentDescription = null,
-            modifier = Modifier.matchParentSize(), contentScale = ContentScale.Crop,
-            alignment = Alignment.CenterEnd
-        )
+        // Each world shows its biome: the valley for Java, the ocean for Bedrock, the Nether for Starling.
+        Crossfade(instance?.engine ?: EngineType.JAVA, Modifier.matchParentSize(), label = "biome") { engine ->
+            Image(
+                painterResource(engine.biomeImage), contentDescription = null,
+                modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
+                alignment = Alignment.CenterEnd
+            )
+        }
         Box(Modifier.matchParentSize().background(Brush.horizontalGradient(
-            0f to Color(0xDC0F1719), .65f to Color(0x55101719), 1f to Color(0x160F1719)
+            0f to Color(0xD60A0D10), .6f to Color(0x660A0D10), 1f to Color(0x100A0D10)
         )))
         Box(Modifier.matchParentSize().background(Brush.verticalGradient(
-            0f to Color(0x4010181A), .4f to Color(0x3C10181A), 1f to Color(0xFF111719)
+            0f to Color(0x300A0D10), .45f to Color(0x300A0D10), 1f to Color(0xF00A0D10)
         )))
         Column(Modifier.fillMaxSize().padding(18.dp)) {
             if (instance != null) {
@@ -149,22 +157,23 @@ private fun InstanceHero(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        StatusDot(tint)
-                        Text(instance.engine.displayName, color = tint,
-                            style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        Box(Modifier.size(10.dp).background(tint))
+                        Text(instance.engine.biomeLabel, color = tint,
+                            style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.ExtraBold)
                     }
                     Spacer(Modifier.weight(1f))
                     HeroIcon(if (favorite) "Quitar de favoritos" else "Marcar como favorita",
-                        Icons.Default.Star, onFavorite, if (favorite) palette.brandAccent else palette.textMuted)
+                        Icons.Default.Star, onFavorite, if (favorite) palette.gold else palette.textMuted)
                     HeroIcon("Gestionar instancia", Icons.Default.Edit, onEdit, palette.textPrimary)
                 }
             }
             Spacer(Modifier.weight(1f))
-            Text(instance?.title ?: "Tu biblioteca", style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(instance?.title ?: "Tus mundos", style = MaterialTheme.typography.headlineLarge.copy(
+                    shadow = Shadow(Color(0x99000000), Offset(5f, 5f))),
+                maxLines = 2, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(5.dp))
             Text(
-                if (instance == null) "Selecciona una instancia para ver sus opciones." else when (instance.engine) {
+                if (instance == null) "Elige un mundo para ver sus opciones." else when (instance.engine) {
                     EngineType.RUST -> starling.starlingLaunchProblem() ?: checkNotNull(starling).label
                     EngineType.BEDROCK -> bedrock.launchProblem() ?: checkNotNull(bedrock).label
                     EngineType.JAVA -> "Minecraft ${instance.version} · ${instance.loader}"
@@ -210,7 +219,7 @@ private fun HeroIcon(label: String, icon: ImageVector, onClick: () -> Unit, tint
     IconButton(
         onClick = onClick, interactionSource = source,
         modifier = Modifier.size(44.dp).background(Prissma.colors.surfaceGlass, ControlShape)
-            .border(1.dp, if (focused) Prissma.colors.brandAccent else Color.Transparent, ControlShape)
+            .border(3.dp, if (focused) Prissma.colors.gold else Color.Transparent, ControlShape)
             .gamepadClick(onClick = onClick)
     ) { Icon(icon, label, tint = tint, modifier = Modifier.size(20.dp)) }
 }
@@ -240,7 +249,7 @@ private fun LibraryList(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Column(Modifier.weight(1f)) {
-                Text("Instancias", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("Mundos", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
                 Text(if (instances.size == 1) "1 resultado" else instances.size.toString() + " resultados",
                     style = MaterialTheme.typography.labelSmall, color = palette.textMuted)
             }
@@ -253,13 +262,13 @@ private fun LibraryList(
             Box {
                 val open = { filtersOpen = true }
                 FilterChip(filter != null || order != LibraryOrder.RECENT, open,
-                    label = { Text(filter?.displayName ?: "Filtrar") },
+                    label = { Text(filter?.biomeLabel ?: "Filtrar") },
                     trailingIcon = { Icon(Icons.Default.ArrowDropDown, null, Modifier.size(14.dp)) },
                     modifier = Modifier.gamepadClick(onClick = open))
                 DropdownMenu(filtersOpen, onDismissRequest = { filtersOpen = false }) {
                     (listOf(null) + EngineType.entries).forEach { engine ->
                         val choose = { onFilter(engine); filtersOpen = false }
-                        DropdownMenuItem(text = { Text(engine?.displayName ?: "Todos los motores") },
+                        DropdownMenuItem(text = { Text(engine?.biomeLabel ?: "Todos los biomas") },
                             onClick = choose, modifier = Modifier.gamepadClick(onClick = choose))
                     }
                     HorizontalDivider()
@@ -275,7 +284,7 @@ private fun LibraryList(
         }
         if (instances.isEmpty()) {
             Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                Text(if (favoritesOnly) "No hay favoritos en esta vista." else "No se encontraron instancias.",
+                Text(if (favoritesOnly) "No hay favoritos en esta vista." else "No se encontraron mundos.",
                     style = MaterialTheme.typography.bodyMedium, color = palette.textMuted)
             }
         } else {
@@ -308,7 +317,7 @@ private fun LibrarySearch(query: String, onQuery: (String) -> Unit) {
         query, onQuery, singleLine = true, interactionSource = source,
         textStyle = MaterialTheme.typography.bodyMedium.copy(color = palette.textPrimary),
         cursorBrush = SolidColor(palette.brandAccent),
-        modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Buscar instancias" },
+        modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Buscar mundos" },
         decorationBox = { textField ->
             Row(
                 Modifier.heightIn(min = 43.dp).background(palette.surfaceVoid, ControlShape)
@@ -319,7 +328,7 @@ private fun LibrarySearch(query: String, onQuery: (String) -> Unit) {
             ) {
                 Icon(Icons.Default.Search, null, Modifier.size(16.dp), tint = palette.textMuted)
                 Box(Modifier.weight(1f)) {
-                    if (query.isEmpty()) Text("Buscar instancias", color = palette.textMuted,
+                    if (query.isEmpty()) Text("Buscar mundos", color = palette.textMuted,
                         style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     textField()
                 }
@@ -337,26 +346,27 @@ private fun LibraryEntry(instance: GameInstance, version: String?, selected: Boo
     val source = remember { MutableInteractionSource() }
     val focused by source.collectIsFocusedAsState()
     val tint = palette.engineColor(instance.engine.name)
-    val border = if (focused) palette.brandAccent else if (selected) palette.borderSubtle else Color.Transparent
+    val border = if (focused) palette.gold else if (selected) tint else Color.Transparent
     Row(
         Modifier.fillMaxWidth().clip(ControlShape)
             .background(if (selected || focused) palette.surfaceElevated else Color.Transparent)
-            .border(1.dp, border, ControlShape).gamepadClick(onClick = onSelect)
+            .border(if (focused || selected) 2.dp else 0.dp, border, ControlShape).gamepadClick(onClick = onSelect)
             .selectable(selected, interactionSource = source, indication = null, role = Role.Button, onClick = onSelect)
             .heightIn(min = 49.dp).padding(horizontal = 8.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)
     ) {
-        Box(Modifier.size(30.dp).background(tint.copy(alpha = .13f), ControlShape), contentAlignment = Alignment.Center) {
-            Text(instance.engine.displayName.take(1), color = tint,
-                style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-        }
+        Image(
+            painterResource(instance.engine.biomeImage), contentDescription = null,
+            modifier = Modifier.size(52.dp, 36.dp).clip(ControlShape).border(2.dp, tint, ControlShape),
+            contentScale = ContentScale.Crop, alignment = Alignment.CenterEnd
+        )
         Column(Modifier.weight(1f)) {
             Text(instance.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(listOfNotNull(instance.engine.displayName, version).joinToString(" · "), color = palette.textMuted,
+            Text(listOfNotNull(instance.engine.biomeLabel, version).joinToString(" · "), color = palette.textMuted,
                 style = MaterialTheme.typography.labelSmall, maxLines = 1)
         }
-        if (favorite) Icon(Icons.Default.Star, "Favorita", Modifier.size(15.dp), tint = palette.brandAccent)
+        if (favorite) Icon(Icons.Default.Star, "Favorita", Modifier.size(15.dp), tint = palette.gold)
         if (selected) StatusDot(palette.brandAccent, Modifier.padding(end = 2.dp))
     }
 }

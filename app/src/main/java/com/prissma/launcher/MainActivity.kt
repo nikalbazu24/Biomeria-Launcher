@@ -33,6 +33,7 @@ class MainActivity : ComponentActivity() {
     private var starlingReport by mutableStateOf<Uri?>(null)
     private var updateSettingsRequest by mutableStateOf(0)
     private var externalLaunchInstanceId by mutableStateOf<String?>(null)
+    private var externalLaunchFromWeb by mutableStateOf(false)
     private var sourceFrontendPackage by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,6 +43,7 @@ class MainActivity : ComponentActivity() {
             handleIncomingIntent(intent)
         } else {
             externalLaunchInstanceId = savedInstanceState.getString("pendingExternalLaunch")
+            externalLaunchFromWeb = savedInstanceState.getBoolean("pendingExternalLaunchFromWeb")
             sourceFrontendPackage = savedInstanceState.getString("sourceFrontendPackage")
             starlingReport = savedInstanceState.getString("pendingStarlingReport")?.let(Uri::parse)
         }
@@ -71,11 +73,13 @@ class MainActivity : ComponentActivity() {
                             if (starlingReport == source) starlingReport = null
                         },
                         externalLaunchInstanceId = externalLaunchInstanceId,
+                        externalLaunchFromWeb = externalLaunchFromWeb,
                         updateSettingsRequest = updateSettingsRequest,
                         sourceFrontendPackage = sourceFrontendPackage,
                         onConsumeExternalLaunch = {
                             showSplash = false
                             externalLaunchInstanceId = null
+                            externalLaunchFromWeb = false
                         }
                     )
                 }
@@ -92,6 +96,7 @@ class MainActivity : ComponentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putString("pendingExternalLaunch", externalLaunchInstanceId)
+        outState.putBoolean("pendingExternalLaunchFromWeb", externalLaunchFromWeb)
         outState.putString("sourceFrontendPackage", sourceFrontendPackage)
         outState.putString("pendingStarlingReport", starlingReport?.toString())
     }
@@ -125,11 +130,15 @@ class MainActivity : ComponentActivity() {
             return
         }
         val dataUri = intent?.data ?: return
-        if (dataUri.isHierarchical && dataUri.host == "launch" && dataUri.scheme in listOf("prissma", "mchub")) {
+        if (dataUri.isHierarchical && dataUri.host == "launch" && dataUri.scheme in listOf("biomeria", "prissma", "mchub")) {
             sourceFrontendPackage = dataUri.getQueryParameter("source_frontend")
                 ?: intent.getStringExtra("source_frontend")
             val instanceId = dataUri.getQueryParameter("instance_id")
-            if (!instanceId.isNullOrBlank()) externalLaunchInstanceId = instanceId
+            if (!instanceId.isNullOrBlank()) {
+                // Browsers add CATEGORY_BROWSABLE; frontends such as Díptico or Cocoon launch directly.
+                externalLaunchFromWeb = intent.hasCategory(Intent.CATEGORY_BROWSABLE)
+                externalLaunchInstanceId = instanceId
+            }
             return
         }
 
@@ -138,6 +147,7 @@ class MainActivity : ComponentActivity() {
         val storage = InstanceStorage(applicationContext)
         val fromFile = storage.extractInstanceIdFromUri(dataUri)
         if (!fromFile.isNullOrBlank()) {
+            externalLaunchFromWeb = intent.hasCategory(Intent.CATEGORY_BROWSABLE)
             externalLaunchInstanceId = fromFile
         }
     }

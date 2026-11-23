@@ -41,8 +41,8 @@ internal fun GameWidgets(hud: GameHudSettings, fps: Int?, bridge: DualScreenBrid
             }
         }
     }
+    // The FPS counter has its own small spot in the top-left corner (FpsCounter).
     val labels = buildList {
-        if (hud.showFps) add("${fps ?: "—"} FPS")
         if (hud.showCoordinates) position?.let { add("X ${floor(it.x).toInt()}   Y ${floor(it.y).toInt()}   Z ${floor(it.z).toInt()}") }
         if (hud.showBattery) battery?.let { add("Batería $it%") }
     }
@@ -55,4 +55,14 @@ internal fun GameWidgets(hud: GameHudSettings, fps: Int?, bridge: DualScreenBrid
                 fontSize = (12f * hud.widgetScale).sp, fontFamily = FontFamily.Monospace, maxLines = 1)
         }
     }
+}
+
+/** Small FPS counter for the top-left corner of the game, kept apart from the other indicators. */
+@Composable
+internal fun FpsCounter(fps: Int?, modifier: Modifier = Modifier) {
+    Text(
+        "${fps ?: "—"} FPS",
+        modifier.background(Color(0xB30B0E11), RoundedCornerShape(3.dp)).padding(horizontal = 5.dp, vertical = 1.dp),
+        color = Color(0xFFE3E9EC), fontSize = 10.sp, fontFamily = FontFamily.Monospace, maxLines = 1
+    )
 }

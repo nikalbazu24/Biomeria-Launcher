@@ -33,7 +33,7 @@ internal fun GameControlsDialog(
             Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("En menús, mueve el cursor con un stick, pulsa A para confirmar y B para volver.")
-                Text("En partida, el stick izquierdo mueve al jugador y el derecho controla la cámara. Select abre PRISSMA.")
+                Text("En partida, el stick izquierdo mueve al jugador y el derecho controla la cámara. Select abre el menú de Biomeria.")
                 GameHudControls(hud, onHud)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("Doble pantalla", Modifier.weight(1f))

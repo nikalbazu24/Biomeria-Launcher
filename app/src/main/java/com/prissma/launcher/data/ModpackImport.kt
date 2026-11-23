@@ -59,9 +59,9 @@ internal fun decodeModpack(index: JSONObject): ModpackMetadata {
         dependencies.has("fabric-loader") && dependencies.length() == 2 -> "Fabric " + dependencies.getString("fabric-loader")
         dependencies.has("neoforge") && dependencies.length() == 2 -> "NeoForge " + dependencies.getString("neoforge")
         dependencies.length() == 1 -> "Vanilla"
-        else -> error("El modpack requiere un cargador incompatible con esta versión de PRISSMA.")
+        else -> error("El modpack requiere un cargador incompatible con esta versión de Biomeria.")
     }
-    require(supportsJavaLoader(version, loader)) { "Minecraft $version con $loader aún no está disponible en PRISSMA." }
+    require(supportsJavaLoader(version, loader)) { "Minecraft $version con $loader aún no está disponible en Biomeria." }
     val files = index.getJSONArray("files")
     require(files.length() <= 4096) { "Demasiados archivos en el modpack." }
     val installed = buildList {

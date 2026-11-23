@@ -1,0 +1,68 @@
+name: Muestra de Biomeria (sin publicar)
+
+# Builds a test APK from biomeria/* branches. It installs next to the real app
+# (package com.prissma.launcher.muestra), never creates a release and never
+# reaches the auto-update channel.
+on:
+  push:
+    branches: [ "biomeria/**" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Probar el verificador del APK
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
+
+      - name: Probar el tamaño de pantalla, el primer fotograma y el registro
+        run: |
+          cmake -S tests/glfw_viewport -B "$RUNNER_TEMP/prissma-glfw-test" -DCMAKE_BUILD_TYPE=Debug
+          cmake --build "$RUNNER_TEMP/prissma-glfw-test" --parallel 2
+          ctest --test-dir "$RUNNER_TEMP/prissma-glfw-test" --output-on-failure
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Restaurar llave de firma
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            umask 077
+            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > app/prissma.jks
+          fi
+
+      - name: Compilar la muestra
+        env:
+          PRISSMA_MICROSOFT_CLIENT_ID: ${{ vars.PRISSMA_MICROSOFT_CLIENT_ID }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          VER="muestra-${{ github.run_number }}"
+          gradle testDebugUnitTest assembleRelease -PbiomeriaSample=true -PversionCode=${{ github.run_number }} -PversionName=$VER
+          cp app/build/outputs/apk/release/app-release.apk "Biomeria-muestra-${{ github.run_number }}.apk"
+
+      - name: Verificar nativos ARM64 para Minecraft Java
+        run: python3 scripts/verify_java_apk.py Biomeria-muestra-*.apk
+
+      - name: Subir la muestra
+        uses: actions/upload-artifact@v4
+        with:
+          name: Biomeria-muestra
+          path: Biomeria-muestra-*.apk
+          retention-days: 14

@@ -54,7 +54,7 @@ internal fun ElyAccountPanel(enabled: Boolean) {
                 try {
                     val revoked = accounts.signOutEly()
                     linked = null
-                    problem = if (revoked) null else "Se borró la sesión de PRISSMA. Ely.by no confirmó la revocación remota."
+                    problem = if (revoked) null else "Se borró la sesión de Biomeria. Ely.by no confirmó la revocación remota."
                 } catch (error: IOException) {
                     problem = "No se pudo cerrar la sesión de Ely.by."
                 } finally {

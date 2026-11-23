@@ -27,7 +27,7 @@ internal enum class PanelPage(val label: String, val canStart: Boolean = true) {
 }
 
 internal enum class PanelMapSource(val label: String) {
-    PRISSMA("Mapa PRISSMA"), MINECRAFT("Mapa equipado");
+    PRISSMA("Mapa de Biomeria"), MINECRAFT("Mapa equipado");
 
     companion object {
         fun fromPreference(value: String?) = entries.firstOrNull { it.name == value } ?: PRISSMA

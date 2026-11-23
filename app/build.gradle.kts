@@ -13,6 +13,8 @@ plugins {
 
 val buildVersionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
 val buildVersionName = (project.findProperty("versionName") as String?) ?: "1.0.0-beta.1"
+// Sample builds install next to the real app and never check for updates.
+val biomeriaSample = (project.findProperty("biomeriaSample") as String?) == "true"
 val microsoftApplicationId = providers.gradleProperty("microsoftClientId")
     .orElse(providers.environmentVariable("PRISSMA_MICROSOFT_CLIENT_ID")).orElse("").get().trim()
 require(microsoftApplicationId.isEmpty() || microsoftApplicationId.matches(Regex("[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}"))) {
@@ -244,6 +246,9 @@ android {
         versionCode = buildVersionCode
         versionName = buildVersionName
         buildConfigField("String", "MICROSOFT_CLIENT_ID", "\"$microsoftApplicationId\"")
+        buildConfigField("boolean", "SAMPLE_BUILD", biomeriaSample.toString())
+        manifestPlaceholders["appLabel"] = if (biomeriaSample) "Biomeria (muestra)" else "Biomeria"
+        if (biomeriaSample) applicationIdSuffix = ".muestra"
 
         ndk {
             abiFilters += listOf("arm64-v8a")

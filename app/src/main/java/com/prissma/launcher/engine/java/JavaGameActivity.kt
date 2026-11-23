@@ -578,9 +578,14 @@ private fun JavaNativeViewportScreen(
                     }
                 }
             }
+            if (hud.showFps) {
+                FpsCounter(fps, Modifier.align(Alignment.TopStart).windowInsetsPadding(WindowInsets.displayCutout)
+                    .padding(start = 6.dp, top = 4.dp))
+            }
             if (!hud.widgetsBelow || !activity.lowerPanelVisible) {
                 GameWidgets(hud, fps, panelBridge,
-                    Modifier.align(Alignment.TopStart).windowInsetsPadding(WindowInsets.displayCutout).padding(9.dp))
+                    Modifier.align(Alignment.TopStart).windowInsetsPadding(WindowInsets.displayCutout)
+                        .padding(start = 9.dp, top = if (hud.showFps) 24.dp else 9.dp))
             }
             if (hud.showMinimap && captured && panelBridge != null) {
                 TerrainMapPane(panelBridge,
@@ -602,7 +607,7 @@ private fun JavaNativeViewportScreen(
                 LauncherButton(
                     "II", { showOverlay = true },
                     modifier = Modifier.graphicsLayer { alpha = hud.pauseOpacity }
-                        .semantics { contentDescription = "Menú de PRISSMA" }
+                        .semantics { contentDescription = "Menú de Biomeria" }
                 )
             }
         }

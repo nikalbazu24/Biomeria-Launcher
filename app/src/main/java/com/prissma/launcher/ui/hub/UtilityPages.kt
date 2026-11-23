@@ -92,7 +92,7 @@ internal fun ConnectionsPage(
                         saveCartridge.launch(storage.cartridgeName(selected))
                     }, primary = true, enabled = exportingId == null)
                     LauncherButton("Copiar enlace", {
-                        context.copyText("Enlace de PRISSMA", link)
+                        context.copyText("Enlace de Biomeria", link)
                         onNotice("Enlace copiado.")
                     })
                 }
@@ -157,7 +157,7 @@ internal fun SettingsPage(
         val url = pendingInstallUrl
         pendingInstallUrl = null
         if (url != null && updater.canInstall()) install(url)
-        else updateStatus = "Permite instalar apps de PRISSMA para continuar."
+        else updateStatus = "Permite instalar apps de Biomeria para continuar."
     }
 
     val notificationSettings = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -176,7 +176,7 @@ internal fun SettingsPage(
             pendingInstallUrl = url
             runCatching { installPermission.launch(updater.installPermissionIntent()) }.onFailure {
                 pendingInstallUrl = null
-                updateStatus = "Abre los ajustes de Android y permite instalar apps de PRISSMA."
+                updateStatus = "Abre los ajustes de Android y permite instalar apps de Biomeria."
             }
         }
     }
@@ -279,7 +279,7 @@ internal fun SettingsPage(
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                 LauncherButton("Recargar", { refresh += 1; link = null }, enabled = !publishing)
                 LauncherButton("Copiar", {
-                    report?.let { context.copyText("Reporte de PRISSMA", it.text) }
+                    report?.let { context.copyText("Reporte de Biomeria", it.text) }
                     onNotice("Reporte copiado.")
                 }, enabled = report != null)
                 LauncherButton(if (publishing) "Subiendo…" else "Subir a mclo.gs", {

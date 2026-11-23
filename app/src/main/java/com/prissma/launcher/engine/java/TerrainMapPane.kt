@@ -168,7 +168,7 @@ private fun TerrainView(
             return@Box
         }
         val active = waypoints.active
-        Canvas(Modifier.fillMaxSize().semantics { contentDescription = "Mapa de terreno de PRISSMA" }.then(
+        Canvas(Modifier.fillMaxSize().semantics { contentDescription = "Mapa de terreno de Biomeria" }.then(
             if (compact) Modifier else Modifier.pointerInput(Unit) {
                 detectTransformGestures { _, pan, zoom, _ ->
                     val current = liveCamera

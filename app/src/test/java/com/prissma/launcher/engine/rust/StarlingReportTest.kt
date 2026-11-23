@@ -70,7 +70,7 @@ class StarlingReportTest {
         val missing = StarlingInstallation("0.9.0", canOpen = false)
         assertEquals("Rust integrado · Starling 0.9.0", bundled.label)
         assertNull(bundled.launchProblem())
-        assertEquals("Falta el motor Rust en esta compilación de PRISSMA.", missing.launchProblem())
+        assertEquals("Falta el motor Rust en esta compilación de Biomeria.", missing.launchProblem())
         assertEquals(missing.launchProblem(), (null as StarlingInstallation?).launchProblem())
     }
 

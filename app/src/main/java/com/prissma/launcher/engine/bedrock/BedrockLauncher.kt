@@ -40,7 +40,7 @@ internal fun isBedrockCandidate(packageName: String, label: String): Boolean =
     BedrockEdition.entries.any { it.packageName == packageName } || minecraftLabel.containsMatchIn(label.trim())
 
 internal fun BedrockInstallation?.launchProblem(): String? = when {
-    this == null -> "PRISSMA no encontró Minecraft en este perfil de Android."
+    this == null -> "Biomeria no encontró Minecraft en este perfil de Android."
     !canOpen -> "Revisa que $title esté habilitado en Android."
     else -> null
 }

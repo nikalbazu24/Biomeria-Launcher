@@ -6,13 +6,15 @@ import android.content.UriMatcher
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
+import com.prissma.launcher.BuildConfig
 import com.prissma.launcher.data.InstanceStorage
 import java.util.Locale
 
 class PrissmaCatalogProvider : ContentProvider() {
 
     companion object {
-        const val AUTHORITY = "com.prissma.launcher.provider"
+        // Equals "com.prissma.launcher.provider" in the real app, the address frontends already use.
+        val AUTHORITY = BuildConfig.APPLICATION_ID + ".provider"
         private const val CODE_INSTANCES = 1
 
         private val uriMatcher = UriMatcher(UriMatcher.NO_MATCH).apply {

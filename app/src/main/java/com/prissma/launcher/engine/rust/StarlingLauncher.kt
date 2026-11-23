@@ -18,7 +18,7 @@ internal data class StarlingInstallation(val version: String?, val canOpen: Bool
 }
 
 internal fun StarlingInstallation?.launchProblem(): String? = when {
-    this == null || !canOpen -> "Falta el motor Rust en esta compilación de PRISSMA."
+    this == null || !canOpen -> "Falta el motor Rust en esta compilación de Biomeria."
     else -> null
 }
 

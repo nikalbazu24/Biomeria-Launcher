@@ -120,7 +120,7 @@ internal class MinecraftAccounts(context: Context) {
         }
     }
 
-    private fun signInRequired(mode: JavaAccountMode) = AccountError("Vincula tu cuenta de ${mode.label} en el perfil de PRISSMA.")
+    private fun signInRequired(mode: JavaAccountMode) = AccountError("Vincula tu cuenta de ${mode.label} en el perfil de Biomeria.")
 
     private companion object {
         val lock = Mutex()

@@ -73,7 +73,7 @@ class UpdateWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         )
         val notification = NotificationCompat.Builder(context, UpdateNotifications.CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("Actualización de PRISSMA")
+            .setContentTitle("Actualización de Biomeria")
             .setContentText(release.versionTag + " disponible")
             .setContentIntent(openSettings)
             .setAutoCancel(true)

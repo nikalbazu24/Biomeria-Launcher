@@ -28,7 +28,7 @@
         android:allowNativeHeapPointerTagging="false"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
-        android:label="PRISSMA Launcher"
+        android:label="${appLabel}"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
 
@@ -49,6 +49,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="prissma" android:host="launch" />
+                <data android:scheme="biomeria" android:host="launch" />
                 <data android:scheme="mchub" android:host="launch" />
             </intent-filter>
 
@@ -66,7 +67,7 @@
         <activity-alias
             android:name=".StarlingReportShare"
             android:exported="true"
-            android:label="PRISSMA · Diagnóstico de Starling"
+            android:label="Biomeria · Diagnóstico de Starling"
             android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
@@ -143,7 +144,7 @@
 
         <provider
             android:name=".ipc.PrissmaCatalogProvider"
-            android:authorities="com.prissma.launcher.provider"
+            android:authorities="${applicationId}.provider"
             android:exported="true" />
 
         <provider
