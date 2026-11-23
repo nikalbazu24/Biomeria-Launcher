@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.22)
-project(PrissmaGlfwViewportTest LANGUAGES C CXX)
+project(BiomeriaGlfwViewportTest LANGUAGES C CXX)
 
 get_filename_component(bridge_dir "../../app/src/main/cpp" ABSOLUTE)
-include(${bridge_dir}/PrissmaGlfw.cmake)
+include(${bridge_dir}/BiomeriaGlfw.cmake)
 target_include_directories(glfw PRIVATE stubs)
 
 add_library(mock_egl SHARED fake_egl.c)

@@ -16,9 +16,9 @@ val buildVersionName = (project.findProperty("versionName") as String?) ?: "1.0.
 // Sample builds install next to the real app and never check for updates.
 val biomeriaSample = (project.findProperty("biomeriaSample") as String?) == "true"
 val microsoftApplicationId = providers.gradleProperty("microsoftClientId")
-    .orElse(providers.environmentVariable("PRISSMA_MICROSOFT_CLIENT_ID")).orElse("").get().trim()
+    .orElse(providers.environmentVariable("BIOMERIA_MICROSOFT_CLIENT_ID")).orElse("").get().trim()
 require(microsoftApplicationId.isEmpty() || microsoftApplicationId.matches(Regex("[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}"))) {
-    "El ID público de Microsoft para PRISSMA debe ser un UUID."
+    "El ID público de Microsoft para BIOMERIA debe ser un UUID."
 }
 
 val jnaAndroidVersions = listOf("5.12.1", "5.13.0", "5.14.0", "5.15.0", "5.17.0")
@@ -227,7 +227,7 @@ val dualScreenClasses = tasks.register<JavaCompile>("compileDualScreenMod") {
 val dualScreenMod = tasks.register<Jar>("dualScreenMod") {
     from(dualScreenClasses.flatMap { it.destinationDirectory })
     from("src/dualScreenMod/resources")
-    archiveFileName.set("prissma-dual-screen.jar")
+    archiveFileName.set("biomeria-dual-screen.jar")
     destinationDirectory.set(dualScreenAssets.map { it.dir("dualscreen") })
 }
 tasks.named("preBuild") {
@@ -236,11 +236,11 @@ tasks.named("preBuild") {
 }
 
 android {
-    namespace = "com.prissma.launcher"
+    namespace = "com.biomeria.launcher"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.prissma.launcher"
+        applicationId = "com.biomeria.launcher"
         minSdk = 26
         targetSdk = 35
         versionCode = buildVersionCode
@@ -257,7 +257,7 @@ android {
 
     signingConfigs {
         create("release") {
-            val keystoreFile = file("prissma.jks")
+            val keystoreFile = file("biomeria.jks")
             if (keystoreFile.exists()) {
                 storeFile = keystoreFile
                 storePassword = System.getenv("KEYSTORE_PASSWORD")
@@ -270,7 +270,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = if (file("prissma.jks").exists()) {
+            signingConfig = if (file("biomeria.jks").exists()) {
                 signingConfigs.getByName("release")
             } else {
                 signingConfigs.getByName("debug")

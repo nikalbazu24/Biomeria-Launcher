@@ -1,6 +1,6 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
-#include "prissma_glfw_android.h"
+#include "biomeria_glfw_android.h"
 #include <android/native_window.h>
 #include <assert.h>
 
@@ -79,11 +79,11 @@ int main(void)
     ANativeWindow surface = {1920, 1080, 0};
     glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_NULL);
     assert(glfwInit());
-    prissmaGlfwSetSurface(&surface);
+    biomeriaGlfwSetSurface(&surface);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    GLFWwindow* window = glfwCreateWindow(854, 480, "PRISSMA", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(854, 480, "BIOMERIA", NULL, NULL);
     assert(window);
     assertSize(window, 1920, 1080);
 
@@ -98,7 +98,7 @@ int main(void)
     assert(x == 0 && y == 0);
 
     // Android provides its new buffer extent before ANativeWindow reports it.
-    prissmaGlfwSetSize(1600, 900);
+    biomeriaGlfwSetSize(1600, 900);
     glfwPollEvents();
     assertSize(window, 1600, 900);
     assert(framebufferChanges == 1 && windowChanges == 1);
@@ -111,9 +111,9 @@ int main(void)
     glfwSetKeyCallback(window, keyChanged);
     glfwSetMouseButtonCallback(window, mouseChanged);
     glfwSetCharCallback(window, typed);
-    prissmaGlfwInput(0, 0, 0, 400.0, 225.0);
-    prissmaGlfwInput(2, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0.0, 0.0);
-    prissmaGlfwInput(3, GLFW_KEY_W, GLFW_PRESS, 'w', 0.0);
+    biomeriaGlfwInput(0, 0, 0, 400.0, 225.0);
+    biomeriaGlfwInput(2, GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS, 0.0, 0.0);
+    biomeriaGlfwInput(3, GLFW_KEY_W, GLFW_PRESS, 'w', 0.0);
     glfwPollEvents();
     double cursorX, cursorY;
     glfwGetCursorPos(window, &cursorX, &cursorY);
@@ -122,15 +122,15 @@ int main(void)
     assert(glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS);
     assert(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS);
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-    assert(prissmaGlfwCursorCaptured());
+    assert(biomeriaGlfwCursorCaptured());
     glfwSetScrollCallback(window, hotbarScrolled);
-    prissmaGlfwInput(4, 0, 0, 0.0, 1.0);
-    prissmaGlfwInput(4, 0, 0, 0.0, -1.0);
+    biomeriaGlfwInput(4, 0, 0, 0.0, 1.0);
+    biomeriaGlfwInput(4, 0, 0, 0.0, -1.0);
     glfwPollEvents();
     assert(scrollChanges == 2);
-    prissmaGlfwInput(1, 0, 0, 2.0, 1.0);
-    prissmaGlfwInput(1, 0, 0, 3.0, 2.0);
-    prissmaGlfwInput(5, 0, 0, 0.0, 0.0);
+    biomeriaGlfwInput(1, 0, 0, 2.0, 1.0);
+    biomeriaGlfwInput(1, 0, 0, 3.0, 2.0);
+    biomeriaGlfwInput(5, 0, 0, 0.0, 0.0);
     glfwPollEvents();
     glfwGetCursorPos(window, &cursorX, &cursorY);
     assert(cursorX == 405.0 && cursorY == 228.0 && cursorChanges == 2);
@@ -138,24 +138,24 @@ int main(void)
     assert(glfwGetKey(window, GLFW_KEY_W) == GLFW_RELEASE);
     assert(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_RELEASE);
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-    assert(!prissmaGlfwCursorCaptured());
-    prissmaGlfwInput(6, 0x1F603, 0, 0.0, 0.0);
+    assert(!biomeriaGlfwCursorCaptured());
+    biomeriaGlfwInput(6, 0x1F603, 0, 0.0, 0.0);
     glfwPollEvents();
     assert(characterChanges == 2);
 
     glfwMakeContextCurrent(window);
-    assert(!prissmaGlfwHasPresentedFrame());
-    assert(prissmaGlfwPresentedFrames() == 0);
+    assert(!biomeriaGlfwHasPresentedFrame());
+    assert(biomeriaGlfwPresentedFrames() == 0);
     mockFailNextSwap();
     glfwSwapBuffers(window);
-    assert(!prissmaGlfwHasPresentedFrame());
+    assert(!biomeriaGlfwHasPresentedFrame());
     glfwSwapBuffers(window);
-    assert(prissmaGlfwHasPresentedFrame());
-    assert(prissmaGlfwPresentedFrames() == 1);
+    assert(biomeriaGlfwHasPresentedFrame());
+    assert(biomeriaGlfwPresentedFrames() == 1);
     glfwSwapBuffers(window);
-    assert(prissmaGlfwPresentedFrames() == 2);
+    assert(biomeriaGlfwPresentedFrames() == 2);
 
-    prissmaGlfwSetSurface(NULL);
+    biomeriaGlfwSetSurface(NULL);
     glfwPollEvents();
     assert(glfwWindowShouldClose(window));
     glfwDestroyWindow(window);

@@ -68,7 +68,7 @@ int eglTerminate(void* display) { return 1; }
 
 const unsigned char* glGetString(unsigned name)
 {
-    return name == 0x1F02 ? (const unsigned char*)"3.2 PRISSMA test" : (const unsigned char*)"";
+    return name == 0x1F02 ? (const unsigned char*)"3.2 BIOMERIA test" : (const unsigned char*)"";
 }
 const unsigned char* glGetStringi(unsigned name, unsigned index) { return NULL; }
 void glGetIntegerv(unsigned name, int* result) { *result = name == 0x9126 ? 1 : 0; }

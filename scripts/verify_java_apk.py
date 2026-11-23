@@ -20,7 +20,7 @@ PAIRS = {
 }
 # The JVM uses the system allocator in place of jemalloc.
 REQUIRED_NATIVES = {
-    "libprissma_jvm_bridge.so", "libjnidispatch.so", "libglfw.so",
+    "libbiomeria_jvm_bridge.so", "libjnidispatch.so", "libglfw.so",
     "libopenal.so", "libfreetype.so", "libmobileglues.so",
     "libjnidispatch_5_12_1.so", "libjnidispatch_5_13_0.so", "libjnidispatch_5_14_0.so", "libjnidispatch_5_17_0.so",
     *(library for library, _ in PAIRS.values()),
@@ -28,8 +28,8 @@ REQUIRED_NATIVES = {
 GLFW_SYMBOLS = {
     "glfwInit", "glfwCreateWindow", "glfwMakeContextCurrent", "glfwSwapBuffers",
     "glfwPollEvents", "glfwGetProcAddress", "glfwTerminate",
-    "prissmaGlfwSetSurface", "prissmaGlfwSetSize", "prissmaGlfwInput",
-    "prissmaGlfwHasPresentedFrame", "prissmaGlfwCursorCaptured", "prissmaGlfwPresentedFrames",
+    "biomeriaGlfwSetSurface", "biomeriaGlfwSetSize", "biomeriaGlfwInput",
+    "biomeriaGlfwHasPresentedFrame", "biomeriaGlfwCursorCaptured", "biomeriaGlfwPresentedFrames",
 }
 RENDERER_SYMBOLS = {"eglBindAPI", "eglCreateContext", "eglCreateWindowSurface", "eglSwapBuffers", "glXGetProcAddress"}
 DESKTOP_DEPENDENCY = re.compile(

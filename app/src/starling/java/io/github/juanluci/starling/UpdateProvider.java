@@ -24,7 +24,7 @@ public final class UpdateProvider extends ContentProvider {
 
     static Uri reportUri(String packageName, String slot, String name) {
         return new Uri.Builder().scheme("content").authority(packageName + ".updates")
-                .appendPath("diagnostics").appendPath(PrissmaProfiles.slot(slot)).appendPath(name).build();
+                .appendPath("diagnostics").appendPath(BiomeriaProfiles.slot(slot)).appendPath(name).build();
     }
 
     private File file(Uri uri) throws FileNotFoundException {
@@ -39,7 +39,7 @@ public final class UpdateProvider extends ContentProvider {
         File root = getContext().getFilesDir();
         if (report && path.size() == 3) {
             try {
-                root = PrissmaProfiles.existing(root, path.get(1));
+                root = BiomeriaProfiles.existing(root, path.get(1));
             } catch (IllegalArgumentException error) {
                 throw new FileNotFoundException(String.valueOf(uri));
             }

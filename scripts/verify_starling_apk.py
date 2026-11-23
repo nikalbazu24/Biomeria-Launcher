@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check that PRISSMA embeds the pinned Starling ARM64 runtime without a second APK."""
+"""Check that BIOMERIA embeds the pinned Starling ARM64 runtime without a second APK."""
 
 import sys
 from zipfile import ZipFile
@@ -33,9 +33,9 @@ def verify(apk, upstream):
                 if bundled.read(1):
                     raise ValueError(f"Embedded Starling file has unexpected trailing bytes: {name}")
         if any(name.lower().endswith(".apk") for name in files):
-            raise ValueError("PRISSMA unexpectedly contains a nested APK")
+            raise ValueError("BIOMERIA unexpectedly contains a nested APK")
 
 
 if __name__ == "__main__":
     verify(*sys.argv[1:])
-    print("Starling ARM64 runtime verified inside PRISSMA")
+    print("Starling ARM64 runtime verified inside BIOMERIA")

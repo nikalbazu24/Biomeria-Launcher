@@ -1,6 +1,6 @@
 package io.github.juanluci.starling;
 
-import com.prissma.launcher.R;
+import com.biomeria.launcher.R;
 
 import android.app.Activity;
 import android.app.Dialog;
@@ -96,9 +96,9 @@ public final class DiagnosticsActivity extends Activity {
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
         try {
-            slot = PrissmaProfiles.slot(getIntent().getStringExtra(PrissmaProfiles.EXTRA_SLOT));
-            profileFiles = PrissmaProfiles.prepare(super.getFilesDir(), slot,
-                    getIntent().getStringExtra(PrissmaProfiles.EXTRA_TITLE));
+            slot = BiomeriaProfiles.slot(getIntent().getStringExtra(BiomeriaProfiles.EXTRA_SLOT));
+            profileFiles = BiomeriaProfiles.prepare(super.getFilesDir(), slot,
+                    getIntent().getStringExtra(BiomeriaProfiles.EXTRA_TITLE));
         } catch (IOException | IllegalArgumentException error) {
             android.widget.Toast.makeText(this, "No se pudo abrir el diagnóstico de esta instancia de Rust.",
                     android.widget.Toast.LENGTH_LONG).show();
@@ -133,7 +133,7 @@ public final class DiagnosticsActivity extends Activity {
         View.OnClickListener retry = new View.OnClickListener() {
             @Override public void onClick(View view) {
                 startActivity(new Intent(DiagnosticsActivity.this, GameActivity.class)
-                        .putExtra(PrissmaProfiles.EXTRA_SLOT, slot).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                        .putExtra(BiomeriaProfiles.EXTRA_SLOT, slot).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
                 finish();
             }
         };

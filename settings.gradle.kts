@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "prissma-launcher"
+rootProject.name = "biomeria-launcher"
 include(":app")

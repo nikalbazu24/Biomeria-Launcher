@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.22.1)
-project("prissma_jvm_bridge")
+project("biomeria_jvm_bridge")
 
 add_library(
-    prissma_jvm_bridge
+    biomeria_jvm_bridge
     SHARED
-    prissma_jvm_bridge.cpp
-    prissma_audio.cpp
+    biomeria_jvm_bridge.cpp
+    biomeria_audio.cpp
 )
 
 find_library(log-lib log)
@@ -14,7 +14,7 @@ find_library(egl-lib EGL)
 find_library(glesv3-lib GLESv3)
 
 target_link_libraries(
-    prissma_jvm_bridge
+    biomeria_jvm_bridge
     ${android-lib}
     ${log-lib}
     ${egl-lib}
@@ -22,9 +22,9 @@ target_link_libraries(
     dl
 )
 
-include(PrissmaGlfw.cmake)
+include(BiomeriaGlfw.cmake)
 target_link_libraries(glfw PRIVATE ${android-lib})
-target_link_libraries(prissma_jvm_bridge glfw)
+target_link_libraries(biomeria_jvm_bridge glfw)
 
 set(ALSOFT_UTILS OFF CACHE BOOL "" FORCE)
 set(ALSOFT_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -41,4 +41,4 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(openal_soft)
 set_target_properties(OpenAL PROPERTIES VERSION "" SOVERSION "")
 
-target_link_libraries(prissma_jvm_bridge OpenAL)
+target_link_libraries(biomeria_jvm_bridge OpenAL)

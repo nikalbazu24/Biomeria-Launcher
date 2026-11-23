@@ -52,9 +52,9 @@ public final class LauncherActivity extends Activity {
         super.onCreate(savedInstanceState);
         Intent intent = getIntent();
         try {
-            slot = PrissmaProfiles.slot(intent.getStringExtra(PrissmaProfiles.EXTRA_SLOT));
-            profileFiles = PrissmaProfiles.prepare(super.getFilesDir(), slot,
-                    intent.getStringExtra(PrissmaProfiles.EXTRA_TITLE));
+            slot = BiomeriaProfiles.slot(intent.getStringExtra(BiomeriaProfiles.EXTRA_SLOT));
+            profileFiles = BiomeriaProfiles.prepare(super.getFilesDir(), slot,
+                    intent.getStringExtra(BiomeriaProfiles.EXTRA_TITLE));
         } catch (IOException | IllegalArgumentException error) {
             launchError("No se pudo preparar el almacenamiento de esta instancia de Rust.");
             return;
@@ -101,7 +101,7 @@ public final class LauncherActivity extends Activity {
             });
         } else if (StartupRecovery.interrupted(this)) {
             startActivity(new Intent(this, DiagnosticsActivity.class)
-                    .putExtra(PrissmaProfiles.EXTRA_SLOT, slot)
+                    .putExtra(BiomeriaProfiles.EXTRA_SLOT, slot)
                     .putExtra(StartupRecovery.RECOVERY, true));
             finish();
         } else {
@@ -118,7 +118,7 @@ public final class LauncherActivity extends Activity {
     private void play() {
         // The game's own task (singleTask): it stays in the recents, this one does not.
         Intent game = new Intent(this, GameActivity.class);
-        game.putExtra(PrissmaProfiles.EXTRA_SLOT, slot);
+        game.putExtra(BiomeriaProfiles.EXTRA_SLOT, slot);
         game.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         startActivity(game);
         finish();

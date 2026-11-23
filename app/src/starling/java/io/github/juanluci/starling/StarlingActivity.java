@@ -1,6 +1,6 @@
 package io.github.juanluci.starling;
 
-import com.prissma.launcher.R;
+import com.biomeria.launcher.R;
 
 import android.Manifest;
 import android.app.AlertDialog;
@@ -171,7 +171,7 @@ public class StarlingActivity extends NativeActivity {
         runOnUiThread(new Runnable() {
             @Override public void run() {
                 startActivity(new Intent(StarlingActivity.this, DiagnosticsActivity.class)
-                        .putExtra(PrissmaProfiles.EXTRA_SLOT, slot));
+                        .putExtra(BiomeriaProfiles.EXTRA_SLOT, slot));
             }
         });
     }
@@ -194,9 +194,9 @@ public class StarlingActivity extends NativeActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        slot = PrissmaProfiles.slot(getIntent().getStringExtra(PrissmaProfiles.EXTRA_SLOT));
+        slot = BiomeriaProfiles.slot(getIntent().getStringExtra(BiomeriaProfiles.EXTRA_SLOT));
         try {
-            profileFiles = PrissmaProfiles.existing(super.getFilesDir(), slot);
+            profileFiles = BiomeriaProfiles.existing(super.getFilesDir(), slot);
         } catch (java.io.FileNotFoundException error) {
             throw new IllegalStateException("Rust profile was not prepared by its launcher", error);
         }
@@ -264,7 +264,7 @@ public class StarlingActivity extends NativeActivity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        String requested = PrissmaProfiles.slot(intent.getStringExtra(PrissmaProfiles.EXTRA_SLOT));
+        String requested = BiomeriaProfiles.slot(intent.getStringExtra(BiomeriaProfiles.EXTRA_SLOT));
         if (!slot.equals(requested)) restartInto(requested, "Abriendo otra instancia de Rust…");
     }
 
@@ -758,7 +758,7 @@ public class StarlingActivity extends NativeActivity {
             if (restarting || isFinishing()) return;
             restarting = true;
             Intent again = new Intent(this, LauncherActivity.class)
-                    .putExtra(PrissmaProfiles.EXTRA_SLOT, requested)
+                    .putExtra(BiomeriaProfiles.EXTRA_SLOT, requested)
                     .putExtra(LauncherActivity.AFTER, android.os.Process.myPid())
                     .putExtra(LauncherActivity.MESSAGE, message)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -840,7 +840,7 @@ public class StarlingActivity extends NativeActivity {
      */
     public boolean openFolder(String path) {
         File target = new File(path);
-        String id = new GameFolder(getFilesDir(), PrissmaProfiles.documentRoot(slot)).idOf(target);
+        String id = new GameFolder(getFilesDir(), BiomeriaProfiles.documentRoot(slot)).idOf(target);
         if (id != null
                 && viewFolder(DocumentsContract.buildDocumentUri(getPackageName() + ".documents", id))) {
             return true;
@@ -975,7 +975,7 @@ public class StarlingActivity extends NativeActivity {
         return "0.9.0";
     }
 
-    /** PRISSMA's updater is the only APK update channel for the embedded engine. */
+    /** BIOMERIA's updater is the only APK update channel for the embedded engine. */
     public boolean releaseBuild() {
         return false;
     }

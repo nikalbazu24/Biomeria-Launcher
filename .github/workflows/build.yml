@@ -1,4 +1,4 @@
-name: Build & Auto-Release PRISSMA
+name: Build & Auto-Release BIOMERIA
 
 on:
   push:
@@ -23,9 +23,9 @@ jobs:
 
       - name: Probar el tamaño de pantalla y el primer fotograma de GLFW
         run: |
-          cmake -S tests/glfw_viewport -B "$RUNNER_TEMP/prissma-glfw-test" -DCMAKE_BUILD_TYPE=Debug
-          cmake --build "$RUNNER_TEMP/prissma-glfw-test" --parallel 2
-          ctest --test-dir "$RUNNER_TEMP/prissma-glfw-test" --output-on-failure
+          cmake -S tests/glfw_viewport -B "$RUNNER_TEMP/biomeria-glfw-test" -DCMAKE_BUILD_TYPE=Debug
+          cmake --build "$RUNNER_TEMP/biomeria-glfw-test" --parallel 2
+          ctest --test-dir "$RUNNER_TEMP/biomeria-glfw-test" --output-on-failure
 
       - name: Configurar Java 17
         uses: actions/setup-java@v4
@@ -50,7 +50,7 @@ jobs:
               exit 1
             fi
             umask 077
-            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > app/prissma.jks
+            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > app/biomeria.jks
             echo "persistent=true" >> "$GITHUB_OUTPUT"
           else
             echo "persistent=false" >> "$GITHUB_OUTPUT"
@@ -76,7 +76,7 @@ jobs:
 
       - name: Compilar APK Release Firmado ARM64
         env:
-          PRISSMA_MICROSOFT_CLIENT_ID: ${{ vars.PRISSMA_MICROSOFT_CLIENT_ID }}
+          BIOMERIA_MICROSOFT_CLIENT_ID: ${{ vars.BIOMERIA_MICROSOFT_CLIENT_ID }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
@@ -89,7 +89,7 @@ jobs:
         run: |
           TAG="v1.0.0-beta.${{ github.run_number }}"
           echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
-          cp app/build/outputs/apk/release/app-release.apk "PRISSMA-Launcher-${TAG}.apk"
+          cp app/build/outputs/apk/release/app-release.apk "BIOMERIA-Launcher-${TAG}.apk"
 
       - name: Verificar firma del APK
         env:
@@ -98,9 +98,9 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
           apksigner="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
-          report="$("$apksigner" verify --print-certs "PRISSMA-Launcher-${RELEASE_TAG}.apk")"
+          report="$("$apksigner" verify --print-certs "BIOMERIA-Launcher-${RELEASE_TAG}.apk")"
           if [ "$PERSISTENT_SIGNING" = "true" ]; then
-            expected="$(keytool -exportcert -keystore app/prissma.jks -alias "$KEY_ALIAS" -storepass:env KEYSTORE_PASSWORD | sha256sum | cut -d ' ' -f 1)"
+            expected="$(keytool -exportcert -keystore app/biomeria.jks -alias "$KEY_ALIAS" -storepass:env KEYSTORE_PASSWORD | sha256sum | cut -d ' ' -f 1)"
             actual="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' <<< "$report")"
             release_certificate="d2457fc8866da1a2d4227b781855bf02e6dd47cd89242ef205b7d61c83fc553c"
             if [ "$actual" != "$expected" ] || [ "$actual" != "$release_certificate" ]; then
@@ -110,61 +110,61 @@ jobs:
           fi
 
       - name: Verificar nativos ARM64 para Minecraft Java
-        run: python3 scripts/verify_java_apk.py "PRISSMA-Launcher-${RELEASE_TAG}.apk"
+        run: python3 scripts/verify_java_apk.py "BIOMERIA-Launcher-${RELEASE_TAG}.apk"
 
       - name: Verificar el agente de autenticación de Ely.by
         run: |
           set -o pipefail
-          unzip -p "PRISSMA-Launcher-${RELEASE_TAG}.apk" assets/authlib/authlib-injector-1.2.8.jar > "$RUNNER_TEMP/ely-authlib-injector.jar"
+          unzip -p "BIOMERIA-Launcher-${RELEASE_TAG}.apk" assets/authlib/authlib-injector-1.2.8.jar > "$RUNNER_TEMP/ely-authlib-injector.jar"
           printf '%s  %s\n' '9c7f4343e6c82034958ffb48c14a2cb0c85928be7283103ce17da00c6d5a7b10' "$RUNNER_TEMP/ely-authlib-injector.jar" | sha256sum -c -
 
       - name: Verificar el panel Fabric de doble pantalla
         run: |
-          python3 - "PRISSMA-Launcher-${RELEASE_TAG}.apk" <<'PY'
+          python3 - "BIOMERIA-Launcher-${RELEASE_TAG}.apk" <<'PY'
           import io
           import json
           import sys
           import zipfile
 
           with zipfile.ZipFile(sys.argv[1]) as apk:
-              module = apk.read("assets/dualscreen/prissma-dual-screen.jar")
+              module = apk.read("assets/dualscreen/biomeria-dual-screen.jar")
           with zipfile.ZipFile(io.BytesIO(module)) as mod:
               metadata = json.loads(mod.read("fabric.mod.json"))
-              assert metadata["id"] == "prissma_dual_screen"
+              assert metadata["id"] == "biomeria_dual_screen"
               assert metadata["environment"] == "client"
               assert metadata["depends"]["minecraft"] == "1.21.4"
               mixins = json.loads(mod.read(metadata["mixins"][0]))
               expected_mixins = ["MinecraftClientMixin", "RoutedScreenMixin", "RoutedMouseMixin"]
               assert mixins["client"] == expected_mixins
               mixin_package = mixins["package"].replace(".", "/")
-              bridge_path = "com/prissma/dualscreen/GamePanelBridge"
+              bridge_path = "com/biomeria/dualscreen/GamePanelBridge"
               assert not bridge_path.startswith(mixin_package + "/")
               for entry in [mixin_package + "/" + name for name in expected_mixins] + [
-                  bridge_path, bridge_path + "$Access", "com/prissma/dualscreen/TerrainMap",
-                  "com/prissma/dualscreen/RecipeBookPanel", "com/prissma/dualscreen/InternetWorldLease"
+                  bridge_path, bridge_path + "$Access", "com/biomeria/dualscreen/TerrainMap",
+                  "com/biomeria/dualscreen/RecipeBookPanel", "com/biomeria/dualscreen/InternetWorldLease"
               ]:
                   assert mod.read(entry + ".class").startswith(bytes.fromhex("CAFEBABE"))
           PY
 
       - name: Verificar motor Rust dentro de la APK
-        run: python3 scripts/verify_starling_apk.py "PRISSMA-Launcher-${RELEASE_TAG}.apk" app/build/downloads/starling-0.9.0-arm64.apk
+        run: python3 scripts/verify_starling_apk.py "BIOMERIA-Launcher-${RELEASE_TAG}.apk" app/build/downloads/starling-0.9.0-arm64.apk
 
       - name: Subir Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PRISSMA-APK
-          path: PRISSMA-Launcher-*.apk
+          name: BIOMERIA-APK
+          path: BIOMERIA-Launcher-*.apk
 
       - name: Publicar Release automático
         if: steps.signing.outputs.persistent == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          name: "PRISSMA Launcher ${{ env.RELEASE_TAG }}"
+          name: "BIOMERIA Launcher ${{ env.RELEASE_TAG }}"
           prerelease: false
           make_latest: true
           body_path: ${{ env.RELEASE_NOTES_FILE }}
-          files: PRISSMA-Launcher-*.apk
+          files: BIOMERIA-Launcher-*.apk
 
 
       - name: Informar cuando falte la firma de publicación

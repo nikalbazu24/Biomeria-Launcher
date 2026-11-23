@@ -40,9 +40,9 @@ public final class GameFolderProvider extends DocumentsProvider {
     }
 
     private GameFolder folder(String document) throws FileNotFoundException {
-        String slot = PrissmaProfiles.slotForDocument(document);
-        File files = PrissmaProfiles.existing(getContext().getFilesDir(), slot);
-        return new GameFolder(files, PrissmaProfiles.documentRoot(slot));
+        String slot = BiomeriaProfiles.slotForDocument(document);
+        File files = BiomeriaProfiles.existing(getContext().getFilesDir(), slot);
+        return new GameFolder(files, BiomeriaProfiles.documentRoot(slot));
     }
 
     /** The manifest's authority, which follows the package: Starling and its Preview side by side. */
@@ -58,8 +58,8 @@ public final class GameFolderProvider extends DocumentsProvider {
 
     private String title(GameFolder folder) throws FileNotFoundException {
         if (GameFolder.ROOT.equals(folder.rootId())) return title();
-        String name = PrissmaProfiles.title(folder.file(folder.rootId()));
-        return "PRISSMA · " + (name == null || name.isEmpty() ? "Rust" : name);
+        String name = BiomeriaProfiles.title(folder.file(folder.rootId()));
+        return "BIOMERIA · " + (name == null || name.isEmpty() ? "Rust" : name);
     }
 
     private void changed(String folderId) {
@@ -77,8 +77,8 @@ public final class GameFolderProvider extends DocumentsProvider {
     @Override
     public Cursor queryRoots(String[] projection) throws FileNotFoundException {
         MatrixCursor cursor = new MatrixCursor(projection == null ? ROOT_COLUMNS : projection);
-        for (String slot : PrissmaProfiles.slots(getContext().getFilesDir())) {
-            String root = PrissmaProfiles.documentRoot(slot);
+        for (String slot : BiomeriaProfiles.slots(getContext().getFilesDir())) {
+            String root = BiomeriaProfiles.documentRoot(slot);
             try {
                 GameFolder folder = folder(root);
                 File path = folder.file(root);
