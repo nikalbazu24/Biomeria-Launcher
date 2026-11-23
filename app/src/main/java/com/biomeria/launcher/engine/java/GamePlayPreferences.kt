@@ -38,7 +38,7 @@ internal data class GameHudSettings(
     val compactPanel: Boolean = false,
     val routeChests: Boolean = true,
     val routeFurnaces: Boolean = true,
-    val showMinimap: Boolean = false,
+    val showMinimap: Boolean = true,
     val showCoordinates: Boolean = false,
     val showBattery: Boolean = false,
     val widgetsBelow: Boolean = false,
@@ -67,7 +67,14 @@ internal data class GameHudSettings(
     /** The "controller drives game / panel" chip in the lower screen's top bar. */
     val showPadChip: Boolean = true,
     /** Which corner of the top screen the Biomeria tips appear in. */
-    val tipCorner: TipCorner = TipCorner.TOP_END
+    val tipCorner: TipCorner = TipCorner.TOP_END,
+    /** Floating map for single-screen play: corner, size, see-through, how much land it shows, marks and coordinates. */
+    val mapCorner: TipCorner = TipCorner.TOP_END,
+    val mapSize: FloatingMapSize = FloatingMapSize.MEDIUM,
+    val mapSoft: Boolean = false,
+    val mapZoom: FloatingMapZoom = FloatingMapZoom.NORMAL,
+    val mapMarks: Boolean = true,
+    val mapCoords: Boolean = true
 ) {
     fun routes(layout: PanelLayout) = when (layout) {
         PanelLayout.PERSONAL -> false
@@ -108,6 +115,12 @@ internal data class GameHudSettings(
         putBoolean("panelTips", panelTips)
         putBoolean("showPadChip", showPadChip)
         putString("tipCorner", tipCorner.name)
+        putString("mapCorner", mapCorner.name)
+        putString("mapSize", mapSize.name)
+        putBoolean("mapSoft", mapSoft)
+        putString("mapZoom", mapZoom.name)
+        putBoolean("mapMarks", mapMarks)
+        putBoolean("mapCoords", mapCoords)
     }
 
     companion object {
@@ -122,7 +135,7 @@ internal data class GameHudSettings(
             bundle?.getBoolean("compactPanel", false) ?: false,
             bundle?.getBoolean("routeChests", true) ?: true,
             bundle?.getBoolean("routeFurnaces", true) ?: true,
-            bundle?.getBoolean("minimap", false) ?: false,
+            bundle?.getBoolean("minimap", true) ?: true,
             bundle?.getBoolean("coordinates", false) ?: false,
             bundle?.getBoolean("battery", false) ?: false,
             bundle?.getBoolean("widgetsBelow", false) ?: false,
@@ -142,7 +155,13 @@ internal data class GameHudSettings(
             InterfaceSize.fromPreference(bundle?.getString("interfaceSize")),
             bundle?.getBoolean("panelTips", true) ?: true,
             bundle?.getBoolean("showPadChip", true) ?: true,
-            TipCorner.fromPreference(bundle?.getString("tipCorner"))
+            TipCorner.fromPreference(bundle?.getString("tipCorner")),
+            TipCorner.fromPreference(bundle?.getString("mapCorner")),
+            FloatingMapSize.fromPreference(bundle?.getString("mapSize")),
+            bundle?.getBoolean("mapSoft", false) ?: false,
+            FloatingMapZoom.fromPreference(bundle?.getString("mapZoom")),
+            bundle?.getBoolean("mapMarks", true) ?: true,
+            bundle?.getBoolean("mapCoords", true) ?: true
         )
     }
 }
@@ -195,5 +214,23 @@ internal enum class TipCorner(val label: String) {
 
     companion object {
         fun fromPreference(value: String?) = entries.firstOrNull { it.name == value } ?: TOP_END
+    }
+}
+
+/** Side of the floating map over the game. */
+internal enum class FloatingMapSize(val label: String, val side: Int) {
+    SMALL("Chico", 112), MEDIUM("Mediano", 144), LARGE("Grande", 184);
+
+    companion object {
+        fun fromPreference(value: String?) = entries.firstOrNull { it.name == value } ?: MEDIUM
+    }
+}
+
+/** How many blocks across the floating map shows. */
+internal enum class FloatingMapZoom(val label: String, val span: Float) {
+    FAR("Lejos", 128f), NORMAL("Normal", 80f), NEAR("Cerca", 48f);
+
+    companion object {
+        fun fromPreference(value: String?) = entries.firstOrNull { it.name == value } ?: NORMAL
     }
 }

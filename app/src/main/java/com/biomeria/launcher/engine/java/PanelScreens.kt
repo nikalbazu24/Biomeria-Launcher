@@ -716,7 +716,7 @@ internal fun OptionsPage(
                 OptionGroup.MAP -> {
                     ChoiceRow("Mapa de esta pantalla", "El de Biomeria o el mapa que llevas en la mano", PanelMapSource.entries, hud.panelMap,
                         { if (it == PanelMapSource.BIOMERIA) "Biomeria" else "Equipado" }) { onHud(hud.copy(panelMap = it)) }
-                    SwitchRow("Minimapa en el juego", "Pequeño, en la pantalla de arriba", hud.showMinimap) { onHud(hud.copy(showMinimap = it)) }
+                    SwitchRow("Mapa flotante", "Cuando juegas con una sola pantalla", hud.showMinimap) { onHud(hud.copy(showMinimap = it)) }
                     SwitchRow("Criaturas en el mapa", "Solo en tus mundos, nunca en servidores", hud.showEntities) { onHud(hud.copy(showEntities = it)) }
                 }
                 OptionGroup.SCREENS -> {

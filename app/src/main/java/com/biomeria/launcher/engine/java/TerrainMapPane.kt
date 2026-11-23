@@ -58,7 +58,10 @@ internal fun TerrainMapPane(
     modifier: Modifier = Modifier,
     compact: Boolean = false,
     controllerActive: Boolean = false,
-    onPadInput: ((TerrainPadInput?) -> Unit)? = null
+    onPadInput: ((TerrainPadInput?) -> Unit)? = null,
+    compactSpan: Float = 80f,
+    compactMarks: Boolean = false,
+    compactCoords: Boolean = false
 ) {
     val directory = bridge.terrainDirectory ?: return
     val context = LocalContext.current
@@ -85,7 +88,7 @@ internal fun TerrainMapPane(
         return
     }
     key(player.scope) {
-        TerrainView(directory, player, entities, context, modifier, compact, controllerActive, onPadInput)
+        TerrainView(directory, player, entities, context, modifier, compact, controllerActive, onPadInput, compactSpan, compactMarks, compactCoords)
     }
 }
 
@@ -98,9 +101,12 @@ private fun TerrainView(
     modifier: Modifier,
     compact: Boolean,
     controllerActive: Boolean,
-    onPadInput: ((TerrainPadInput?) -> Unit)?
+    onPadInput: ((TerrainPadInput?) -> Unit)?,
+    compactSpan: Float,
+    compactMarks: Boolean,
+    compactCoords: Boolean
 ) {
-    var view by remember { mutableStateOf(TerrainCamera(player.x, player.z, if (compact) 80f else 112f)) }
+    var view by remember(compactSpan) { mutableStateOf(TerrainCamera(player.x, player.z, if (compact) compactSpan else 112f)) }
     val camera = if (view.follow) view.copy(x = player.x, z = player.z) else view
     val preference = remember(context) { context.getSharedPreferences("terrain-waypoints", Context.MODE_PRIVATE) }
     fun readBook() = TerrainWaypointBook.decode(preference.getString(player.scope, "").orEmpty())
@@ -227,8 +233,8 @@ private fun TerrainView(
                     filterQuality = FilterQuality.None)
             }
             for (point in waypoints.points) {
-                if (point.id == active?.id || compact) continue
-                drawWaypoint(point, screen(point.x.toDouble(), point.z.toDouble()), 5.dp.toPx(), false)
+                if (point.id == active?.id || (compact && !compactMarks)) continue
+                drawWaypoint(point, screen(point.x.toDouble(), point.z.toDouble()), (if (compact) 3.5.dp else 5.dp).toPx(), false)
             }
             if (active != null) {
                 val radius = (if (compact) 4.dp else 6.dp).toPx()
@@ -290,7 +296,10 @@ private fun TerrainView(
             if (active != null && !compact) MapLabel("${active.name} · ${active.distanceFrom(player)} bloques", Modifier.widthIn(max = 260.dp))
         }
         if (active != null && compact) {
-            MapLabel("${active.distanceFrom(player)} b", Modifier.align(Alignment.BottomStart).padding(5.dp))
+            MapLabel("${active.distanceFrom(player)} b", Modifier.align(if (compactCoords) Alignment.TopEnd else Alignment.BottomStart).padding(5.dp))
+        }
+        if (compact && compactCoords) {
+            MapLabel("X ${floor(player.x).toInt()}  Z ${floor(player.z).toInt()}", Modifier.align(Alignment.BottomCenter).padding(4.dp))
         }
         if (!compact) {
             // The controls float in the corners so the map keeps the space.

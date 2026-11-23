@@ -147,7 +147,7 @@ fun JavaLaunchScreen(
             settings.getBoolean("panel-compact-" + instance.id, false),
             settings.getBoolean("panel-chests-" + instance.id, true),
             settings.getBoolean("panel-furnaces-" + instance.id, true),
-            settings.getBoolean("minimap-" + instance.id, false),
+            settings.getBoolean("minimap-" + instance.id, true),
             settings.getBoolean("coordinates-" + instance.id, false),
             settings.getBoolean("battery-" + instance.id, false),
             settings.getBoolean("widgets-below-" + instance.id, false),
@@ -167,7 +167,13 @@ fun JavaLaunchScreen(
             com.biomeria.launcher.engine.java.InterfaceSize.fromPreference(settings.getString("interface-size-" + instance.id, null)),
             settings.getBoolean("panel-tips-" + instance.id, true),
             settings.getBoolean("pad-chip-" + instance.id, true),
-            com.biomeria.launcher.engine.java.TipCorner.fromPreference(settings.getString("tip-corner-" + instance.id, null))))
+            com.biomeria.launcher.engine.java.TipCorner.fromPreference(settings.getString("tip-corner-" + instance.id, null)),
+            com.biomeria.launcher.engine.java.TipCorner.fromPreference(settings.getString("map-corner-" + instance.id, null)),
+            com.biomeria.launcher.engine.java.FloatingMapSize.fromPreference(settings.getString("map-size-" + instance.id, null)),
+            settings.getBoolean("map-soft-" + instance.id, false),
+            com.biomeria.launcher.engine.java.FloatingMapZoom.fromPreference(settings.getString("map-zoom-" + instance.id, null)),
+            settings.getBoolean("map-marks-" + instance.id, true),
+            settings.getBoolean("map-coords-" + instance.id, true)))
     }
     val supported = supportsJavaLoader(instance.version, instance.loader)
 
@@ -203,7 +209,13 @@ fun JavaLaunchScreen(
             .putString("interface-size-" + instance.id, updated.interfaceSize.name)
             .putBoolean("panel-tips-" + instance.id, updated.panelTips)
             .putBoolean("pad-chip-" + instance.id, updated.showPadChip)
-            .putString("tip-corner-" + instance.id, updated.tipCorner.name).apply()
+            .putString("tip-corner-" + instance.id, updated.tipCorner.name)
+            .putString("map-corner-" + instance.id, updated.mapCorner.name)
+            .putString("map-size-" + instance.id, updated.mapSize.name)
+            .putBoolean("map-soft-" + instance.id, updated.mapSoft)
+            .putString("map-zoom-" + instance.id, updated.mapZoom.name)
+            .putBoolean("map-marks-" + instance.id, updated.mapMarks)
+            .putBoolean("map-coords-" + instance.id, updated.mapCoords).apply()
     }
     var crash by remember { mutableStateOf<CrashReading?>(null) }
     var crashLog by remember { mutableStateOf("") }

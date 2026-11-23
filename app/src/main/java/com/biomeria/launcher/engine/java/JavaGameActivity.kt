@@ -115,7 +115,32 @@ class JavaGameActivity : ComponentActivity() {
         override fun onInputDeviceRemoved(deviceId: Int) = padRouter.removeDevice(deviceId)
     }
 
+    /** Keys for the big map on single-screen consoles while it is open; it takes the whole controller. */
+    internal var mapKeys: ((Int) -> Unit)? = null
+    internal var mapAxes by mutableStateOf<GamepadAxes?>(null)
+        private set
+    private var mapHat: Int? = null
+    /** A short press of Select opens or closes the big map when there is no lower screen; returns false if it did not. */
+    internal var selectOpensMap: (() -> Boolean)? = null
+
     override fun dispatchKeyEvent(event: AndroidKeyEvent): Boolean {
+        val opensMap = selectOpensMap
+        if (event.keyCode == AndroidKeyEvent.KEYCODE_BUTTON_SELECT && opensMap != null && !lowerPanelVisible) {
+            if (event.action == AndroidKeyEvent.ACTION_UP && !event.isCanceled) {
+                // Holding Select still opens Biomeria's menu.
+                if (event.eventTime - event.downTime >= 600L || !opensMap()) togglePanel?.invoke()
+            }
+            return true
+        }
+        val keys = mapKeys
+        if (keys != null && event.keyCode != AndroidKeyEvent.KEYCODE_BACK && (event.isFromSource(InputDevice.SOURCE_GAMEPAD) ||
+                event.isFromSource(InputDevice.SOURCE_JOYSTICK) || event.isFromSource(InputDevice.SOURCE_DPAD) ||
+                AndroidKeyEvent.isGamepadButton(event.keyCode))
+        ) {
+            val directional = event.keyCode in AndroidKeyEvent.KEYCODE_DPAD_UP..AndroidKeyEvent.KEYCODE_DPAD_RIGHT
+            if (event.action == AndroidKeyEvent.ACTION_DOWN && (event.repeatCount == 0 || directional)) keys(event.keyCode)
+            return true
+        }
         if (event.keyCode == AndroidKeyEvent.KEYCODE_BUTTON_SELECT && togglePanel != null) {
             if (event.action == AndroidKeyEvent.ACTION_UP && !event.isCanceled &&
                 !padRouter.select(event.deviceId, event.eventTime - event.downTime)
@@ -141,6 +166,21 @@ class JavaGameActivity : ComponentActivity() {
     }
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        val keys = mapKeys
+        if (keys != null && event.isFromSource(InputDevice.SOURCE_JOYSTICK)) {
+            val axes = readGamepadAxes(event)
+            mapAxes = axes
+            val hat = when {
+                axes.hatY <= -.5f -> AndroidKeyEvent.KEYCODE_DPAD_UP
+                axes.hatY >= .5f -> AndroidKeyEvent.KEYCODE_DPAD_DOWN
+                axes.hatX <= -.5f -> AndroidKeyEvent.KEYCODE_DPAD_LEFT
+                axes.hatX >= .5f -> AndroidKeyEvent.KEYCODE_DPAD_RIGHT
+                else -> null
+            }
+            if (hat != null && hat != mapHat) keys(hat)
+            mapHat = hat
+            return true
+        }
         if (event.isFromSource(InputDevice.SOURCE_JOYSTICK)) {
             val axes = readGamepadAxes(event)
             if (padRouter.motion(event.deviceId, axes, event.eventTime)) return true
@@ -440,7 +480,18 @@ private fun JavaNativeViewportScreen(
     }
     val canSendInput = jvmStarted && !showOverlay && !showKeyboard && !showQuickMenu && !showHudDialog &&
         !showLanDialog && !showInternetDialog && !mapExpanded
-    val collectTerrain = hud.showMinimap || (hud.dualScreen && hud.panelMap == PanelMapSource.BIOMERIA)
+    val singleScreenMap = hud.showMinimap && !activity.lowerPanelVisible
+    val collectTerrain = singleScreenMap || mapExpanded || (hud.dualScreen && hud.panelMap == PanelMapSource.BIOMERIA)
+    val selectMap by rememberUpdatedState {
+        if (showOverlay || showKeyboard || showQuickMenu || showHudDialog || panelBridge == null || !hasPresentedFrame) false
+        else if (mapExpanded) { mapExpanded = false; true }
+        else if (captured) { mapExpanded = true; true }
+        else false
+    }
+    DisposableEffect(activity) {
+        activity.selectOpensMap = { selectMap() }
+        onDispose { activity.selectOpensMap = null }
+    }
     val characterLook by CharacterLooks.look.collectAsState()
     val customSkin by CharacterLooks.customRevision.collectAsState()
     LaunchedEffect(panelBridge, characterLook, customSkin) {
@@ -646,16 +697,31 @@ private fun JavaNativeViewportScreen(
                     Modifier.align(Alignment.TopStart).windowInsetsPadding(WindowInsets.displayCutout)
                         .padding(start = 9.dp, top = if (hud.showFps) 24.dp else 9.dp))
             }
-            if (hud.showMinimap && captured && panelBridge != null) {
-                FloatingMap(panelBridge, expanded = false, onExpanded = { mapExpanded = it },
-                    modifier = Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.displayCutout).padding(8.dp))
+            if (singleScreenMap && captured && panelBridge != null) {
+                FloatingMap(panelBridge, hud, onOpen = { mapExpanded = true },
+                    modifier = Modifier.align(when (hud.mapCorner) {
+                        TipCorner.TOP_START -> Alignment.TopStart
+                        TipCorner.TOP_END -> Alignment.TopEnd
+                        TipCorner.BOTTOM_START -> Alignment.BottomStart
+                        TipCorner.BOTTOM_END -> Alignment.BottomEnd
+                    }).windowInsetsPadding(WindowInsets.displayCutout).padding(
+                        start = 10.dp, end = 10.dp, bottom = 10.dp,
+                        // Below the menu button on the right and the indicators on the left.
+                        top = when (hud.mapCorner) {
+                            TipCorner.TOP_END -> 54.dp
+                            TipCorner.TOP_START -> if (hud.showFps || hud.showCoordinates || hud.showBattery) 56.dp else 10.dp
+                            else -> 10.dp
+                        }))
             }
             GameMenuPill(hud.pauseOpacity, { menuTab = GameMenuTab.GAME; showOverlay = true },
                 Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.displayCutout).padding(6.dp))
         }
 
         if (mapExpanded && panelBridge != null) {
-            FloatingMap(panelBridge, expanded = true, onExpanded = { mapExpanded = it })
+            BiomeriaMapScreen(panelBridge, hud, onHud = { hud = it; onHudChanged(it) }, axes = activity.mapAxes,
+                registerKeys = { activity.mapKeys = it },
+                onMenu = { mapExpanded = false; menuTab = GameMenuTab.GAME; showOverlay = true },
+                onClose = { mapExpanded = false })
         }
         if (showOverlay) {
             BiomeriaGameMenu(

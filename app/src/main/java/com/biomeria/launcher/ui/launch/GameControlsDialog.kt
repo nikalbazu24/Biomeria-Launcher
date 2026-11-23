@@ -114,7 +114,7 @@ internal fun GameHudControls(settings: GameHudSettings, onChange: (GameHudSettin
             Text("Contador de FPS", Modifier.weight(1f))
             Switch(settings.showFps, { onChange(settings.copy(showFps = it)) })
         }
-        PanelSwitch("Minimapa en el juego (Fabric 1.21.4)", settings.showMinimap) {
+        PanelSwitch("Mapa flotante con una sola pantalla (Fabric 1.21.4)", settings.showMinimap) {
             onChange(settings.copy(showMinimap = it))
         }
         PanelSwitch("Criaturas en el mapa (solo mundos propios)", settings.showEntities) {
