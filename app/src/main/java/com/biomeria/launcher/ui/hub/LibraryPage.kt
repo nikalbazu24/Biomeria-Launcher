@@ -206,11 +206,11 @@ private fun WorldHero(
             Text(
                 if (instance == null) "Crea tu primer mundo o elige uno de abajo."
                 else if (instance.engine in ComingSoonEngines) when (instance.engine) {
-                    EngineType.BEDROCK -> "El océano de Bedrock llegará pronto: jugar con amigos de otras plataformas."
+                    EngineType.BEDROCK -> "Minecraft Bedrock llegará pronto a Biomeria."
                     else -> "El Nether de Starling llegará pronto: el motor nativo pensado para consolas Android."
                 } else when (instance.engine) {
                     EngineType.JAVA -> "Minecraft Java con mods, mapa con marcas y pantalla dual para tu consola."
-                    EngineType.BEDROCK -> bedrock.launchProblem() ?: "Abre la app oficial de Minecraft para jugar con amigos de otras plataformas."
+                    EngineType.BEDROCK -> bedrock.launchProblem() ?: "Abre la app oficial de Minecraft Bedrock."
                     EngineType.RUST -> starling.starlingLaunchProblem() ?: "El motor nativo Starling, pensado para correr fluido en consolas Android."
                 },
                 color = Color(0xFFD6DEE2), style = MaterialTheme.typography.bodyMedium,

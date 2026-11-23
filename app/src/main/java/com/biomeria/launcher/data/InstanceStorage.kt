@@ -265,7 +265,7 @@ class InstanceStorage(private val context: Context) {
         ),
         GameInstance(
             id = "crossplay-bedrock",
-            title = "Crossplay Amigos",
+            title = "Minecraft Bedrock",
             engine = EngineType.BEDROCK,
             version = "26.10",
             loader = "MCPE Oficial"

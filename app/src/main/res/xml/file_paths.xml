@@ -3,4 +3,5 @@
     <cache-path name="updates" path="updates/" />
     <cache-path name="bedrock-imports" path="bedrock-imports/" />
     <files-path name="bedrock-content" path="bedrock-content/" />
+    <files-path name="instances" path="instances/" />
 </paths>

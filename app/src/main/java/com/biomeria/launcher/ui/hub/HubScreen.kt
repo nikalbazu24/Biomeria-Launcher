@@ -15,6 +15,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
@@ -85,6 +86,7 @@ private enum class HubPage(val label: String, val icon: ImageVector) {
     CONNECTIONS("Jugar juntos", Icons.Default.Share),
     ACHIEVEMENTS("Logros", Icons.Default.Star),
     STATS("Estadísticas", Icons.Default.DateRange),
+    GALLERY("Galería", Icons.Default.AccountBox),
     GUIDE("Guía", Icons.Default.Info),
     SETTINGS("Ajustes", Icons.Default.Settings)
 }
@@ -343,7 +345,7 @@ internal fun HubScreen(
             modifier = Modifier.fillMaxSize().padding(padding).onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
                 when {
-                    event.key == Key.ButtonB && page != HubPage.LIBRARY -> {
+                    event.key == Key.ButtonB && page != HubPage.LIBRARY && !(page == HubPage.GALLERY && GalleryViewer.open) -> {
                         page = HubPage.LIBRARY
                         true
                     }
@@ -403,6 +405,7 @@ internal fun HubScreen(
                 HubPage.WORKSHOP -> EmptyWorkshop { showNew = true }
                 HubPage.ACHIEVEMENTS -> AchievementsPage(instances, selected?.id, Modifier.fillMaxSize())
                 HubPage.STATS -> StatsPage(instances, Modifier.fillMaxSize())
+                HubPage.GALLERY -> GalleryPage(instances, Modifier.fillMaxSize())
                 HubPage.GUIDE -> GuidePage(Modifier.fillMaxSize())
             }
         }

@@ -39,6 +39,9 @@ En consolas de dos pantallas, la de abajo muestra inventario, crafteo, mapa y op
 - **Taller**: mods, shaders y paquetes de recursos desde Modrinth, con las dependencias a la vista; importa modpacks .mrpack.
 - **Jugar juntos**: abre tu mundo en tu red o por internet con una sala temporal.
 
+### Galería
+Las capturas que sacas en Minecraft (tecla F2) aparecen dentro de la app, juntas por mundo: cuadrícula, vista grande con LB / RB y botones para compartir o borrar.
+
 ### Guía
 Una pantalla dentro de la app que explica qué hace cada botón del mando (en el juego, pantalla de abajo, mapa grande y launcher) y cómo se usa cada parte de Biomeria.
 
