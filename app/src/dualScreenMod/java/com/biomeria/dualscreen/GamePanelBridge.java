@@ -60,6 +60,7 @@ public final class GamePanelBridge {
         if (SESSION.isEmpty()) return;
         checkQuit(client);
         PlayerSkin.tick(client, Path.of(SESSION));
+        HotbarTouch.tick(client, Path.of(SESSION));
         if (disabled || ++ticks % 2 != 0) return;
         Path root = Path.of(SESSION);
         Path lanRequest = root.resolve("lan-open");

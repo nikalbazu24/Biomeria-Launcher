@@ -89,6 +89,8 @@ internal class GameMenuActions(
     val lan: () -> Unit,
     val internet: () -> Unit,
     val exit: () -> Unit,
+    /** Opens the touch-key editor; null when touch controls are off. */
+    val editTouch: (() -> Unit)? = null,
     /** Saves the world and closes Minecraft properly; null when this version has no Biomeria mod. */
     val saveAndQuit: (() -> Unit)? = null
 )
@@ -245,6 +247,10 @@ private fun GameTab(
                 Modifier.weight(1f), enabled = ready, onClick = actions.minecraftPause)
             ShortcutTile("Doble pantalla", if (hud.dualScreen) "Activada: toca para apagar" else "Inventario y mapa abajo", "—",
                 Color(0xFFF07D4A), Modifier.weight(1f), enabled = hasPanel) { onHud(hud.copy(dualScreen = !hud.dualScreen)) }
+        }
+        actions.editTouch?.let { edit ->
+            ShortcutTile("Editar controles táctiles", "Mueve las teclas y cambia su tamaño", "—", Color(0xFF7BC74D),
+                Modifier.fillMaxWidth(), enabled = ready && hud.showTouch, onClick = edit)
         }
         Row(
             Modifier.fillMaxWidth().background(Biomeria.colors.surfaceCard, PanelShape)

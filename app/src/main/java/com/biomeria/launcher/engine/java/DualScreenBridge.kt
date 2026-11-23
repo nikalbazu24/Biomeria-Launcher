@@ -174,6 +174,14 @@ internal class DualScreenBridge(val directory: File, val terrainDirectory: File?
         setGenerationMarker("terrain-position", if (position && terrainDirectory != null) 1L else null)
     }
 
+    /** GUI scale Minecraft is drawing with, published by the mod; null before the first tick. */
+    fun guiScale(): Int? = runCatching { File(directory, "gui-scale").readText(Charsets.US_ASCII).trim().toInt() }
+        .getOrNull()?.takeIf { it in 1..16 }
+
+    /** Swaps two hotbar slots (0-8) when no menu is open. */
+    fun swapHotbar(from: Int, to: Int): Boolean = from in 0..8 && to in 0..8 && from != to &&
+        writeMarker("hotbar-swap", "$from $to")
+
     /** Asks Minecraft to save the world and close, like closing its window. */
     fun requestQuit(): Boolean = writeMarker("quit", "1")
 

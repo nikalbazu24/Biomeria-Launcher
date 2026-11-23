@@ -69,6 +69,15 @@ internal class GameInput(
     private var touchX = 0f
     private var touchY = 0f
     private var touchClick = false
+    /** Hotbar slot (0-8) under the finger that went down on the hotbar, or -1. */
+    private var touchHotbar = -1
+    /** GUI scale from the mod; 0 means "work it out like Minecraft's automatic scale". */
+    @Volatile var guiScale = 0
+    /** Called when an item is dragged from one hotbar slot to another. */
+    var onHotbarSwap: ((Int, Int) -> Unit)? = null
+    /** Slot being dragged and the slot under the finger, for the on-screen highlight. */
+    var hotbarDrag by mutableStateOf<Pair<Int, Int>?>(null)
+        private set
     private var lookX = 0f
     private var lookY = 0f
     private var moveX = 0f
@@ -102,6 +111,8 @@ internal class GameInput(
 
     fun reset() {
         touchId = -1
+        touchHotbar = -1
+        hotbarDrag = null
         touchClick = false
         mousePositionKnown = false
         lookX = 0f
@@ -126,7 +137,11 @@ internal class GameInput(
                 touchId = event.getPointerId(index)
                 touchX = event.getX(index)
                 touchY = event.getY(index)
-                if (!captured) {
+                touchHotbar = if (captured) hotbarSlotAt(touchX, touchY) else -1
+                if (touchHotbar >= 0) {
+                    selectHotbarSlot(touchHotbar + 1)
+                    hotbarDrag = touchHotbar to touchHotbar
+                } else if (!captured) {
                     movePointer(touchX * width.toDouble() / viewWidth, touchY * height.toDouble() / viewHeight)
                     mouseButton(0, true)
                     touchClick = true
@@ -137,7 +152,10 @@ internal class GameInput(
                 if (active >= 0) {
                     val x = event.getX(active)
                     val y = event.getY(active)
-                    if (captured) relative((x - touchX) * width.toDouble() / viewWidth, (y - touchY) * height.toDouble() / viewHeight)
+                    if (touchHotbar >= 0) {
+                        val over = hotbarSlotAt(x, y)
+                        hotbarDrag = touchHotbar to (if (over >= 0) over else touchHotbar)
+                    } else if (captured) relative((x - touchX) * width.toDouble() / viewWidth, (y - touchY) * height.toDouble() / viewHeight)
                     else movePointer(x * width.toDouble() / viewWidth, y * height.toDouble() / viewHeight)
                     touchX = x
                     touchY = y
@@ -146,6 +164,15 @@ internal class GameInput(
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
                 if (event.actionMasked == MotionEvent.ACTION_CANCEL || touchId == event.getPointerId(index)) {
                     if (touchClick) mouseButton(0, false)
+                    if (touchHotbar >= 0 && event.actionMasked != MotionEvent.ACTION_CANCEL) {
+                        val target = hotbarSlotAt(event.getX(index), event.getY(index))
+                        if (target >= 0 && target != touchHotbar) {
+                            onHotbarSwap?.invoke(touchHotbar, target)
+                            selectHotbarSlot(target + 1)
+                        }
+                    }
+                    touchHotbar = -1
+                    hotbarDrag = null
                     touchClick = false
                     touchId = -1
                 }
@@ -333,6 +360,30 @@ internal class GameInput(
         }
     }
 
+    /** Hotbar slot (0-8) drawn under a point of the view, or -1. Mirrors Minecraft's hotbar layout. */
+    fun hotbarSlotAt(viewX: Float, viewY: Float): Int {
+        val scale = (if (guiScale > 0) guiScale else autoGuiScale(width, height)).coerceAtLeast(1)
+        val guiWidth = Math.ceil(width.toDouble() / scale)
+        val guiHeight = Math.ceil(height.toDouble() / scale)
+        val x = viewX * width.toDouble() / viewWidth / scale
+        val y = viewY * height.toDouble() / viewHeight / scale
+        val left = guiWidth / 2 - 91
+        // A little taller than the 22 px bar so it is easy to hit with a finger.
+        if (y < guiHeight - 26 || x < left || x >= left + 182) return -1
+        return ((x - left - 1) / 20).toInt().coerceIn(0, 8)
+    }
+
+    /** Where slot (0-8) is on the view, as left, top, size in view pixels. */
+    fun hotbarSlotRect(slot: Int): Triple<Float, Float, Float> {
+        val scale = (if (guiScale > 0) guiScale else autoGuiScale(width, height)).coerceAtLeast(1)
+        val guiWidth = Math.ceil(width.toDouble() / scale)
+        val guiHeight = Math.ceil(height.toDouble() / scale)
+        val toView = scale * viewWidth.toDouble() / width
+        val left = (guiWidth / 2 - 91 + 1 + slot * 20) * toView
+        val top = (guiHeight - 21) * scale * viewHeight.toDouble() / height
+        return Triple(left.toFloat(), top.toFloat(), (20 * toView).toFloat())
+    }
+
     fun tapKey(key: Int) {
         key(key, true)
         key(key, false)
@@ -364,6 +415,13 @@ internal class GameInput(
         event: GameInputEvent, code: Int = 0, action: Int = 0, x: Double = 0.0, y: Double = 0.0
     ) = emit(event, code, action, x, y)
 
+}
+
+/** Minecraft's automatic GUI scale (option "Auto"). */
+internal fun autoGuiScale(width: Int, height: Int): Int {
+    var scale = 1
+    while (scale < width && scale < height && width / (scale + 1) >= 320 && height / (scale + 1) >= 240) scale++
+    return scale
 }
 
 internal fun readGamepadAxes(event: MotionEvent): GamepadAxes {

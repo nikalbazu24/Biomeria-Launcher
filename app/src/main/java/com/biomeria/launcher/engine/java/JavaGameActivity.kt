@@ -46,6 +46,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
@@ -469,6 +471,16 @@ private fun JavaNativeViewportScreen(
     var hud by remember(initialHud) { mutableStateOf(initialHud) }
     var showHudDialog by remember { mutableStateOf(false) }
     var showKeyboard by remember { mutableStateOf(false) }
+    val touchStore = remember(activity) { TouchLayoutStore(activity) }
+    var touchLayout by remember { mutableStateOf(touchStore.load()) }
+    var editingTouch by remember { mutableStateOf(false) }
+    LaunchedEffect(input, panelBridge) {
+        input.onHotbarSwap = { from, to -> panelBridge?.swapHotbar(from, to) }
+        while (panelBridge != null) {
+            panelBridge.guiScale()?.let { input.guiScale = it }
+            kotlinx.coroutines.delay(1_000)
+        }
+    }
     var showQuickMenu by remember { mutableStateOf(false) }
     var showLanDialog by remember { mutableStateOf(false) }
     var showInternetDialog by remember { mutableStateOf(false) }
@@ -491,6 +503,7 @@ private fun JavaNativeViewportScreen(
 
     fun handleBack() {
         when {
+            editingTouch -> editingTouch = false
             showKeyboard -> showKeyboard = false
             showQuickMenu -> showQuickMenu = false
             showLanDialog -> showLanDialog = false
@@ -520,7 +533,7 @@ private fun JavaNativeViewportScreen(
             onToggleQuickMenu(null)
         }
     }
-    val canSendInput = jvmStarted && !showOverlay && !showKeyboard && !showQuickMenu && !showHudDialog &&
+    val canSendInput = jvmStarted && !editingTouch && !showOverlay && !showKeyboard && !showQuickMenu && !showHudDialog &&
         !showLanDialog && !showInternetDialog && !mapExpanded
     val singleScreenMap = hud.showMinimap && !activity.lowerPanelVisible
     val collectTerrain = singleScreenMap || mapExpanded || (hud.dualScreen && hud.panelMap == PanelMapSource.BIOMERIA)
@@ -707,16 +720,17 @@ private fun JavaNativeViewportScreen(
                     drawCircle(Color.White, radius = 1.5.dp.toPx(), center = center)
                 }
             }
-            if (captured && hud.showTouch) {
-                TouchControls(input, Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+            if (captured && hud.showTouch && !editingTouch) {
+                TouchControls(input, touchLayout, Modifier.matchParentSize(),
                     onChat = { input.tapKey(84); showKeyboard = true }) // T abre el chat
-                Row(
-                    Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.displayCutout)
-                        .padding(bottom = 96.dp),
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)
-                ) {
-                    for (slot in 1..9) TouchButton("$slot", "Casilla $slot", Modifier.size(26.dp, 32.dp)) { down ->
-                        if (down) input.selectHotbarSlot(slot)
+            }
+            input.hotbarDrag?.let { (from, over) ->
+                val density = LocalDensity.current
+                listOf(from to Color(0xFFFFFFFF), over to Color(0xFF7BC74D)).distinctBy { it.first }.forEach { (slot, color) ->
+                    val (left, top, size) = input.hotbarSlotRect(slot)
+                    with(density) {
+                        Box(Modifier.offset { IntOffset(left.toInt(), top.toInt()) }.size(size.toDp())
+                            .border(3.dp, color))
                     }
                 }
             }
@@ -811,11 +825,19 @@ private fun JavaNativeViewportScreen(
                     minecraftPause = { showOverlay = false; pendingGameKey = 256 }, // GLFW_KEY_ESCAPE
                     lan = { showOverlay = false; showLanDialog = true },
                     internet = { showOverlay = false; showInternetDialog = true },
+                    editTouch = { showOverlay = false; editingTouch = true },
                     exit = onExitGame,
                     saveAndQuit = panelBridge?.let { bridge -> { if (bridge.requestQuit()) saving = true } }
                 ),
                 saving = saving
             )
+        }
+    }
+    if (editingTouch) {
+        TouchLayoutEditor(touchLayout) { updated ->
+            touchLayout = updated
+            touchStore.save(updated)
+            editingTouch = false
         }
     }
     if (showKeyboard) {
@@ -865,50 +887,3 @@ private fun JavaNativeViewportScreen(
 }
 
 
-@Composable
-private fun TouchControls(input: GameInput, modifier: Modifier, onChat: () -> Unit) {
-    Row(
-        modifier.windowInsetsPadding(WindowInsets.displayCutout).padding(14.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Bottom
-    ) {
-        TouchJoystick(input::touchMovement)
-        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TouchButton("E", "Inventario") { input.key(69, it) }
-                TouchButton("Salto", "Saltar") { input.key(32, it) }
-                TouchButton("Chat", "Abrir el teclado") { if (it) onChat() }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TouchButton("Usar", "Usar objeto") { input.mouseButton(1, it) }
-                TouchButton("Golpe", "Atacar") { input.mouseButton(0, it) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TouchButton(
-    label: String, description: String, modifier: Modifier = Modifier.size(51.dp, 39.dp), onHold: (Boolean) -> Unit
-) {
-    val action by rememberUpdatedState(onHold)
-    Box(
-        modifier.background(Color.Black.copy(alpha = .48f), PanelShape)
-            .border(1.dp, Color.White.copy(alpha = .35f), PanelShape)
-            .semantics { contentDescription = description }
-            .pointerInput(Unit) {
-                awaitEachGesture {
-                    awaitFirstDown().consume()
-                    action(true)
-                    try {
-                        waitForUpOrCancellation()?.consume()
-                    } finally {
-                        action(false)
-                    }
-                }
-            },
-        contentAlignment = Alignment.Center
-    ) {
-        Text(label, color = Color.White, fontSize = 11.sp)
-    }
-}
