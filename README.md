@@ -1,6 +1,6 @@
 # Biomeria Launcher
 
-Un launcher de Minecraft para consolas Android (AYN Thor, AYN Odin 2 Portal y similares), pensado para jugar con mando. Reúne tres motores en un solo lugar, cada uno con su bioma:
+Un launcher de Minecraft para consolas Android de 1 y 2 pantallas, pensado para jugar con mando. Reúne tres motores en un solo lugar, cada uno con su bioma:
 
 | Bioma | Motor | Estado |
 |---|---|---|
@@ -39,25 +39,5 @@ En consolas de dos pantallas, la de abajo muestra inventario, crafteo, mapa y op
 - **Taller**: mods, shaders y paquetes de recursos desde Modrinth, con las dependencias a la vista; importa modpacks .mrpack.
 - **Jugar juntos**: abre tu mundo en tu red o por internet con una sala temporal.
 
-### Galería
-Las capturas que sacas en Minecraft (tecla F2) aparecen dentro de la app, juntas por mundo: cuadrícula, vista grande con LB / RB y botones para compartir o borrar.
-
-### Guía
-Una pantalla dentro de la app que explica qué hace cada botón del mando (en el juego, pantalla de abajo, mapa grande y launcher) y cómo se usa cada parte de Biomeria.
-
-### Cuentas
-Sin conexión, Microsoft o Ely.by. Guías: [Microsoft](docs/cuentas-microsoft-java.md) · [Ely.by](docs/cuentas-ely-by.md).
-
-### Integración con frontends
-Biomeria se puede abrir y consultar desde frontends como **Cocoon, iiSU y Díptico**: catálogo de mundos, estadísticas y lanzamiento por enlace. Detalles en [docs/frontends.md](docs/frontends.md).
-
-## Galería
-
-| Crafteo en la pantalla de abajo | Inventario en la pantalla de abajo |
-|---|---|
-| ![Crafteo en la AYN Thor](docs/capturas/thor-crafteo.jpg) | ![Inventario en la AYN Thor](docs/capturas/thor-inventario.jpg) |
-
-*Biomeria en una AYN Thor: el juego arriba, el panel de Biomeria abajo.*
-
-## Instalación
+### Instalación
 Descarga el APK de la sección de [Releases](../../releases). Los APK están firmados con la misma llave, así que cada versión se instala encima de la anterior.
