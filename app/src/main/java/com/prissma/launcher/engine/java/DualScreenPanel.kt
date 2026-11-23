@@ -660,7 +660,6 @@ private fun FurnaceMeter(label: String, progress: Float, modifier: Modifier) {
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 /**
  * Finger drag between slots: lift the stack where the finger starts, drop it where it ends.
  * It sends the same two "pick" clicks as tapping the source and then the target.
@@ -676,6 +675,7 @@ internal class SlotDrag(val onMove: (from: Int, to: Int) -> Unit) {
 
 internal val LocalSlotDrag = compositionLocalOf<SlotDrag?> { null }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SlotRow(
     slots: List<Int>,
