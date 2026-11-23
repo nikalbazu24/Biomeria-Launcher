@@ -56,8 +56,11 @@ private data class WorldAchievements(
     val done: Int,
     val total: Int,
     val byMod: Map<String, Pair<Int, Int>>,
-    val seen: Set<String>
-)
+    val seen: Set<String>,
+    val names: Map<String, String> = emptyMap()
+) {
+    fun modName(namespace: String) = names[namespace] ?: modLabel(namespace)
+}
 
 /**
  * Achievements earned while playing through Biomeria, per Java world. Ones not earned yet are
@@ -77,7 +80,7 @@ internal fun AchievementsPage(instances: List<GameInstance>, initialId: String?,
             val unlocked = AchievementLog.read(context, id).sortedByDescending { it.at }
             val progress = AchievementLog.progress(context, id)
             WorldAchievements(unlocked, progress?.first?.first ?: unlocked.size, progress?.first?.second ?: 0,
-                progress?.second.orEmpty(), AchievementLog.seen(context, id))
+                progress?.second.orEmpty(), AchievementLog.seen(context, id), AchievementLog.modNames(context, id))
         }
     }
     // Everything on screen counts as seen once the player leaves the page or changes world.
@@ -169,7 +172,7 @@ private fun AchievementsBody(
                 mods.distinct().sorted().forEach { namespace ->
                     val counts = world.byMod[namespace]
                     item(span = { GridItemSpan(maxLineSpan) }, key = "mod-$namespace") {
-                        ModHeader(modLabel(namespace), counts?.first ?: shown.count { it.namespace == namespace }, counts?.second ?: 0)
+                        ModHeader(world.modName(namespace), counts?.first ?: shown.count { it.namespace == namespace }, counts?.second ?: 0)
                     }
                     val ofMod = shown.filter { it.namespace == namespace }
                     items(ofMod, key = { it.id }) { achievement ->
@@ -197,7 +200,7 @@ private fun AchievementsBody(
                 }
             }
         }
-        if (selected != null) AchievementDetail(selected, Modifier.width(300.dp).fillMaxHeight()) { onReplay(selected) }
+        if (selected != null) AchievementDetail(selected, world.modName(selected.namespace), Modifier.width(300.dp).fillMaxHeight()) { onReplay(selected) }
     }
 }
 
@@ -221,7 +224,7 @@ private fun AchievementCard(achievement: Achievement, selected: Boolean, fresh: 
 }
 
 @Composable
-private fun AchievementDetail(achievement: Achievement, modifier: Modifier, onReplay: () -> Unit) {
+private fun AchievementDetail(achievement: Achievement, modName: String, modifier: Modifier, onReplay: () -> Unit) {
     val kind = achievement.kind
     Column(modifier.background(Prissma.colors.surfaceCard, RoundedCornerShape(6.dp)).border(3.dp, kind.color, RoundedCornerShape(6.dp))
         .padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -229,7 +232,7 @@ private fun AchievementDetail(achievement: Achievement, modifier: Modifier, onRe
         Text(kind.banner, color = kind.color, fontFamily = PixelFont, fontSize = 13.sp)
         Text(achievement.title, fontFamily = PixelFont, fontSize = 26.sp, lineHeight = 28.sp)
         if (achievement.description.isNotBlank()) Text(achievement.description, color = Color(0xFFC3CDD2))
-        if (achievement.fromMod) Text("Del mod ${modLabel(achievement.namespace)}", color = Prissma.colors.textMuted, fontSize = 14.sp)
+        if (achievement.fromMod) Text("Del mod $modName", color = Prissma.colors.textMuted, fontSize = 14.sp)
         Text("Desbloqueado ${whenText(achievement.at)}", color = Prissma.colors.textMuted, fontSize = 14.sp)
         BlockButton(onReplay, Modifier.fillMaxWidth(), BlockButtons.primary) {
             Text("Ver otra vez la animación", fontWeight = FontWeight.ExtraBold)

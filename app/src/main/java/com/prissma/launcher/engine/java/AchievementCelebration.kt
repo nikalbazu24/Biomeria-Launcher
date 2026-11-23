@@ -52,9 +52,21 @@ private enum class CelebrationPhase { DROP, BURST, CARD, PILL }
  * small notice at the top right. With [AchievementStyle.VANILLA] Minecraft's own toast is used.
  */
 @Composable
-internal fun AchievementHost(bridge: DualScreenBridge?, style: AchievementStyle, instanceId: String, modifier: Modifier = Modifier) {
+internal fun AchievementHost(
+    bridge: DualScreenBridge?,
+    style: AchievementStyle,
+    instanceId: String,
+    gameDir: java.io.File? = null,
+    modifier: Modifier = Modifier
+) {
     val context = LocalContext.current
     val queue = remember { mutableStateListOf<Achievement>() }
+    LaunchedEffect(instanceId, gameDir) {
+        val folder = gameDir ?: return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            runCatching { AchievementLog.saveModNames(context.applicationContext, instanceId, readModNames(folder)) }
+        }
+    }
     LaunchedEffect(bridge, style) {
         val active = bridge ?: return@LaunchedEffect
         withContext(Dispatchers.IO) { runCatching { active.celebrateAchievements(style != AchievementStyle.VANILLA) } }

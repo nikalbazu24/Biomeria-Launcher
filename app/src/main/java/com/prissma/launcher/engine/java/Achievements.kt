@@ -95,6 +95,25 @@ internal object AchievementLog {
 
     private fun clean(value: String) = value.replace('\t', ' ').replace('\n', ' ')
 
+    private fun namesFile(context: Context, instanceId: String) =
+        File(file(context, instanceId).path.removeSuffix(".tsv") + ".names")
+
+    /** Saves the mod names of this world; called once per game session. */
+    fun saveModNames(context: Context, instanceId: String, names: Map<String, String>) {
+        runCatching {
+            val target = namesFile(context, instanceId)
+            target.parentFile?.mkdirs()
+            target.writeText(names.entries.joinToString("\n") { "${clean(it.key)}\t${clean(it.value)}" } + "\n")
+        }
+    }
+
+    fun modNames(context: Context, instanceId: String): Map<String, String> = runCatching {
+        namesFile(context, instanceId).takeIf { it.isFile }?.readLines().orEmpty().mapNotNull { line ->
+            val parts = line.split('\t')
+            if (parts.size == 2 && parts[0].isNotBlank()) parts[0] to parts[1] else null
+        }.toMap()
+    }.getOrDefault(emptyMap())
+
     fun iconFile(context: Context, icon: String): File =
         File(context.filesDir, "biomeria-achievements/icons/" + icon.replace(Regex("[^A-Za-z0-9._-]"), "_").take(100) + ".png")
 
@@ -172,4 +191,40 @@ internal fun rememberAchievementIcon(id: String): androidx.compose.ui.graphics.I
         }
     }
     return saved
+}
+
+/**
+ * Mod id → display name, read from each mod jar's own metadata (Fabric, Quilt or NeoForge/Forge).
+ * Achievement namespaces are mod ids, so this turns "farmersdelight" into "Farmer's Delight".
+ */
+internal fun readModNames(gameDir: File): Map<String, String> {
+    val names = LinkedHashMap<String, String>()
+    val jars = File(gameDir, "mods").listFiles { file -> file.name.endsWith(".jar") }.orEmpty()
+    for (jar in jars) runCatching {
+        java.util.zip.ZipFile(jar).use { zip ->
+            fun text(path: String) = zip.getEntry(path)?.takeIf { it.size in 1..262_144 }
+                ?.let { entry -> zip.getInputStream(entry).use { it.readBytes().toString(Charsets.UTF_8) } }
+            text("fabric.mod.json")?.let { json ->
+                val root = org.json.JSONObject(json)
+                val id = root.optString("id")
+                if (id.isNotBlank()) names[id] = root.optString("name").ifBlank { id }
+            }
+            text("quilt.mod.json")?.let { json ->
+                val loader = org.json.JSONObject(json).optJSONObject("quilt_loader")
+                val id = loader?.optString("id").orEmpty()
+                if (id.isNotBlank()) names[id] = loader?.optJSONObject("metadata")?.optString("name")?.ifBlank { id } ?: id
+            }
+            (text("META-INF/neoforge.mods.toml") ?: text("META-INF/mods.toml"))?.let { toml ->
+                var id: String? = null
+                for (line in toml.lines()) {
+                    val trimmed = line.trim()
+                    if (trimmed.startsWith("[[mods]]")) id = null
+                    val value = trimmed.substringAfter('=', "").trim().trim('"', '\'')
+                    if (trimmed.startsWith("modId")) id = value
+                    if (trimmed.startsWith("displayName") && id != null && value.isNotBlank()) names[id!!] = value
+                }
+            }
+        }
+    }
+    return names
 }

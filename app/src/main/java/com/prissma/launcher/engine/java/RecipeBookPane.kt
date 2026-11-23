@@ -56,8 +56,10 @@ internal fun RecipeBookPane(
     }
 
     val snapshot = book
-    val results = remember(snapshot?.recipes, query, navigation.onlyCraftable) {
+    var cooking by remember(inventory.generation) { mutableStateOf<Boolean?>(null) }
+    val results = remember(snapshot?.recipes, query, navigation.onlyCraftable, cooking) {
         filterPanelRecipes(snapshot?.recipes.orEmpty(), query, navigation.onlyCraftable)
+            .filter { cooking == null || (it.state == PanelRecipeState.COOKING) == cooking }
     }
     val selected = snapshot?.recipes?.firstOrNull { it.id == navigation.detailId }
     val focused = navigation.focusedRecipe(results)
@@ -130,6 +132,8 @@ internal fun RecipeBookPane(
             else -> {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically) {
+                    FilterChip(cooking == false, { cooking = if (cooking == false) null else false }, label = { Text("Crafteo") })
+                    FilterChip(cooking == true, { cooking = if (cooking == true) null else true }, label = { Text("Horno") })
                     FilterChip(navigation.onlyCraftable,
                         { navigation = navigation.copy(onlyCraftable = !navigation.onlyCraftable) },
                         label = { Text(if (controllerActive) "Solo fabricables [X]" else "Solo fabricables") })
@@ -188,7 +192,9 @@ private fun RecipeDetails(
 ) {
     Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            if (book.selectedId == recipe.id && book.pattern.size == 9) RecipeGrid(book.pattern)
+            if (book.selectedId == recipe.id && book.pattern.size == 9) {
+                if (recipe.state == PanelRecipeState.COOKING) RecipeIcon(book.pattern[0], 56.dp) else RecipeGrid(book.pattern)
+            }
             Text("→", fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = Prissma.colors.textMuted)
             Box(contentAlignment = Alignment.BottomEnd) {
                 RecipeIcon(recipe.resultId, 64.dp)
@@ -216,6 +222,19 @@ private fun RecipeDetails(
             }
             PanelRecipeState.MANUAL -> Text("Puedes preparar esta receta colocando los ingredientes a mano.")
             PanelRecipeState.NEEDS_TABLE -> Text("Esta receta necesita la mesa de crafteo de 3×3.", color = Prissma.colors.textMuted)
+            PanelRecipeState.COOKING -> {
+                val station = book.pattern.getOrNull(1).orEmpty()
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (station.isNotBlank()) RecipeIcon(station, 36.dp)
+                    Text("Se cocina en " + when (station.substringAfter(':')) {
+                        "smoker" -> "un ahumador"
+                        "blast_furnace" -> "un alto horno"
+                        "campfire", "soul_campfire" -> "una fogata"
+                        "furnace" -> "un horno"
+                        else -> "un horno"
+                    } + ". Pon el ingrediente arriba y combustible abajo.", color = Prissma.colors.textMuted)
+                }
+            }
         }
     }
 }
@@ -256,6 +275,7 @@ private fun recipeStatus(state: PanelRecipeState) = when (state) {
     PanelRecipeState.MISSING -> "Faltan ingredientes"
     PanelRecipeState.MANUAL -> "Manual"
     PanelRecipeState.NEEDS_TABLE -> "Necesita mesa"
+    PanelRecipeState.COOKING -> "Horno"
 }
 
 /** The item's icon from the game files; a plain slot while it loads or for unknown items. */

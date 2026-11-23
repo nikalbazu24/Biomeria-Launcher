@@ -24,6 +24,8 @@ final class RecipeBookPanel {
     private static final int READY = 2;
     /** Needs the 3×3 crafting table: shown from the inventory, but it can't be placed there. */
     private static final int NEEDS_TABLE = 3;
+    /** Cooked in a furnace, smoker or blast furnace: shown for reference, placed by hand. */
+    private static final int COOKING = 4;
 
     private final Access game;
     private final Map<Integer, Recipe> recipes = new LinkedHashMap<>();
@@ -64,7 +66,7 @@ final class RecipeBookPanel {
             throws ReflectiveOperationException {
         refreshCatalog(generation, player, world);
         Recipe recipe = recipes.get(id);
-        if (recipe == null || recipe.requirements().isEmpty() || !fits(recipe, handler)) return;
+        if (recipe == null || recipe.width() == 0 || recipe.requirements().isEmpty() || !fits(recipe, handler)) return;
         Object finder = newFinder(game.getInventory.invoke(player), handler);
         if (canMake(finder, recipe.requirements())) game.placeRecipe.invoke(interactions, syncId, recipe.networkId(), false);
     }
@@ -91,7 +93,7 @@ final class RecipeBookPanel {
                 out.writeInt(entry.getKey());
                 out.writeUTF(recipe.name());
                 out.writeInt(recipe.count());
-                int state = !fits(recipe, handler) ? NEEDS_TABLE : recipe.requirements().isEmpty() ? MANUAL
+                int state = recipe.width() == 0 ? COOKING : !fits(recipe, handler) ? NEEDS_TABLE : recipe.requirements().isEmpty() ? MANUAL
                         : canMake(finder, recipe.requirements()) ? READY : MISSING;
                 out.writeByte(state);
                 out.writeUTF(recipe.resultId());
@@ -129,7 +131,8 @@ final class RecipeBookPanel {
             for (Object entry : (List<?>) game.collectionRecipes.invoke(collection)) {
                 if (recipes.size() == MAX_RECIPES) break;
                 Object display = game.recipeDisplay.invoke(entry);
-                if (!fitsTable(display)) continue;
+                boolean cooking = game.furnace != null && game.furnace.isInstance(display);
+                if (!cooking && !fitsTable(display)) continue;
 
                 Object id = game.recipeId.invoke(entry);
                 int index = (int) game.networkIndex.invoke(id);
@@ -144,7 +147,10 @@ final class RecipeBookPanel {
                 List<?> requirements = (List<?>) ((Optional<?>) game.recipeRequirements.invoke(entry)).orElse(null);
                 if (requirements == null || requirements.size() > GRID_SLOTS) requirements = List.of();
                 int width, height;
-                if (game.shaped.isInstance(display)) {
+                if (cooking) {
+                    width = 0;
+                    height = 0;
+                } else if (game.shaped.isInstance(display)) {
                     width = (int) game.width.invoke(display);
                     height = (int) game.height.invoke(display);
                 } else {
@@ -179,6 +185,18 @@ final class RecipeBookPanel {
     private List<String> pattern(Recipe recipe) throws ReflectiveOperationException {
         String[] cells = new String[GRID_SLOTS];
         java.util.Arrays.fill(cells, "");
+        if (recipe.width() == 0) {
+            // Cooking: cell 0 is what goes in, cell 1 the block that cooks it (furnace, smoker…).
+            List<Object> slots = new ArrayList<>();
+            for (var component : recipe.display().getClass().getRecordComponents()) {
+                if (component.getType() == game.slotDisplay) slots.add(component.getAccessor().invoke(recipe.display()));
+            }
+            if (slots.size() >= 4) {
+                cells[0] = firstItem(slots.get(0));
+                cells[1] = firstItem(slots.get(3));
+            }
+            return List.of(cells);
+        }
         List<?> slots = displaySlots(recipe.display());
         boolean shaped = game.shaped.isInstance(recipe.display());
         for (int i = 0; i < slots.size() && i < GRID_SLOTS; i++) {
@@ -192,6 +210,13 @@ final class RecipeBookPanel {
             }
         }
         return List.of(cells);
+    }
+
+    private String firstItem(Object slot) throws ReflectiveOperationException {
+        for (Object stack : (List<?>) game.displayStacks.invoke(slot, context)) {
+            if (!(boolean) game.emptyStack.invoke(stack)) return itemId(stack);
+        }
+        return "";
     }
 
     /** The ingredient list of a shaped or shapeless display: its only List component. */
@@ -280,7 +305,7 @@ final class RecipeBookPanel {
         final Method emptyStack, copyStack, equalStacks, stackName, stackCount, textString;
         final Method addInventory, addGrid, canCraft, placeRecipe, ingredientDisplay, displayStacks, width, height, ingredients;
         final Method isHighlighted, unmarkHighlighted, gridWidth, gridHeight, stackItem, registryId;
-        final Class<?> craftingHandler;
+        final Class<?> craftingHandler, slotDisplay, furnace;
         final Object itemRegistry;
 
         Access(ClassLoader loader) throws ReflectiveOperationException {
@@ -325,6 +350,14 @@ final class RecipeBookPanel {
             isHighlighted = book.getMethod("method_64855", networkId);
             unmarkHighlighted = book.getMethod("method_64856", networkId);
             craftingHandler = type(loader, 9884);
+            slotDisplay = type(loader, 10302);
+            Class<?> cooking;
+            try {
+                cooking = type(loader, 10294);
+            } catch (ClassNotFoundException missing) {
+                cooking = null;
+            }
+            furnace = cooking;
             gridWidth = craftingHandler.getMethod("method_61629");
             gridHeight = craftingHandler.getMethod("method_61630");
             stackItem = stack.getMethod("method_7909");

@@ -9,7 +9,7 @@ import java.util.Locale
 internal const val RECIPE_BOOK_MAGIC = 0x50524232
 
 /** NEEDS_TABLE: unlocked, but it uses the 3×3 table and the player is at the 2×2 inventory grid. */
-internal enum class PanelRecipeState { MANUAL, MISSING, READY, NEEDS_TABLE }
+internal enum class PanelRecipeState { MANUAL, MISSING, READY, NEEDS_TABLE, COOKING }
 internal data class PanelRecipe(
     val id: Int,
     val name: String,
