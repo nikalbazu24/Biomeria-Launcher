@@ -55,6 +55,7 @@ import com.biomeria.launcher.ui.components.PanelShape
 import com.biomeria.launcher.ui.theme.Biomeria
 import com.biomeria.launcher.ui.theme.BiomeriaTheme
 import com.biomeria.launcher.ui.launch.GameHudControls
+import com.biomeria.launcher.data.PlayStats
 import com.biomeria.launcher.data.accounts.AccountError
 import com.biomeria.launcher.data.accounts.JavaAccountMode
 import com.biomeria.launcher.data.accounts.MinecraftAccounts
@@ -228,6 +229,39 @@ class JavaGameActivity : ComponentActivity() {
         padRouter.setAvailable(controlsActive && resumed && hostFocused && lowerPanelVisible && lowerPanelInput != null)
     }
 
+    // Play-time tracking: counts only while the screen is in front and the game is running.
+    @Volatile internal var statsPlaying = false
+    private var statsId: String? = null
+    private var statsStart = 0L
+    private var statsSeconds = 0L
+    private val statsHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val statsBeat = object : Runnable {
+        override fun run() {
+            val id = statsId ?: return
+            if (resumed && statsPlaying) {
+                statsSeconds += 10
+                PlayStats.beat(applicationContext, id, statsStart, statsSeconds)
+            }
+            statsHandler.postDelayed(this, 10_000)
+        }
+    }
+
+    internal fun startStats(instanceId: String) {
+        if (statsId != null) return
+        statsId = instanceId
+        statsStart = System.currentTimeMillis()
+        statsSeconds = 0
+        PlayStats.begin(applicationContext, instanceId, statsStart)
+        statsHandler.postDelayed(statsBeat, 10_000)
+    }
+
+    internal fun stopStats() {
+        if (statsId == null) return
+        statsHandler.removeCallbacks(statsBeat)
+        statsId = null
+        PlayStats.end(applicationContext)
+    }
+
     override fun onResume() {
         super.onResume()
         resumed = true
@@ -354,6 +388,7 @@ class JavaGameActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        stopStats()
         inputManager?.unregisterInputDeviceListener(devices)
         dualScreenBridge?.directory?.deleteRecursively()
         super.onDestroy()
@@ -444,6 +479,11 @@ private fun JavaNativeViewportScreen(
     var pendingGameKey by remember { mutableStateOf<Int?>(null) }
     var fps by remember { mutableStateOf<Int?>(null) }
     var jvmStarted by remember { mutableStateOf(false) }
+    LaunchedEffect(jvmStarted) {
+        activity.statsPlaying = jvmStarted
+        val id = activity.intent.getStringExtra("INSTANCE_ID")
+        if (jvmStarted && id != null) activity.startStats(id)
+    }
     var viewportSize by remember { mutableStateOf("0x0") }
     val logLines = remember { mutableStateListOf<String>() }
     val logListState = rememberLazyListState()

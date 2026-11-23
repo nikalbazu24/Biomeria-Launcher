@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
@@ -137,6 +138,9 @@ internal fun LibraryPage(
     }
 }
 
+/** Motors that are shown in the library but can't be opened yet. Empty this set to enable them. */
+internal val ComingSoonEngines: Set<EngineType> = setOf(EngineType.BEDROCK, EngineType.RUST)
+
 @Composable
 private fun WorldHero(
     instance: GameInstance?,
@@ -166,7 +170,8 @@ private fun WorldHero(
                     scaleX = 1.06f; scaleY = 1.06f
                     translationX = -pan * size.width * .025f
                 },
-                contentScale = ContentScale.Crop, alignment = Alignment.CenterEnd
+                contentScale = ContentScale.Crop, alignment = Alignment.CenterEnd,
+                alpha = if (engine in ComingSoonEngines) .45f else 1f
             )
         }
         Box(Modifier.matchParentSize().background(Brush.horizontalGradient(
@@ -177,6 +182,10 @@ private fun WorldHero(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(instance.engine.biomeLabel,
                         Modifier.background(instance.engine.biomeColor, androidx.compose.foundation.shape.RoundedCornerShape(3.dp))
+                            .padding(horizontal = 10.dp, vertical = 3.dp),
+                        color = palette.ink, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.ExtraBold)
+                    if (instance.engine in ComingSoonEngines) Text("Próximamente",
+                        Modifier.background(palette.gold, androidx.compose.foundation.shape.RoundedCornerShape(3.dp))
                             .padding(horizontal = 10.dp, vertical = 3.dp),
                         color = palette.ink, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.ExtraBold)
                     val detail = if (instance.engine == EngineType.JAVA) "${instance.version} · ${instance.loader}" else version
@@ -195,7 +204,11 @@ private fun WorldHero(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                if (instance == null) "Crea tu primer mundo o elige uno de abajo." else when (instance.engine) {
+                if (instance == null) "Crea tu primer mundo o elige uno de abajo."
+                else if (instance.engine in ComingSoonEngines) when (instance.engine) {
+                    EngineType.BEDROCK -> "El océano de Bedrock llegará pronto: jugar con amigos de otras plataformas."
+                    else -> "El Nether de Starling llegará pronto: el motor nativo pensado para consolas Android."
+                } else when (instance.engine) {
                     EngineType.JAVA -> "Minecraft Java con mods, mapa con marcas y pantalla dual para tu consola."
                     EngineType.BEDROCK -> bedrock.launchProblem() ?: "Abre la app oficial de Minecraft para jugar con amigos de otras plataformas."
                     EngineType.RUST -> starling.starlingLaunchProblem() ?: "El motor nativo Starling, pensado para correr fluido en consolas Android."
@@ -209,7 +222,9 @@ private fun WorldHero(
                 if (instance == null) {
                     PlayButton("Nuevo mundo", Icons.Default.Add, onNew)
                 } else {
-                    when (instance.engine) {
+                    when {
+                        instance.engine in ComingSoonEngines -> PlayButton("Próximamente", Icons.Default.Lock, {}, enabled = false)
+                        else -> when (instance.engine) {
                         EngineType.JAVA -> {
                             PlayButton("Jugar", Icons.Default.PlayArrow, onPlay)
                             LauncherButton("Taller", onWorkshop)
@@ -228,6 +243,7 @@ private fun WorldHero(
                             PlayButton("Jugar", Icons.Default.PlayArrow, onPlay, enabled = starling?.canOpen == true)
                             LauncherButton("Taller", onWorkshop, enabled = starling?.canOpen == true)
                             LauncherButton("Diagnóstico", onStarlingDiagnostics)
+                        }
                         }
                     }
                     BlockIconButton(if (favorite) "Quitar de favoritos" else "Marcar como favorito", Icons.Default.Star,
@@ -390,7 +406,13 @@ private fun WorldCard(instance: GameInstance, version: String?, selected: Boolea
     ) {
         Box(Modifier.fillMaxWidth().height(62.dp)) {
             Image(painterResource(instance.engine.biomeImage), null, Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop, alignment = Alignment.CenterEnd)
+                contentScale = ContentScale.Crop, alignment = Alignment.CenterEnd,
+                alpha = if (instance.engine in ComingSoonEngines) .45f else 1f)
+            if (instance.engine in ComingSoonEngines) Text("Próximamente",
+                Modifier.align(Alignment.BottomStart).padding(6.dp)
+                    .background(palette.gold, androidx.compose.foundation.shape.RoundedCornerShape(3.dp))
+                    .padding(horizontal = 6.dp, vertical = 1.dp),
+                color = palette.ink, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold)
             if (favorite) Icon(Icons.Default.Star, "Favorito", Modifier.align(Alignment.TopEnd).padding(6.dp).size(18.dp),
                 tint = palette.gold)
         }

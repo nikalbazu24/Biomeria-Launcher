@@ -16,7 +16,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
@@ -44,6 +46,7 @@ import androidx.work.WorkInfo
 import com.biomeria.launcher.data.AppUpdater
 import com.biomeria.launcher.data.EngineType
 import com.biomeria.launcher.data.GameInstance
+import com.biomeria.launcher.ui.theme.biomeName
 import com.biomeria.launcher.data.InstanceStorage
 import com.biomeria.launcher.data.LibraryPreferences
 import com.biomeria.launcher.data.ModpackImports
@@ -81,6 +84,8 @@ private enum class HubPage(val label: String, val icon: ImageVector) {
     WORKSHOP("Taller", Icons.Default.Build),
     CONNECTIONS("Jugar juntos", Icons.Default.Share),
     ACHIEVEMENTS("Logros", Icons.Default.Star),
+    STATS("Estadísticas", Icons.Default.DateRange),
+    GUIDE("Guía", Icons.Default.Info),
     SETTINGS("Ajustes", Icons.Default.Settings)
 }
 
@@ -224,6 +229,10 @@ internal fun HubScreen(
     }
 
     fun launchInstance(instance: GameInstance, server: String? = null) {
+        if (instance.engine in ComingSoonEngines) {
+            notify("${instance.engine.biomeName} llegará pronto.")
+            return
+        }
         when (instance.engine) {
             EngineType.JAVA -> {
                 launchingServer = server
@@ -393,6 +402,8 @@ internal fun HubScreen(
                 )
                 HubPage.WORKSHOP -> EmptyWorkshop { showNew = true }
                 HubPage.ACHIEVEMENTS -> AchievementsPage(instances, selected?.id, Modifier.fillMaxSize())
+                HubPage.STATS -> StatsPage(instances, Modifier.fillMaxSize())
+                HubPage.GUIDE -> GuidePage(Modifier.fillMaxSize())
             }
         }
     }
