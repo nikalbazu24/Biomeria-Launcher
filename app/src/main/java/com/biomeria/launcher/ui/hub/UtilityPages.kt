@@ -228,6 +228,18 @@ internal fun SettingsPage(
             if (installedNotes != null) {
                 LauncherButton("Novedades de la versión instalada", { notesDialog = version to installedNotes })
             }
+            val device = remember { com.biomeria.launcher.data.DeviceProfile.detect(context) }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("Tu equipo", fontWeight = FontWeight.Bold)
+                    Text(device.summary + ". " + if (device.dual) "Inventario y mapa van abajo." else "Minimapa flotante e inventario táctil.",
+                        color = Biomeria.colors.textMuted, style = MaterialTheme.typography.bodySmall)
+                }
+                LauncherButton("Ajustar", {
+                    com.biomeria.launcher.data.DeviceProfile.applyDefaults(context, force = true)
+                    onNotice("Listo: los mundos nuevos usarán los ajustes de este equipo.")
+                })
+            }
             var music by remember { mutableStateOf(com.biomeria.launcher.data.MenuMusic.enabled(context)) }
             var musicVolume by remember { mutableStateOf(com.biomeria.launcher.data.MenuMusic.volume(context)) }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

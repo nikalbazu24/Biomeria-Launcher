@@ -138,7 +138,7 @@ fun JavaLaunchScreen(
         mutableStateOf(decodeGamepadActions(settings.getString("controls-" + instance.id, "").orEmpty()))
     }
     var hud by remember(instance.id) {
-        mutableStateOf(GameHudSettings(settings.getBoolean("touch-" + instance.id, true),
+        mutableStateOf(GameHudSettings(settings.getBoolean("touch-" + instance.id, settings.getBoolean("touch-default", true)),
             settings.getBoolean("fps-" + instance.id, false),
             settings.getFloat("pause-opacity-" + instance.id, .65f).coerceIn(.15f, 1f),
             settings.getBoolean("dual-screen-" + instance.id, settings.getBoolean("dual-screen-default", false)),

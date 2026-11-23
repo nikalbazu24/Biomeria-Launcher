@@ -61,15 +61,17 @@ internal fun InventoryPage(
     modifier: Modifier = Modifier
 ) {
     val look = LocalPanelLook.current
-    BoxWithConstraints(modifier.panelFrame().padding(horizontal = 16.dp, vertical = 12.dp)) {
-        val byWidth = (maxWidth - GAP * 8) / 9
-        // Header, labels and gaps take about 150 dp; the cards take about two slots.
-        val byHeight = (maxHeight - 150.dp) / 6.1f
-        val slot = minOf(byWidth, maxOf(byHeight, 40.dp), 112.dp)
-        val band = maxOf(slot * 2f, 124.dp)
-        val gridWidth = slot * 9 + GAP * 8
+    // Slots first: thin frame, tight gaps, and the item card and character in a band under the hotbar.
+    BoxWithConstraints(modifier.panelFrame().padding(horizontal = 6.dp, vertical = 6.dp)) {
+        val gap = 4.dp
+        val byWidth = (maxWidth - gap * 8) / 9
+        // Header 44 + hotbar label 18 + spacing; the band under the hotbar is about 1.7 slots tall.
+        val byHeight = (maxHeight - 44.dp - 18.dp - 36.dp - gap * 3) / 5.7f
+        val slot = minOf(byWidth, maxOf(byHeight, 40.dp), 120.dp)
+        val band = maxOf(slot * 1.7f, 110.dp)
+        val gridWidth = slot * 9 + gap * 8
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(Modifier.width(gridWidth).heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (editingSearch || query.isNotBlank()) {
@@ -90,10 +92,28 @@ internal fun InventoryPage(
                 }
             }
 
+            Column(verticalArrangement = Arrangement.spacedBy(gap)) {
+                for (first in live.layout.inventoryStart until live.layout.hotbarStart step 9) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                        for (number in first until first + 9) McSlot(number, live, slot, interactive, onTap,
+                            chosen = chosen == number, focused = padFocus?.number == number,
+                            dim = matchingSlots != null && number !in matchingSlots)
+                    }
+                }
+            }
+            Column(Modifier.width(gridWidth), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Barra rápida", color = look.muted, fontFamily = PixelFont, fontSize = 14.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                    val start = live.layout.hotbarStart
+                    for (number in start until start + 9) McSlot(number, live, slot, interactive, onTap,
+                        chosen = chosen == number, inHand = number == start + live.selectedSlot,
+                        focused = padFocus?.number == number, dim = matchingSlots != null && number !in matchingSlots)
+                }
+            }
             if (editingSearch) {
                 keyboard(Modifier.width(gridWidth).height(band + 20.dp))
             } else {
-                Row(Modifier.width(gridWidth).height(band), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(Modifier.width(gridWidth).height(band), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     CraftShortcut(live, Modifier.weight(.27f).fillMaxHeight(), onOpenCraft)
                     ItemActions(live, chosen, interactive, onCommand, Modifier.weight(.5f).fillMaxHeight())
                     CharacterCorner(live, bridge, interactive, slot, band, padFocus, onTap, onCustomize,
@@ -101,25 +121,6 @@ internal fun InventoryPage(
                 }
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(GAP)) {
-                for (first in live.layout.inventoryStart until live.layout.hotbarStart step 9) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(GAP)) {
-                        for (number in first until first + 9) McSlot(number, live, slot, interactive, onTap,
-                            chosen = chosen == number, focused = padFocus?.number == number,
-                            dim = matchingSlots != null && number !in matchingSlots)
-                    }
-                }
-            }
-            Column(Modifier.width(gridWidth), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Barra rápida", color = look.muted, fontFamily = PixelFont, fontSize = 16.sp)
-                Box(Modifier.fillMaxWidth().height(4.dp).background(if (look.classic) look.slot else look.button))
-                Row(horizontalArrangement = Arrangement.spacedBy(GAP)) {
-                    val start = live.layout.hotbarStart
-                    for (number in start until start + 9) McSlot(number, live, slot, interactive, onTap,
-                        chosen = chosen == number, inHand = number == start + live.selectedSlot,
-                        focused = padFocus?.number == number, dim = matchingSlots != null && number !in matchingSlots)
-                }
-            }
         }
     }
 }
@@ -386,11 +387,24 @@ internal fun CraftPage(
         if (controllerActive && showRecipes && results.isNotEmpty()) gridState.animateScrollToItem(focusIndex.coerceIn(0, results.lastIndex))
     }
 
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        Column(Modifier.weight(.44f).fillMaxHeight().panelFrame().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    fun quickCraft(recipe: PanelRecipe) {
+        if (recipe.state != PanelRecipeState.READY || live.held.count > 0 || !interactive || busy) return
+        selectedId = recipe.id
+        if (bridge.send(live, PanelCommand.PLACE_RECIPE, recipe.id)) {
+            pending = PendingCraft(recipe.resultId, SystemClock.elapsedRealtime() + 2500L)
+        }
+    }
+    val quick = remember(snapshot?.recipes) {
+        snapshot?.recipes.orEmpty().filter { it.state == PanelRecipeState.READY }.take(24)
+    }
+
+    // The grid in the middle is the star; recipes on the left, one-tap crafts on the right.
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.weight(if (showRecipes) .33f else .44f).fillMaxHeight().panelFrame().padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(if (showRecipes) "Recetas" else "Tu inventario", Modifier.weight(1f), color = look.ink, fontFamily = PixelFont,
-                    fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 if (recipesHere) PanelButton({ manual = !manual }) {
                     Text(if (manual) "Ver recetas" else "Colocar a mano", color = look.ink, fontWeight = FontWeight.ExtraBold,
                         style = MaterialTheme.typography.labelLarge)
@@ -411,7 +425,7 @@ internal fun CraftPage(
                         else "No hay recetas en esta categoría.", color = look.muted, fontWeight = FontWeight.Bold)
                 }
                 BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-                    val tile = 64.dp
+                    val tile = 52.dp
                     columns = ((maxWidth + GAP) / (tile + GAP)).toInt().coerceAtLeast(3)
                     LazyVerticalGrid(GridCells.Fixed(columns), state = gridState, horizontalArrangement = Arrangement.spacedBy(GAP),
                         verticalArrangement = Arrangement.spacedBy(GAP), contentPadding = PaddingValues(top = 8.dp, end = 8.dp)) {
@@ -448,20 +462,19 @@ internal fun CraftPage(
             }
         }
 
-        Column(Modifier.weight(.56f).fillMaxHeight().panelFrame().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.weight(if (showRecipes) .40f else .56f).fillMaxHeight().panelFrame().padding(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             val side = live.layout.craftSize
-            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(selected?.name ?: if (side == 3) "Mesa de crafteo" else "Crafteo 2×2", Modifier.weight(1f, fill = false), color = look.ink,
-                    fontFamily = PixelFont, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(selected?.let { recipeWhere(it, side) } ?: "Pon los materiales en la cuadrícula", color = look.muted,
-                    fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge, maxLines = 1)
-            }
+            Text(selected?.name ?: if (side == 3) "Mesa de crafteo" else "Crafteo 2×2", color = look.ink,
+                fontFamily = PixelFont, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(selected?.let { recipeWhere(it, side) } ?: "Pon los materiales en la cuadrícula", color = look.muted,
+                fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelMedium, maxLines = 1)
             BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val cell = minOf((maxWidth - 140.dp) / (side + 1.4f), 96.dp).coerceAtLeast(36.dp)
+                val cell = minOf((maxWidth - 6.dp * (side - 1)) / side * .9f, 84.dp).coerceAtLeast(34.dp)
                 val pattern = snapshot?.takeIf { selected != null && it.selectedId == selected.id && it.pattern.size == 9 }?.pattern
                 val gridEmpty = (1..side * side).all { (live.slots.getOrNull(it)?.count ?: 0) == 0 }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterHorizontally)) {
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         repeat(side) { row ->
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -474,8 +487,8 @@ internal fun CraftPage(
                             }
                         }
                     }
-                    Text("→", color = look.ink, fontSize = 40.sp, fontWeight = FontWeight.ExtraBold)
-                    McSlot(0, live, cell * 1.35f, interactive, onTap, focused = padFocus?.number == 0,
+                    Text("↓", color = look.ink, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
+                    McSlot(0, live, cell * 1.25f, interactive, onTap, focused = padFocus?.number == 0,
                         ghostId = selected?.resultId, placeholder = "Resultado")
                 }
             }
@@ -497,25 +510,44 @@ internal fun CraftPage(
                     NeedRow(look.muted, "Llevas ${live.held.name}: toca una casilla para dejarlo", null)
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 val ready = selected?.state == PanelRecipeState.READY && interactive && live.held.count == 0 && !busy
                 if (selected != null) {
-                    PanelButton({ craft(false) }, Modifier.weight(1f).heightIn(min = 56.dp), enabled = ready, face = Color(0xFF7BC74D)) {
+                    PanelButton({ craft(false) }, Modifier.fillMaxWidth().heightIn(min = 50.dp), enabled = ready, face = Color(0xFF7BC74D)) {
                         Text("Craftear 1", color = Color(0xFF0E1A08), fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium)
                         PadKey("A")
                     }
-                    PanelButton({ craft(true) }, Modifier.weight(1.3f).heightIn(min = 56.dp), enabled = ready) {
+                    PanelButton({ craft(true) }, Modifier.fillMaxWidth().heightIn(min = 50.dp), enabled = ready) {
                         Text("Craftear todo lo posible", color = look.ink, fontWeight = FontWeight.ExtraBold,
                             style = MaterialTheme.typography.titleSmall, maxLines = 2)
                         PadKey("Y")
                     }
                 } else {
                     val result = live.slots.getOrNull(0)?.takeIf { it.count > 0 }
-                    PanelButton({ bridge.send(live, PanelCommand.QUICK_MOVE, 0) }, Modifier.weight(1f).heightIn(min = 56.dp),
+                    PanelButton({ bridge.send(live, PanelCommand.QUICK_MOVE, 0) }, Modifier.fillMaxWidth().heightIn(min = 50.dp),
                         enabled = result != null && interactive, face = Color(0xFF7BC74D)) {
                         Text(if (result != null) "Tomar ${result.name}" else "Tomar el resultado", color = Color(0xFF0E1A08),
                             fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium, maxLines = 1,
                             overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        }
+        if (showRecipes) {
+            Column(Modifier.weight(.27f).fillMaxHeight().panelFrame().padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Rápidas", color = look.ink, fontFamily = PixelFont, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text("Lo que ya puedes hacer. Un toque y va a tu inventario.", color = look.muted,
+                    fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                if (quick.isEmpty()) Text("Junta materiales y aquí aparecerán.", color = look.muted, fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.bodySmall)
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    quick.forEach { recipe ->
+                        PanelButton({ quickCraft(recipe) }, Modifier.fillMaxWidth(),
+                            enabled = interactive && live.held.count == 0 && !busy) {
+                            McIcon(recipe.resultId, 30.dp, count = recipe.resultCount)
+                            Text(recipe.name, Modifier.weight(1f), color = look.ink, fontWeight = FontWeight.ExtraBold,
+                                style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
                     }
                 }
             }

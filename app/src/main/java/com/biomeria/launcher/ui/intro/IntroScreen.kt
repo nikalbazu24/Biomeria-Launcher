@@ -148,7 +148,9 @@ internal fun IntroScreen(onFinished: (IntroResult) -> Unit) {
         mutableStateOf(accounts.indexOfFirst { it.third.equals(saved.accountType, true) }.takeIf { it >= 0 } ?: 2)
     }
     var head by rememberSaveable { mutableStateOf(0) }
-    var dual by rememberSaveable { mutableStateOf(0) }
+    var dual by rememberSaveable {
+        mutableStateOf(if (com.biomeria.launcher.data.DeviceProfile.detect(context).dual) 0 else 1)
+    }
     var start by rememberSaveable { mutableStateOf(0) }
     var name by rememberSaveable { mutableStateOf(validName(saved.playerName).ifBlank { "Jugador" }) }
 

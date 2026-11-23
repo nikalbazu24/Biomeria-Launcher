@@ -52,6 +52,7 @@ class MainActivity : ComponentActivity() {
             starlingReport = savedInstanceState.getString("pendingStarlingReport")?.let(Uri::parse)
         }
         UpdateNotifications.schedule(applicationContext)
+        com.biomeria.launcher.data.DeviceProfile.applyDefaults(applicationContext)
         Thread { com.biomeria.launcher.data.PlayStats.recoverOrphan(applicationContext); com.biomeria.launcher.data.PlayStats.export(applicationContext) }.start()
         GameDownloads(applicationContext).runtime()
 
