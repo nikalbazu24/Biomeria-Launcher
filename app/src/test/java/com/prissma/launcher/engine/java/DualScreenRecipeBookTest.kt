@@ -7,7 +7,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DualScreenRecipeBookTest {
-    private val chest = PanelRecipe(71, "Cofre de roble", 1, PanelRecipeState.MISSING)
+    private val chest = PanelRecipe(71, "Cofre de roble", 1, PanelRecipeState.MISSING, "minecraft:chest", isNew = true)
     private val plank = PanelRecipe(93, "Tablón de abedul", 4, PanelRecipeState.READY)
     private val manual = PanelRecipe(105, "Patrón especial", 1, PanelRecipeState.MANUAL)
 
@@ -19,6 +19,10 @@ class DualScreenRecipeBookTest {
         assertEquals(listOf(chest, plank), result.recipes)
         assertEquals(chest.id, result.selectedId)
         assertEquals(missing, result.missing)
+        assertEquals(3, result.gridSize)
+        assertEquals("minecraft:oak_planks", result.pattern[0])
+        assertEquals("", result.pattern[4])
+        assertTrue(result.recipes.first().isNew)
     }
 
     @Test
@@ -73,12 +77,15 @@ class DualScreenRecipeBookTest {
         DataOutputStream(bytes).use { out ->
             out.writeInt(RECIPE_BOOK_MAGIC)
             out.writeLong(generation)
+            out.writeByte(3)
             out.writeShort(recipes.size)
             for (recipe in recipes) {
                 out.writeInt(recipe.id)
                 out.writeUTF(recipe.name)
                 out.writeInt(recipe.resultCount)
                 out.writeByte(recipe.state.ordinal)
+                out.writeUTF(recipe.resultId)
+                out.writeBoolean(recipe.isNew)
             }
             out.writeInt(selectedId)
             out.writeByte(missing.size)
@@ -86,6 +93,7 @@ class DualScreenRecipeBookTest {
                 out.writeUTF(ingredient.name)
                 out.writeByte(ingredient.count)
             }
+            if (selectedId != -1) repeat(9) { out.writeUTF(if (it == 4) "" else "minecraft:oak_planks") }
         }
         return DataInputStream(bytes.toByteArray().inputStream()).use { decodeRecipeBook(it, 27L, 10L) }
     }

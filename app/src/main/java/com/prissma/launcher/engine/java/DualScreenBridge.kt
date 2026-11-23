@@ -57,7 +57,7 @@ internal enum class PanelLayout(
         PanelCommand.PICK, PanelCommand.SPLIT, PanelCommand.QUICK_MOVE -> slot in 0 until slotCount
         PanelCommand.SELECT_HOTBAR -> this == PERSONAL && slot in 0..8
         PanelCommand.CLOSE_MENU -> menuPage != null && slot == 0
-        PanelCommand.INSPECT_RECIPE, PanelCommand.PLACE_RECIPE -> this == CRAFTING_TABLE && slot >= 0
+        PanelCommand.INSPECT_RECIPE, PanelCommand.PLACE_RECIPE -> (this == CRAFTING_TABLE || this == PERSONAL) && slot >= 0
     }
 }
 
@@ -263,7 +263,7 @@ private fun decodePanelSnapshot(input: DataInputStream): PanelSnapshot? {
     val held = stack()
     val slots = List(layout.slotCount) { stack() }
     val mapRevision = input.readInt()
-    val recipeBookAvailable = input.readBoolean() && layout == PanelLayout.CRAFTING_TABLE
+    val recipeBookAvailable = input.readBoolean() && (layout == PanelLayout.CRAFTING_TABLE || layout == PanelLayout.PERSONAL)
     val menuTitle = label()
     val furnace = if (layout == PanelLayout.FURNACE) {
         val cook = input.readFloat()

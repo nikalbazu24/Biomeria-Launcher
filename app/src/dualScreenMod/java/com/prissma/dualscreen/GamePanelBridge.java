@@ -147,7 +147,9 @@ public final class GamePanelBridge {
                 return;
             }
             if (snapshotTick || generation != before) {
-                if (recipeBook != null && routedLayout == Layout.CRAFTING_TABLE && hasGenerationMarker(root.resolve("recipes-open"))) {
+                boolean recipesHere = layout == Layout.PERSONAL
+                        || (layout == Layout.CRAFTING_TABLE && routedLayout == Layout.CRAFTING_TABLE);
+                if (recipeBook != null && canUse && recipesHere && hasGenerationMarker(root.resolve("recipes-open"))) {
                     try {
                         recipeBook.publish(root.resolve("recipes"), generation, player, world, handler);
                     } catch (ReflectiveOperationException | LinkageError error) {
@@ -326,9 +328,9 @@ public final class GamePanelBridge {
                         }
                     }
                     case "inspect", "recipe" -> {
-                        if (layout != Layout.CRAFTING_TABLE || recipeBook == null || slot < 0) continue;
+                        if ((layout != Layout.CRAFTING_TABLE && layout != Layout.PERSONAL) || recipeBook == null || slot < 0) continue;
                         if (parts[1].equals("inspect")) {
-                            recipeBook.inspect(slot);
+                            recipeBook.inspect(slot, player);
                         } else if ((boolean) game.empty.invoke(game.cursorStack.invoke(handler))) {
                             try {
                                 recipeBook.place(generation, slot, player, world, handler, interactions, game.syncId.getInt(handler));
@@ -375,7 +377,7 @@ public final class GamePanelBridge {
                 List<?> slots = (List<?>) game.slots.get(handler);
                 for (int i = 0; i < layout.slots; i++) ids.add(writeStack(data, i < slots.size() ? game.slotStack.invoke(slots.get(i)) : null));
                 data.writeInt(publishHeldMap(root, player, world));
-                data.writeBoolean(layout == Layout.CRAFTING_TABLE && recipeBook != null);
+                data.writeBoolean((layout == Layout.CRAFTING_TABLE || layout == Layout.PERSONAL) && recipeBook != null);
                 String title = layout == Layout.PERSONAL ? "" : (String) game.text.invoke(game.title.invoke(screen));
                 data.writeUTF(title.substring(0, Math.min(title.length(), 96)));
                 if (layout == Layout.FURNACE) {

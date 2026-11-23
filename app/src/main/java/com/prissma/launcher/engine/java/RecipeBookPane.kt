@@ -1,6 +1,15 @@
 package com.prissma.launcher.engine.java
 
 import androidx.compose.foundation.BorderStroke
+import com.prissma.launcher.ui.theme.PixelFont
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.border
+import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -101,7 +110,7 @@ internal fun RecipeBookPane(
             when {
                 navigation.searching -> OutlinedButton(onClick = ::back) { Text("Ver recetas") }
                 navigation.detailId != null -> OutlinedButton(onClick = ::back) { Text("Recetas") }
-                else -> OutlinedButton(onClick = onBack) { Text("Mesa 3×3") }
+                else -> OutlinedButton(onClick = onBack) { Text(if (inventory.layout == PanelLayout.CRAFTING_TABLE) "Mesa 3×3" else "Crafteo 2×2") }
             }
             Text(if (navigation.searching) query.ifBlank { "Buscar por nombre" } else "Libro de recetas",
                 modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -131,9 +140,12 @@ internal fun RecipeBookPane(
                     }
                 }
                 if (results.isEmpty()) {
-                    Text(if (snapshot.recipes.isEmpty()) "Todavía no has desbloqueado recetas para la mesa."
+                    Text(if (snapshot.recipes.isEmpty()) "Todavía no has desbloqueado recetas. Aparecen aquí en cuanto Minecraft te las da."
                         else "No hay recetas que coincidan.", color = Prissma.colors.textMuted)
                 }
+                val fresh = snapshot.recipes.count { it.isNew }
+                if (fresh > 0) Text("$fresh ${if (fresh == 1) "receta nueva" else "recetas nuevas"} desde la última vez",
+                    color = Prissma.colors.gold, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
                 LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     items(results, key = { it.id }) { recipe ->
                         Surface(
@@ -145,15 +157,14 @@ internal fun RecipeBookPane(
                                 BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
                             } else null
                         ) {
-                            Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(recipe.name, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                if (recipe.resultCount > 1) Text("×${recipe.resultCount}")
-                                val status = when (recipe.state) {
-                                    PanelRecipeState.READY -> "Disponible"
-                                    PanelRecipeState.MISSING -> "Faltan ingredientes"
-                                    PanelRecipeState.MANUAL -> "Manual"
-                                }
+                            Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                RecipeIcon(recipe.resultId, 40.dp)
+                                Text(recipe.name, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                    fontWeight = FontWeight.Bold)
+                                if (recipe.isNew) NewBadge()
+                                if (recipe.resultCount > 1) Text("×${recipe.resultCount}", fontWeight = FontWeight.ExtraBold)
+                                val status = recipeStatus(recipe.state)
                                 Text(status, style = MaterialTheme.typography.labelMedium,
                                     color = if (recipe.state == PanelRecipeState.READY) MaterialTheme.colorScheme.primary
                                         else Prissma.colors.textMuted)
@@ -176,8 +187,15 @@ private fun RecipeDetails(
     onPlace: () -> Unit
 ) {
     Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(if (recipe.resultCount > 1) "${recipe.name} ×${recipe.resultCount}" else recipe.name,
-            style = MaterialTheme.typography.titleMedium)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            if (book.selectedId == recipe.id && book.pattern.size == 9) RecipeGrid(book.pattern)
+            Text("→", fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = Prissma.colors.textMuted)
+            Box(contentAlignment = Alignment.BottomEnd) {
+                RecipeIcon(recipe.resultId, 64.dp)
+                if (recipe.resultCount > 1) Text("${recipe.resultCount}", fontFamily = PixelFont, fontSize = 18.sp)
+            }
+        }
+        Text(recipe.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
         when (recipe.state) {
             PanelRecipeState.READY -> {
                 Button(onClick = onPlace, enabled = !hasCursorItem) {
@@ -197,6 +215,7 @@ private fun RecipeDetails(
                 }
             }
             PanelRecipeState.MANUAL -> Text("Puedes preparar esta receta colocando los ingredientes a mano.")
+            PanelRecipeState.NEEDS_TABLE -> Text("Esta receta necesita la mesa de crafteo de 3×3.", color = Prissma.colors.textMuted)
         }
     }
 }
@@ -230,4 +249,36 @@ private fun RecipeSearchKeys(query: String, onQuery: (String) -> Unit, modifier:
                 contentPadding = PaddingValues(horizontal = 6.dp)) { Text("Limpiar") }
         }
     }
+}
+
+private fun recipeStatus(state: PanelRecipeState) = when (state) {
+    PanelRecipeState.READY -> "Disponible"
+    PanelRecipeState.MISSING -> "Faltan ingredientes"
+    PanelRecipeState.MANUAL -> "Manual"
+    PanelRecipeState.NEEDS_TABLE -> "Necesita mesa"
+}
+
+/** The item's icon from the game files; a plain slot while it loads or for unknown items. */
+@Composable
+private fun RecipeIcon(id: String, size: androidx.compose.ui.unit.Dp) {
+    val icon = if (id.isBlank()) null else rememberItemIcon(id)
+    Box(Modifier.size(size).background(Color(0xFF1A2026), RoundedCornerShape(3.dp))
+        .border(2.dp, Prissma.colors.ink, RoundedCornerShape(3.dp)), contentAlignment = Alignment.Center) {
+        if (icon != null) Image(icon, null, Modifier.fillMaxSize(.78f), filterQuality = FilterQuality.None)
+    }
+}
+
+@Composable
+private fun RecipeGrid(pattern: List<String>) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        for (row in 0 until 3) Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            for (column in 0 until 3) RecipeIcon(pattern[row * 3 + column], 40.dp)
+        }
+    }
+}
+
+@Composable
+private fun NewBadge() {
+    Text("NUEVA", Modifier.background(Prissma.colors.gold, RoundedCornerShape(3.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+        color = Prissma.colors.ink, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
 }

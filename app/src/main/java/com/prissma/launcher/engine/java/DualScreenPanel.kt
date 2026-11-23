@@ -240,7 +240,8 @@ private fun DualScreenPanel(
     var editingSearch by remember(live?.generation, page) { mutableStateOf(false) }
     var slotQuery by remember(live?.generation, page) { mutableStateOf("") }
     var searchKey by remember(live?.generation, page) { mutableStateOf(PanelPadSlot(0)) }
-    val canShowRecipes = table && routed != null && live?.recipeBookAvailable == true
+    val canShowRecipes = live?.recipeBookAvailable == true && interactive &&
+        ((table && routed != null) || (live.layout == PanelLayout.PERSONAL && page == PanelPage.CRAFT))
     val showingRecipes = showRecipes && canShowRecipes
     val unfilteredRows = remember(bridge, live?.layout, page, showingRecipes, customizing) {
         when {
@@ -482,9 +483,9 @@ private fun DualScreenPanel(
                             bridge.send(live, PanelCommand.CLOSE_MENU)
                         }
                     } else if (page == PanelPage.CRAFT) {
-                        if (table) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            LauncherButton("Cerrar mesa", { bridge.send(live, PanelCommand.CLOSE_MENU) }, enabled = interactive)
-                            if (live.recipeBookAvailable) LauncherButton(if (controllerActive) "Recetas [R1]" else "Recetas",
+                        if (table || canShowRecipes) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (table) LauncherButton("Cerrar mesa", { bridge.send(live, PanelCommand.CLOSE_MENU) }, enabled = interactive)
+                            if (canShowRecipes) LauncherButton(if (controllerActive) "Recetas [R1]" else "Recetas",
                                 { showRecipes = true }, primary = true, enabled = interactive)
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {

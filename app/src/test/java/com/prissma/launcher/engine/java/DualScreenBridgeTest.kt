@@ -89,7 +89,7 @@ class DualScreenBridgeTest {
         val bridge = DualScreenBridge.create(temporary.root)
         bridge.visibility(true)
         val personal = requireNotNull(bridge.readInventory(writeSnapshot(bridge.directory, recipeBookAvailable = true)))
-        assertFalse(personal.recipeBookAvailable)
+        assertTrue(personal.recipeBookAvailable)
         assertFalse(bridge.send(personal, PanelCommand.PLACE_RECIPE, 501))
 
         val table = requireNotNull(bridge.readInventory(writeSnapshot(

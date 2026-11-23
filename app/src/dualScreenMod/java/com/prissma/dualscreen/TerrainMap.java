@@ -122,18 +122,27 @@ final class TerrainMap {
             Object loaded = chunk.invoke(manager, tx, tz, full, false);
             sampled.put(key, tick + (loaded == null ? 40 : 600));
             if (loaded == null) continue;
-            writeTile(world, loaded, tx, tz);
+            writeTile(world, manager, loaded, tx, tz);
             budget--;
         }
 
     }
 
-    private void writeTile(Object world, Object loaded, int cx, int cz) throws ReflectiveOperationException, IOException {
+    private void writeTile(Object world, Object manager, Object loaded, int cx, int cz)
+            throws ReflectiveOperationException, IOException {
         int[] heights = new int[SIZE * SIZE];
         for (int z = 0; z < SIZE; z++) {
             for (int x = 0; x < SIZE; x++) {
                 heights[z * SIZE + x] = (int) surface.invoke(loaded, worldSurface, x, z);
             }
+        }
+        // The western and northern edge of the neighbouring chunks, so relief has no seams.
+        int[] west = new int[SIZE], north = new int[SIZE];
+        Object westChunk = chunk.invoke(manager, cx - 1, cz, full, false);
+        Object northChunk = chunk.invoke(manager, cx, cz - 1, full, false);
+        for (int i = 0; i < SIZE; i++) {
+            west[i] = westChunk == null ? heights[i * SIZE] : (int) surface.invoke(westChunk, worldSurface, SIZE - 1, i);
+            north[i] = northChunk == null ? heights[i] : (int) surface.invoke(northChunk, worldSurface, i, SIZE - 1);
         }
         ByteArrayOutputStream bytes = new ByteArrayOutputStream(SIZE * SIZE * Integer.BYTES);
         try (DataOutputStream out = new DataOutputStream(bytes)) {
@@ -148,9 +157,13 @@ final class TerrainMap {
                         Object block = state.invoke(loaded, mutablePosition);
                         material = mapColor.invoke(block, world, mutablePosition);
                     }
-                    int slope = elevation - heights[z * SIZE + Math.max(0, x - 1)]
-                            + elevation - heights[Math.max(0, z - 1) * SIZE + x];
-                    int brightness = 244 + Math.max(-45, Math.min(21, slope * 6));
+                    // Light from the north-west: slopes facing it brighten, the others darken,
+                    // and higher ground is a little lighter so mountains read at a glance.
+                    int left = x == 0 ? west[z] : heights[z * SIZE + x - 1];
+                    int up = z == 0 ? north[x] : heights[(z - 1) * SIZE + x];
+                    int slope = elevation - left + elevation - up;
+                    int altitude = Math.max(-18, Math.min(18, (elevation - 64) / 5));
+                    int brightness = 232 + altitude + Math.max(-80, Math.min(40, slope * 11));
                     if (material == water) {
                         int depth = Math.max(0, Math.min(14, elevation - (int) surface.invoke(loaded, oceanFloor, x, z)));
                         out.writeInt(shade(0x3e9ba8, 222 - depth * 7));

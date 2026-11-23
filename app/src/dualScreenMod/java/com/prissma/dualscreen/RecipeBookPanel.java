@@ -16,12 +16,14 @@ import java.util.Optional;
 
 /** Reads the unlocked client recipes and uses the same finder and placement packet as Minecraft. */
 final class RecipeBookPanel {
-    private static final int MAGIC = 0x50524231;
+    private static final int MAGIC = 0x50524232;
     private static final int MAX_RECIPES = 4096;
     private static final int GRID_SLOTS = 9;
     private static final int MANUAL = 0;
     private static final int MISSING = 1;
     private static final int READY = 2;
+    /** Needs the 3×3 crafting table: shown from the inventory, but it can't be placed there. */
+    private static final int NEEDS_TABLE = 3;
 
     private final Access game;
     private final Map<Integer, Recipe> recipes = new LinkedHashMap<>();
@@ -33,14 +35,27 @@ final class RecipeBookPanel {
     private int selection = -1;
     private boolean needsWrite;
 
-    private record Recipe(Object networkId, List<?> requirements, String name, int count) {}
+    private record Recipe(Object networkId, Object display, List<?> requirements, String name, int count, String resultId,
+                          int width, int height) {}
 
     RecipeBookPanel(ClassLoader loader) throws ReflectiveOperationException {
         game = new Access(loader);
     }
 
-    void inspect(int id) {
-        if (id == selection || !recipes.containsKey(id)) return;
+    void inspect(int id, Object player) {
+        Recipe recipe = recipes.get(id);
+        if (recipe == null) return;
+        // Looking at a new recipe clears its "new" mark, as Minecraft's own book does.
+        try {
+            Object book = game.getBook.invoke(player);
+            if ((boolean) game.isHighlighted.invoke(book, recipe.networkId())) {
+                game.unmarkHighlighted.invoke(book, recipe.networkId());
+                needsWrite = true;
+            }
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            // The mark is only cosmetic.
+        }
+        if (id == selection) return;
         selection = id;
         needsWrite = true;
     }
@@ -49,7 +64,7 @@ final class RecipeBookPanel {
             throws ReflectiveOperationException {
         refreshCatalog(generation, player, world);
         Recipe recipe = recipes.get(id);
-        if (recipe == null || recipe.requirements().isEmpty()) return;
+        if (recipe == null || recipe.requirements().isEmpty() || !fits(recipe, handler)) return;
         Object finder = newFinder(game.getInventory.invoke(player), handler);
         if (canMake(finder, recipe.requirements())) game.placeRecipe.invoke(interactions, syncId, recipe.networkId(), false);
     }
@@ -64,18 +79,23 @@ final class RecipeBookPanel {
         if (!needsWrite && change == inventoryChanges && sameGrid(currentGrid) && Files.isRegularFile(destination)) return;
 
         Object finder = newFinder(inventory, handler);
+        Object book = game.getBook.invoke(player);
         var bytes = new ByteArrayOutputStream(8192);
         try (var out = new DataOutputStream(bytes)) {
             out.writeInt(MAGIC);
             out.writeLong(generation);
+            out.writeByte(game.craftingHandler.isInstance(handler) ? (int) game.gridWidth.invoke(handler) : 0);
             out.writeShort(recipes.size());
             for (var entry : recipes.entrySet()) {
                 var recipe = entry.getValue();
                 out.writeInt(entry.getKey());
                 out.writeUTF(recipe.name());
                 out.writeInt(recipe.count());
-                int state = recipe.requirements().isEmpty() ? MANUAL : canMake(finder, recipe.requirements()) ? READY : MISSING;
+                int state = !fits(recipe, handler) ? NEEDS_TABLE : recipe.requirements().isEmpty() ? MANUAL
+                        : canMake(finder, recipe.requirements()) ? READY : MISSING;
                 out.writeByte(state);
+                out.writeUTF(recipe.resultId());
+                out.writeBoolean((boolean) game.isHighlighted.invoke(book, recipe.networkId()));
             }
             out.writeInt(selection);
             Recipe selected = recipes.get(selection);
@@ -84,6 +104,9 @@ final class RecipeBookPanel {
             for (var ingredient : missing.entrySet()) {
                 out.writeUTF(ingredient.getKey());
                 out.writeByte(ingredient.getValue());
+            }
+            if (selected != null) {
+                for (String id : pattern(selected)) out.writeUTF(id);
             }
         }
         List<Object> savedGrid = new ArrayList<>(GRID_SLOTS);
@@ -120,7 +143,17 @@ final class RecipeBookPanel {
                 if (name.isBlank()) continue;
                 List<?> requirements = (List<?>) ((Optional<?>) game.recipeRequirements.invoke(entry)).orElse(null);
                 if (requirements == null || requirements.size() > GRID_SLOTS) requirements = List.of();
-                recipes.put(index, new Recipe(id, requirements, name, count));
+                int width, height;
+                if (game.shaped.isInstance(display)) {
+                    width = (int) game.width.invoke(display);
+                    height = (int) game.height.invoke(display);
+                } else {
+                    int size = ((List<?>) game.ingredients.invoke(display)).size();
+                    width = size <= 1 ? 1 : 2;
+                    height = size <= 4 ? Math.max(1, (size + 1) / 2) : 3;
+                    if (size > 4) width = 3;
+                }
+                recipes.put(index, new Recipe(id, display, requirements, name, count, itemId(result), width, height));
             }
             if (recipes.size() == MAX_RECIPES) break;
         }
@@ -134,6 +167,45 @@ final class RecipeBookPanel {
             return (int) game.width.invoke(display) <= 3 && (int) game.height.invoke(display) <= 3;
         }
         return game.shapeless.isInstance(display) && ((List<?>) game.ingredients.invoke(display)).size() <= GRID_SLOTS;
+    }
+
+    /** Whether the recipe fits the crafting grid in front of the player (2×2 inventory or 3×3 table). */
+    private boolean fits(Recipe recipe, Object handler) throws ReflectiveOperationException {
+        if (!game.craftingHandler.isInstance(handler)) return false;
+        return recipe.width() <= (int) game.gridWidth.invoke(handler) && recipe.height() <= (int) game.gridHeight.invoke(handler);
+    }
+
+    /** The recipe laid out on a 3×3 grid, one item id per cell ("" for an empty cell). */
+    private List<String> pattern(Recipe recipe) throws ReflectiveOperationException {
+        String[] cells = new String[GRID_SLOTS];
+        java.util.Arrays.fill(cells, "");
+        List<?> slots = displaySlots(recipe.display());
+        boolean shaped = game.shaped.isInstance(recipe.display());
+        for (int i = 0; i < slots.size() && i < GRID_SLOTS; i++) {
+            int cell = shaped ? (i / recipe.width()) * 3 + i % recipe.width() : i;
+            if (cell >= GRID_SLOTS) continue;
+            for (Object stack : (List<?>) game.displayStacks.invoke(slots.get(i), context)) {
+                if (!(boolean) game.emptyStack.invoke(stack)) {
+                    cells[cell] = itemId(stack);
+                    break;
+                }
+            }
+        }
+        return List.of(cells);
+    }
+
+    /** The ingredient list of a shaped or shapeless display: its only List component. */
+    private List<?> displaySlots(Object display) throws ReflectiveOperationException {
+        for (var component : display.getClass().getRecordComponents()) {
+            if (List.class.isAssignableFrom(component.getType())) return (List<?>) component.getAccessor().invoke(display);
+        }
+        return List.of();
+    }
+
+    private String itemId(Object stack) throws ReflectiveOperationException {
+        Object id = game.registryId.invoke(game.itemRegistry, game.stackItem.invoke(stack));
+        String value = id == null ? "" : id.toString();
+        return value.substring(0, Math.min(value.length(), 96));
     }
 
     private List<Object> readGrid(Object handler) throws ReflectiveOperationException {
@@ -207,6 +279,9 @@ final class RecipeBookPanel {
         final Method recipeRequirements, displayContext, getInventory, inventoryChanges, inputSlots, slotStack;
         final Method emptyStack, copyStack, equalStacks, stackName, stackCount, textString;
         final Method addInventory, addGrid, canCraft, placeRecipe, ingredientDisplay, displayStacks, width, height, ingredients;
+        final Method isHighlighted, unmarkHighlighted, gridWidth, gridHeight, stackItem, registryId;
+        final Class<?> craftingHandler;
+        final Object itemRegistry;
 
         Access(ClassLoader loader) throws ReflectiveOperationException {
             Class<?> stack = type(loader, 1799);
@@ -246,6 +321,15 @@ final class RecipeBookPanel {
             placeRecipe = type(loader, 636).getMethod("method_2912", int.class, networkId, boolean.class);
             ingredientDisplay = type(loader, 1856).getMethod("method_64673");
             displayStacks = type(loader, 10302).getMethod("method_64738", context);
+            Class<?> book = type(loader, 299);
+            isHighlighted = book.getMethod("method_64855", networkId);
+            unmarkHighlighted = book.getMethod("method_64856", networkId);
+            craftingHandler = type(loader, 9884);
+            gridWidth = craftingHandler.getMethod("method_61629");
+            gridHeight = craftingHandler.getMethod("method_61630");
+            stackItem = stack.getMethod("method_7909");
+            registryId = type(loader, 2378).getMethod("method_10221", Object.class);
+            itemRegistry = type(loader, 7923).getField("field_41178").get(null);
         }
 
         private static Class<?> type(ClassLoader loader, int id) throws ClassNotFoundException {

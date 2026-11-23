@@ -6,16 +6,30 @@ import java.io.IOException
 import java.text.Normalizer
 import java.util.Locale
 
-internal const val RECIPE_BOOK_MAGIC = 0x50524231
+internal const val RECIPE_BOOK_MAGIC = 0x50524232
 
-internal enum class PanelRecipeState { MANUAL, MISSING, READY }
-internal data class PanelRecipe(val id: Int, val name: String, val resultCount: Int, val state: PanelRecipeState)
+/** NEEDS_TABLE: unlocked, but it uses the 3×3 table and the player is at the 2×2 inventory grid. */
+internal enum class PanelRecipeState { MANUAL, MISSING, READY, NEEDS_TABLE }
+internal data class PanelRecipe(
+    val id: Int,
+    val name: String,
+    val resultCount: Int,
+    val state: PanelRecipeState,
+    /** The result's item id, for its icon. */
+    val resultId: String = "",
+    /** Newly unlocked and not looked at yet, as Minecraft's own book marks it. */
+    val isNew: Boolean = false
+)
 internal data class PanelRecipeBook(
     val generation: Long,
     val modifiedAt: Long,
     val recipes: List<PanelRecipe>,
     val selectedId: Int?,
-    val missing: List<PanelStack>
+    val missing: List<PanelStack>,
+    /** 3 at the crafting table, 2 at the inventory grid. */
+    val gridSize: Int = 3,
+    /** The selected recipe on a 3×3 grid, one item id per cell ("" when empty). */
+    val pattern: List<String> = emptyList()
 )
 
 internal data class RecipeBookNavigation(
@@ -56,6 +70,8 @@ internal fun DualScreenBridge.readRecipeBook(generation: Long, previous: PanelRe
 
 internal fun decodeRecipeBook(input: DataInputStream, generation: Long, modifiedAt: Long): PanelRecipeBook? {
     if (input.readInt() != RECIPE_BOOK_MAGIC || input.readLong() != generation) return null
+    val gridSize = input.readUnsignedByte()
+    if (gridSize > 3) return null
     val count = input.readUnsignedShort()
     if (count > 4096) return null
     val ids = HashSet<Int>(count)
@@ -65,8 +81,10 @@ internal fun decodeRecipeBook(input: DataInputStream, generation: Long, modified
         val name = input.readUTF()
         val resultCount = input.readInt()
         val state = PanelRecipeState.entries.getOrNull(input.readUnsignedByte()) ?: return null
-        if (id < 0 || !ids.add(id) || name.isBlank() || name.length > 96 || resultCount <= 0) return null
-        recipes += PanelRecipe(id, name, resultCount, state)
+        val resultId = input.readUTF()
+        val isNew = input.readBoolean()
+        if (id < 0 || !ids.add(id) || name.isBlank() || name.length > 96 || resultCount <= 0 || resultId.length > 96) return null
+        recipes += PanelRecipe(id, name, resultCount, state, resultId, isNew)
     }
     val selected = input.readInt()
     if (selected != -1 && selected !in ids) return null
@@ -79,7 +97,8 @@ internal fun decodeRecipeBook(input: DataInputStream, generation: Long, modified
         if (name.length > 160 || units !in 1..9) return null
         missing += PanelStack(name, units)
     }
-    return PanelRecipeBook(generation, modifiedAt, recipes, selected.takeIf { it >= 0 }, missing)
+    val pattern = if (selected == -1) emptyList() else List(9) { input.readUTF().also { if (it.length > 96) return null } }
+    return PanelRecipeBook(generation, modifiedAt, recipes, selected.takeIf { it >= 0 }, missing, gridSize, pattern)
 }
 
 private val recipeAccents = Regex("\\p{M}+")
