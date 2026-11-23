@@ -177,12 +177,14 @@ private fun DualScreenPanel(
     onHud: (GameHudSettings) -> Unit,
     onHotbar: (Int) -> Unit
 ) {
-    var page by remember { mutableStateOf(hud.panelHome) }
+    // The inventory is home; crafting, map and options open on top of it with a way back.
+    var page by remember { mutableStateOf(PanelPage.INVENTORY) }
     var returnPage by remember { mutableStateOf<PanelPage?>(null) }
     var previousMenuPage by remember { mutableStateOf<PanelPage?>(null) }
     var inventory by remember(bridge) { mutableStateOf<PanelInventory?>(null) }
     var pixels by remember(bridge) { mutableStateOf<IntArray?>(null) }
-    var click by remember { mutableStateOf(PanelCommand.PICK) }
+    var optionGroup by remember { mutableStateOf(OptionGroup.TEXT) }
+    var tipIndex by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(bridge) {
         if (bridge == null) return@LaunchedEffect
@@ -199,21 +201,16 @@ private fun DualScreenPanel(
     LaunchedEffect(bridge, menuPolicy) { bridge?.prepareMenus(menuPolicy) }
 
     val live = inventory
-    val table = live?.layout == PanelLayout.CRAFTING_TABLE
     val menuPage = live?.layout?.menuPage
-    val menuSession = live?.takeIf {
-        hud.routes(it.layout)
-    }?.generation
-    var showRecipes by remember(menuSession) { mutableStateOf(false) }
+    val menuSession = live?.takeIf { hud.routes(it.layout) }?.generation
     var customizing by remember { mutableStateOf(false) }
     var characterPadInput by remember { mutableStateOf<((PanelPadAction) -> Unit)?>(null) }
-    var recipePadInput by remember(menuSession) { mutableStateOf<((PanelPadAction) -> Unit)?>(null) }
+    var craftPadInput by remember { mutableStateOf<((PanelPadAction) -> Unit)?>(null) }
     LaunchedEffect(menuSession, menuPage) {
         if (menuSession != null && menuPage != null) {
             if (previousMenuPage == null) returnPage = page
             previousMenuPage = menuPage
             page = menuPage
-            click = PanelCommand.PICK
         } else {
             if (page == previousMenuPage) returnPage?.let { page = it }
             if (previousMenuPage != null) activity.releaseLowerGamepad()
@@ -237,32 +234,50 @@ private fun DualScreenPanel(
     val showingMap = bridge != null && page == PanelPage.MAP && hud.panelMap == PanelMapSource.BIOMERIA
     var mapPadInput by remember { mutableStateOf<TerrainPadInput?>(null) }
     val searchable = live != null && interactive &&
-        (page == PanelPage.INVENTORY || page == PanelPage.STORAGE && live.layout.chestRows > 0)
+        (page == PanelPage.INVENTORY && live.layout == PanelLayout.PERSONAL || page == PanelPage.STORAGE && live.layout.chestRows > 0)
     var editingSearch by remember(live?.generation, page) { mutableStateOf(false) }
     var slotQuery by remember(live?.generation, page) { mutableStateOf("") }
     var searchKey by remember(live?.generation, page) { mutableStateOf(PanelPadSlot(0)) }
-    val canShowRecipes = live?.recipeBookAvailable == true && interactive &&
-        ((table && routed != null) || (live.layout == PanelLayout.PERSONAL && page == PanelPage.CRAFT))
-    val showingRecipes = showRecipes && canShowRecipes
-    val unfilteredRows = remember(bridge, live?.layout, page, showingRecipes, customizing) {
+    val craftingByRecipes = page == PanelPage.CRAFT && craftPadInput != null
+    val unfilteredRows = remember(bridge, live?.layout, page, customizing, craftingByRecipes) {
         when {
-            showingRecipes || customizing || (bridge != null && live == null) -> emptyList()
+            customizing || craftingByRecipes || (bridge != null && live == null) -> emptyList()
             else -> panelPadRows(live?.layout, page)
         }
     }
     val matches = remember(unfilteredRows, live?.slots, slotQuery, searchable) {
-        if (searchable && slotQuery.isNotBlank()) {
-            filterPanelSlotRows(unfilteredRows, live?.slots.orEmpty(), slotQuery)
-        } else null
+        if (searchable && slotQuery.isNotBlank()) filterPanelSlotRows(unfilteredRows, live?.slots.orEmpty(), slotQuery) else null
     }
     val padRows = matches ?: unfilteredRows
     val matchingSlots = remember(matches) { matches?.flatten()?.map(PanelPadSlot::number)?.toSet() }
     var padSlot by remember(live?.generation, page) { mutableStateOf<PanelPadSlot?>(null) }
     val currentPadSlot = padSlot?.takeIf { slot -> padRows.any { slot in it } } ?: padRows.firstOrNull()?.firstOrNull()
     val padFocus = currentPadSlot.takeIf { controllerActive }
+    // The item whose actions show in the card: the controller's slot, or the last one touched.
+    var touched by remember(live?.generation) { mutableStateOf<Int?>(null) }
+    val chosen = if (controllerActive) padFocus?.number else touched
 
     LaunchedEffect(controllerActive, menuSession, menuPage) {
         if (controllerActive && menuSession != null && menuPage != null) page = menuPage
+    }
+
+    val tabs = listOf(PanelPage.INVENTORY, PanelPage.CRAFT, PanelPage.MAP, PanelPage.OPTIONS)
+    fun openPage(next: PanelPage) {
+        page = next
+        tipIndex = 0
+    }
+    /** "Volver": closes a routed table or container, otherwise goes back to the inventory. */
+    fun goBack(fromPad: Boolean) {
+        when {
+            routed != null && live != null && page == menuPage -> {
+                if (bridge?.send(live, PanelCommand.CLOSE_MENU) == true && fromPad) activity.releaseLowerGamepad()
+            }
+            page != PanelPage.INVENTORY -> openPage(PanelPage.INVENTORY)
+            fromPad -> activity.releaseLowerGamepad()
+        }
+    }
+    fun sendCommand(command: PanelCommand, slot: Int) {
+        if (live != null && interactive) bridge?.send(live, command, slot)
     }
 
     val actionPage = page
@@ -279,10 +294,7 @@ private fun DualScreenPanel(
         when {
             showingMap && page == actionPage && mapPadInput?.managingWaypoints?.invoke() == true ->
                 mapPadInput?.action?.invoke(action)
-            canShowRecipes && showRecipes -> recipePadInput?.invoke(action)
             customizing -> characterPadInput?.invoke(action)
-            action == PanelPadAction.MARK && page == PanelPage.INVENTORY && live?.layout == PanelLayout.PERSONAL &&
-                bridge != null -> customizing = true
             editingSearch && searchable && page == actionPage -> when {
                 action == PanelPadAction.BACK || action == PanelPadAction.SEARCH -> editingSearch = false
                 action == PanelPadAction.PICK -> applySearchKey(searchKey.number)
@@ -290,25 +302,25 @@ private fun DualScreenPanel(
                 else -> Unit
             }
             action == PanelPadAction.BACK && searchable && slotQuery.isNotBlank() -> slotQuery = ""
-            action == PanelPadAction.BACK -> {
-                if (routed == null || live == null || bridge?.send(live, PanelCommand.CLOSE_MENU) == true) {
-                    activity.releaseLowerGamepad()
-                }
-            }
+            action == PanelPadAction.BACK -> goBack(fromPad = true)
             page != actionPage -> Unit
-            showingRecipes -> Unit
-            action == PanelPadAction.SEARCH && searchable -> editingSearch = true
-            action == PanelPadAction.NEXT_TAB && canShowRecipes -> showRecipes = true
             action == PanelPadAction.NEXT_TAB || action == PanelPadAction.PREVIOUS_TAB -> {
                 if (menuPage == null && bridge != null) {
-                    val tabs = PanelPage.entries.filter { it.canStart }
                     val index = tabs.indexOf(page)
                     val offset = if (action == PanelPadAction.NEXT_TAB) 1 else -1
-                    page = if (index == -1) PanelPage.INVENTORY else tabs[(index + offset + tabs.size) % tabs.size]
-                    click = PanelCommand.PICK
+                    openPage(if (index == -1) PanelPage.INVENTORY else tabs[(index + offset + tabs.size) % tabs.size])
                 }
             }
+            action == PanelPadAction.MARK && page == PanelPage.INVENTORY && live?.layout == PanelLayout.PERSONAL &&
+                bridge != null -> customizing = true
+            action == PanelPadAction.SEARCH && searchable -> editingSearch = true
+            page == PanelPage.OPTIONS -> when (action) {
+                PanelPadAction.UP -> optionGroup = OptionGroup.entries[(optionGroup.ordinal - 1).coerceAtLeast(0)]
+                PanelPadAction.DOWN -> optionGroup = OptionGroup.entries[(optionGroup.ordinal + 1).coerceAtMost(OptionGroup.entries.lastIndex)]
+                else -> Unit
+            }
             showingMap -> mapPadInput?.action?.invoke(action)
+            craftingByRecipes -> craftPadInput?.invoke(action)
             action.directional -> padSlot = movePanelPadSlot(padRows, target, action)
             target != null -> {
                 val command = panelPadCommand(action, target)
@@ -331,25 +343,41 @@ private fun DualScreenPanel(
         onDispose(detach)
     }
 
-    val sendSlot: (Int) -> Unit = { slot ->
+    /** A touch on a slot: on the inventory it first chooses the item; with something in hand it drops it there. */
+    val tapSlot: (Int) -> Unit = { slot ->
         if (controllerActive) padSlot = PanelPadSlot(slot)
-        if (interactive && live != null && (matchingSlots == null || slot in matchingSlots)) bridge?.send(live, click, slot)
+        val now = live
+        val item = now?.slots?.getOrNull(slot)
+        when {
+            now == null || bridge == null -> Unit
+            matchingSlots != null && slot !in matchingSlots -> Unit
+            !interactive -> touched = slot
+            now.held.count > 0 -> { bridge.send(now, PanelCommand.PICK, slot); touched = slot }
+            page != PanelPage.INVENTORY -> bridge.send(now, PanelCommand.PICK, slot)
+            touched == slot && (item?.count ?: 0) > 0 -> bridge.send(now, PanelCommand.PICK, slot)
+            else -> touched = slot.takeIf { (item?.count ?: 0) > 0 }
+        }
     }
 
-    val hints: List<Pair<String, String>> = when {
+    val hints: List<TipPart> = when {
         !controllerActive -> emptyList()
-        showingRecipes -> listOf("↕" to "Recorrer", "A" to "Elegir", "B" to "Atrás")
-        customizing -> listOf("✛" to "Recorrer", "A" to "Elegir", "B" to "Listo")
-        editingSearch && searchable -> listOf("✛" to "Teclado", "A" to "Elegir", "B" to "Aplicar")
-        showingMap -> listOf("R" to "Mover", "X" to "Alejar", "Y" to "Acercar", "A" to "Centrar", "R3" to "Nueva marca", "Start" to "Marcas")
-        matchingSlots != null -> listOf("✛" to "Coincidencias", "A" to "Tomar o colocar", "B" to "Limpiar")
-        searchable -> listOfNotNull("A" to "Tomar o colocar", "X" to "Dividir", "Y" to "Mover rápido", "Start" to "Buscar",
-            ("R3" to "Personaje").takeIf { page == PanelPage.INVENTORY && live?.layout == PanelLayout.PERSONAL },
-            "B" to "Devolver mando")
-        padFocus != null && !padFocus.selectsHotbar -> listOf("A" to "Tomar o colocar", "X" to "Dividir", "Y" to "Mover rápido", "B" to "Volver")
-        padFocus?.selectsHotbar == true -> listOf("A" to "Llevar en la mano", "B" to "Volver")
-        else -> listOf("LB/RB" to "Pestañas", "B" to "Devolver mando")
+        customizing -> listOf(TipPart("✛", true), TipPart("Recorrer"), TipPart("A", true), TipPart("Elegir"), TipPart("B", true), TipPart("Listo"))
+        editingSearch && searchable -> listOf(TipPart("✛", true), TipPart("Teclado"), TipPart("A", true), TipPart("Elegir"),
+            TipPart("B", true), TipPart("Aplicar"))
+        showingMap -> listOf(TipPart("R", true), TipPart("Mover"), TipPart("X", true), TipPart("Acercar"), TipPart("Y", true),
+            TipPart("Alejar"), TipPart("A", true), TipPart("Centrar"), TipPart("R3", true), TipPart("Marcar"), TipPart("B", true), TipPart("Volver"))
+        craftingByRecipes -> listOf(TipPart("✛", true), TipPart("Recetas"), TipPart("A", true), TipPart("Elegir o craftear 1"),
+            TipPart("Y", true), TipPart("Craftear todo"), TipPart("X", true), TipPart("Categoría"), TipPart("B", true), TipPart("Volver"))
+        page == PanelPage.OPTIONS -> listOf(TipPart("↕", true), TipPart("Categoría"), TipPart("LB/RB", true), TipPart("Secciones"),
+            TipPart("B", true), TipPart("Volver"))
+        padFocus != null -> listOfNotNull(TipPart("A", true), TipPart("Tomar o dejar"), TipPart("X", true), TipPart("Mover rápido a la otra parte"),
+            TipPart("Y", true), TipPart("La mitad"), TipPart("L2", true), TipPart("Tirar 1"),
+            TipPart("Start", true).takeIf { searchable }, TipPart("Buscar").takeIf { searchable },
+            TipPart("B", true), TipPart(if (page == PanelPage.INVENTORY) "Devolver mando" else "Volver"))
+        else -> listOf(TipPart("LB/RB", true), TipPart("Secciones"), TipPart("B", true), TipPart("Devolver mando"))
     }
+    val pageTips = panelTips(page)
+
     val latestLive by rememberUpdatedState(live)
     val moveStack = remember(bridge) {
         { from: Int, to: Int ->
@@ -362,189 +390,114 @@ private fun DualScreenPanel(
     }
     val dragState = remember(bridge) { SlotDrag(moveStack) }
     var rootOrigin by remember { mutableStateOf(Offset.Zero) }
-    CompositionLocalProvider(LocalSlotDrag provides dragState) {
+    val look = remember(hud.panelStyle, hud.highContrast) { panelLook(hud.panelStyle, hud.highContrast) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val scaled = remember(density, hud.textSize) {
+        androidx.compose.ui.unit.Density(density.density, density.fontScale * hud.textSize.scale)
+    }
+    CompositionLocalProvider(LocalSlotDrag provides dragState, LocalPanelLook provides look,
+        androidx.compose.ui.platform.LocalDensity provides scaled) {
     Box(Modifier.fillMaxSize().onGloballyPositioned { rootOrigin = it.positionInRoot() }) {
-    Column(Modifier.fillMaxSize().background(Biomeria.colors.surfaceVoid).safeDrawingPadding()
+    Column(Modifier.fillMaxSize().background(look.background).safeDrawingPadding()
         .then(if (customizing) Modifier.blur(14.dp) else Modifier)) {
-        Column(
+        Row(
             Modifier.fillMaxWidth().background(Biomeria.colors.ink)
-                .drawBehind { drawRect(Biomeria.colors.surfaceElevated, Offset(0f, size.height - 3.dp.toPx()), Size(size.width, 3.dp.toPx())) }
-                .padding(horizontal = 8.dp, vertical = 5.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+                .drawBehind { drawRect(Color(0xFF232B33), Offset(0f, size.height - 3.dp.toPx()), Size(size.width, 3.dp.toPx())) }
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // One slim row: tabs on the left; coordinates and who the controller drives on the right.
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    PanelKeyChip("LB")
-                    PanelPage.entries.filter { it != PanelPage.STORAGE || menuPage == PanelPage.STORAGE }.forEach { tab ->
-                        BlockButton({ page = tab; click = PanelCommand.PICK }, Modifier.heightIn(min = 34.dp),
-                            if (page == tab) BlockButtons.primary else BlockButtons.neutral,
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
-                            Text(if (tab == PanelPage.STORAGE) live?.menuTitle?.takeIf { it.isNotBlank() } ?: tab.label else tab.label,
-                                style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.ExtraBold, maxLines = 1)
-                        }
+            if (page != PanelPage.INVENTORY && bridge != null) {
+                BlockButton({ goBack(fromPad = false) }, Modifier.heightIn(min = 40.dp), BlockButtons.neutral,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
+                    Text(if (routed != null && page == menuPage) "‹ Cerrar" else "‹ Volver", fontWeight = FontWeight.ExtraBold,
+                        style = MaterialTheme.typography.labelLarge)
+                    Spacer(Modifier.width(6.dp))
+                    PadKey("B")
+                }
+                Box(Modifier.width(2.dp).height(28.dp).background(Color(0xFF232B33)))
+            }
+            Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                PanelKeyChip("LB")
+                (tabs + listOfNotNull(PanelPage.STORAGE.takeIf { menuPage == PanelPage.STORAGE })).forEach { tab ->
+                    BlockButton({ openPage(tab) }, Modifier.heightIn(min = 38.dp),
+                        if (page == tab) BlockButtons.primary else BlockButtons.neutral,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp)) {
+                        Text(if (tab == PanelPage.STORAGE) live?.menuTitle?.takeIf { it.isNotBlank() } ?: tab.label else tab.label,
+                            style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.ExtraBold, maxLines = 1)
                     }
-                    PanelKeyChip("RB")
                 }
-                if (hud.widgetsBelow) GameWidgets(hud, fps, bridge)
-                else if (live != null) Text("${live.x} ${live.y} ${live.z}", color = Biomeria.colors.textMuted,
-                    fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall, maxLines = 1)
-                ControllerChip(controllerActive) { activity.releaseLowerGamepad() }
+                PanelKeyChip("RB")
             }
-            if (controllerActive && hints.isNotEmpty()) {
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    hints.forEach { (key, label) -> PanelHint(key, label) }
-                }
-            }
+            if (hud.widgetsBelow) GameWidgets(hud, fps, bridge)
+            else if (live != null) Text("X ${live.x} · Y ${live.y} · Z ${live.z}", color = Biomeria.colors.textMuted,
+                fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+            ControllerChip(controllerActive) { activity.releaseLowerGamepad() }
         }
-        Column(
-            Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-        if (editingSearch && searchable) {
-            InventorySearchKeyboard(slotQuery, searchKey.takeIf { controllerActive }, ::applySearchKey,
-                { slotQuery = "" }, Modifier.weight(1f))
-            return@Column
-        }
-        if (showingMap && bridge != null) {
-            TerrainMapPane(bridge, Modifier.weight(1f).fillMaxWidth(), controllerActive = controllerActive,
-                onPadInput = { mapPadInput = it })
-            return@Column
-        }
-        if (showingRecipes && bridge != null && live != null) {
-            RecipeBookPane(
-                bridge, live, controllerActive, onBack = { showRecipes = false },
-                onPlaced = {
-                    padSlot = PanelPadSlot(0)
-                    showRecipes = false
-                },
-                onPadInput = { recipePadInput = it },
-                modifier = Modifier.weight(1f).fillMaxWidth()
-            )
-            return@Column
-        }
-        Column(
-            Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
+
+        Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
+            val fill = Modifier.fillMaxSize()
             when {
-                page == PanelPage.OPTIONS -> {
-                    GameHudControls(hud, onHud)
-                    if (bridge != null) PanelPreferenceControls(hud, onHud)
-                    OutlinedButton(
-                        onClick = { onHud(hud.copy(dualScreen = false)) },
-                        enabled = (live?.held?.count ?: 0) == 0
-                    ) { Text("Desactivar doble pantalla") }
-                    if ((live?.held?.count ?: 0) > 0) {
-                        Text("Guarda el objeto que llevas en el cursor antes de cerrar.", style = MaterialTheme.typography.bodySmall)
+                page == PanelPage.OPTIONS -> OptionsPage(hud, onHud, optionGroup, { optionGroup = it },
+                    canTurnOff = (live?.held?.count ?: 0) == 0, modifier = fill)
+                bridge == null -> Column(fill, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("El inventario, el crafteo y el mapa necesitan Minecraft Java 1.21.4 con Fabric.",
+                        color = Biomeria.colors.textPrimary, style = MaterialTheme.typography.bodyLarge)
+                    Text("Barra rápida", color = Biomeria.colors.textMuted, fontWeight = FontWeight.ExtraBold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for (slot in 0..8) McSlot(slot, null, 52.dp, allowGameInput, onHotbar,
+                            focused = padFocus?.number == slot, placeholder = "Casilla ${slot + 1}")
                     }
                 }
-                bridge == null -> {
-                    Text("El inventario, el crafteo y el mapa requieren Java 1.21.4 con Fabric.",
-                        style = MaterialTheme.typography.bodyMedium)
-                    if (page == PanelPage.INVENTORY) SlotRow((0..8).toList(), null, allowGameInput,
-                        "Acceso rápido", padFocus = padFocus, selectsHotbar = true, onSlot = onHotbar)
-                }
-                live == null -> Text("Entra a un mundo para conectar el panel.", style = MaterialTheme.typography.bodyMedium)
-                page == PanelPage.MAP -> {
-                    Text("X ${live.x}    Y ${live.y}    Z ${live.z}", style = MaterialTheme.typography.titleSmall)
+                live == null -> Text("Entra a un mundo para conectar el panel.", color = Biomeria.colors.textPrimary,
+                    style = MaterialTheme.typography.bodyLarge)
+                showingMap -> TerrainMapPane(bridge, fill, controllerActive = controllerActive, onPadInput = { mapPadInput = it })
+                page == PanelPage.MAP -> Column(fill, verticalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally) {
                     val image = remember(pixels) {
                         pixels?.let { Bitmap.createBitmap(it, DUAL_MAP_SIZE, DUAL_MAP_SIZE, Bitmap.Config.ARGB_8888).asImageBitmap() }
                     }
-                    if (image == null) Text("Equipa un mapa explorado en una mano para verlo aquí.")
-                    else Image(image, contentDescription = "Mapa equipado",
-                        modifier = Modifier.size(192.dp), contentScale = ContentScale.Fit)
+                    if (image == null) Text("Lleva un mapa explorado en una mano para verlo aquí.", color = Biomeria.colors.textPrimary)
+                    else Image(image, contentDescription = "Mapa equipado", modifier = Modifier.weight(1f).aspectRatio(1f),
+                        contentScale = ContentScale.Fit, filterQuality = FilterQuality.None)
                 }
-                menuPage != null && (menuSession == null || page != menuPage) -> {
-                    Text(live.menuTitle, style = MaterialTheme.typography.titleSmall)
-                    if (menuSession != null) LauncherButton("Mostrar aquí", { page = menuPage }, primary = true)
-                    else Text("Usa el menú en la pantalla del juego.")
-                }
-                else -> {
-                    if (!interactive) Text("Vuelve a la vista de juego para mover objetos.", style = MaterialTheme.typography.bodySmall)
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        if (searchable) {
-                            FilterChip(slotQuery.isNotBlank(), { editingSearch = true }, label = {
-                                Text(if (slotQuery.isBlank()) "Buscar objetos" else "$slotQuery · ${matchingSlots?.size ?: 0}")
-                            })
-                            if (matchingSlots != null) TextButton(onClick = { slotQuery = "" }) { Text("Limpiar") }
-                        }
-                        FilterChip(click == PanelCommand.SPLIT, {
-                            click = if (click == PanelCommand.SPLIT) PanelCommand.PICK else PanelCommand.SPLIT
-                        }, label = { Text("Dividir / colocar uno") }, enabled = interactive)
-                        FilterChip(click == PanelCommand.QUICK_MOVE, {
-                            click = if (click == PanelCommand.QUICK_MOVE) PanelCommand.PICK else PanelCommand.QUICK_MOVE
-                        }, label = { Text("Mover rápido") }, enabled = interactive)
-                        if (live.held.count > 0) Text("En cursor · ${live.held.name} ×${live.held.count}")
+                menuPage != null && page == PanelPage.INVENTORY && live.layout != PanelLayout.PERSONAL ->
+                    Column(fill, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(live.menuTitle.ifBlank { "Hay un menú abierto" }, color = Biomeria.colors.textPrimary,
+                            style = MaterialTheme.typography.titleMedium)
+                        if (menuSession != null) LauncherButton("Mostrar aquí", { openPage(menuPage) }, primary = true)
+                        else Text("Úsalo en la pantalla del juego.", color = Biomeria.colors.textMuted)
                     }
-                    if (menuPage == PanelPage.STORAGE) {
-                        ContainerSlots(live, interactive, hud.compactPanel, padFocus, matchingSlots, sendSlot) {
-                            bridge.send(live, PanelCommand.CLOSE_MENU)
-                        }
-                    } else if (page == PanelPage.CRAFT) {
-                        if (table || canShowRecipes) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (table) LauncherButton("Cerrar mesa", { bridge.send(live, PanelCommand.CLOSE_MENU) }, enabled = interactive)
-                            if (canShowRecipes) LauncherButton(if (controllerActive) "Recetas [R1]" else "Recetas",
-                                { showRecipes = true }, primary = true, enabled = interactive)
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column {
-                                val side = live.layout.craftSize
-                                repeat(side) { row ->
-                                    val first = row * side + 1
-                                    SlotRow((first until first + side).toList(), live, interactive,
-                                        label = if (row == 0) "Crafteo ${side}×$side" else null,
-                                        compact = hud.compactPanel, padFocus = padFocus, onSlot = sendSlot)
-                                }
-                            }
-                            SlotRow(listOf(0), live, interactive, "Resultado", compact = hud.compactPanel,
-                                padFocus = padFocus, onSlot = sendSlot)
-                        }
-                    } else if (page == PanelPage.INVENTORY && live.layout == PanelLayout.PERSONAL && matchingSlots == null) {
-                        CharacterCard(bridge, armor = {
-                            SlotRow(listOf(5, 6), live, interactive, compact = true, padFocus = padFocus, onSlot = sendSlot)
-                            SlotRow(listOf(7, 8), live, interactive, compact = true, padFocus = padFocus, onSlot = sendSlot)
-                        }, offHand = {
-                            SlotRow(listOf(45), live, interactive, compact = true, padFocus = padFocus, onSlot = sendSlot)
-                        }, onCustomize = { customizing = true })
-                    } else {
-                        SlotRow(listOf(5, 6, 7, 8, 45), live, interactive, "Armadura y mano secundaria",
-                            compact = hud.compactPanel, padFocus = padFocus, matchingSlots = matchingSlots, onSlot = sendSlot)
-                    }
-                    val hotbarStart = live.layout.hotbarStart
-                    val inventoryStart = live.layout.inventoryStart
-                    if (page == PanelPage.INVENTORY) {
-                        SlotRow((hotbarStart until hotbarStart + 9).toList(), live, interactive,
-                            "Barra rápida", live.selectedSlot + hotbarStart, hud.compactPanel, padFocus = padFocus,
-                            matchingSlots = matchingSlots, onSlot = sendSlot)
-                    }
-                    for (start in inventoryStart until hotbarStart step 9) {
-                        SlotRow((start until start + 9).toList(), live, interactive,
-                            if (start == inventoryStart) "Inventario" else null, compact = hud.compactPanel,
-                            fit = menuPage == PanelPage.STORAGE, padFocus = padFocus,
-                            matchingSlots = matchingSlots, onSlot = sendSlot)
-                    }
-                    if (page == PanelPage.CRAFT || menuPage == PanelPage.STORAGE) {
-                        SlotRow((hotbarStart until hotbarStart + 9).toList(), live, interactive,
-                            "Barra rápida", live.selectedSlot + hotbarStart, hud.compactPanel,
-                            fit = menuPage == PanelPage.STORAGE, padFocus = padFocus,
-                            matchingSlots = matchingSlots, onSlot = sendSlot)
-                    }
-                }
+                page == PanelPage.CRAFT && menuPage != null && menuPage != PanelPage.CRAFT -> Text(
+                    "Cierra el ${live.menuTitle.ifBlank { "menú" }.lowercase()} para craftear.", color = Biomeria.colors.textPrimary)
+                page == PanelPage.CRAFT -> CraftPage(bridge, live, interactive, controllerActive, padFocus, tapSlot,
+                    onPadInput = { craftPadInput = it }, modifier = fill)
+                page == PanelPage.STORAGE -> StoragePage(live, interactive, padFocus, matchingSlots, tapSlot, fill)
+                else -> InventoryPage(
+                    live, bridge, interactive, chosen, padFocus, matchingSlots, slotQuery, editingSearch,
+                    onTap = tapSlot,
+                    onCommand = { command, slot -> sendCommand(command, slot) },
+                    onOpenCraft = { openPage(PanelPage.CRAFT) },
+                    onCustomize = { customizing = true },
+                    onSearch = { editingSearch = !editingSearch },
+                    onClearSearch = { slotQuery = ""; editingSearch = false },
+                    keyboard = { modifier ->
+                        InventorySearchKeyboard(slotQuery, searchKey.takeIf { controllerActive }, ::applySearchKey,
+                            { slotQuery = "" }, modifier)
+                    },
+                    modifier = fill
+                )
+            }
+            if (!interactive && live != null && page != PanelPage.OPTIONS && page != PanelPage.MAP) {
+                Text("Vuelve a la vista de juego para mover objetos.", Modifier.align(Alignment.BottomCenter)
+                    .background(Color(0xE60B0E11), RoundedCornerShape(4.dp)).padding(horizontal = 12.dp, vertical = 6.dp),
+                    color = Biomeria.colors.textPrimary, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
             }
         }
 
-        if (live != null && live.layout == PanelLayout.PERSONAL && page == PanelPage.INVENTORY && matchingSlots == null) {
-            SlotRow((0..8).toList(), null, interactive, "Seleccionar en mano", live.selectedSlot,
-                padFocus = padFocus, selectsHotbar = true) { slot ->
-                if (controllerActive) padSlot = PanelPadSlot(slot, selectsHotbar = true)
-                if (interactive) bridge?.send(live, PanelCommand.SELECT_HOTBAR, slot)
-            }
-        }
-        }
+        if (hints.isNotEmpty()) PanelTipStrip(hints, "Mando", null)
+        else if (pageTips.isNotEmpty()) PanelTipStrip(pageTips[tipIndex % pageTips.size], "Consejo",
+            if (pageTips.size > 1) ({ tipIndex++ }) else null)
     }
     // The character in its own window, over the blurred panel.
     if (customizing && bridge != null) {
@@ -601,95 +554,6 @@ private fun ControllerChip(active: Boolean, onRelease: () -> Unit) {
         style = MaterialTheme.typography.labelMedium, maxLines = 1)
 }
 
-@Composable
-private fun PanelFooter(hints: List<Pair<String, String>>, controllerActive: Boolean, onRelease: () -> Unit) {
-    val palette = Biomeria.colors
-    Row(
-        Modifier.fillMaxWidth().background(palette.ink)
-            .drawBehind { drawRect(palette.surfaceElevated, size = Size(size.width, 3.dp.toPx())) }
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        BlockButton(onRelease, Modifier.heightIn(min = 52.dp), if (controllerActive) BlockButtons.gold else BlockButtons.neutral,
-            enabled = controllerActive, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) {
-            Column {
-                Text(if (controllerActive) "El mando controla este panel" else "El mando controla el juego",
-                    fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge, maxLines = 1)
-                Text(if (controllerActive) "Toca o pulsa B para devolverlo" else "Mantén Select para usarlo aquí",
-                    style = MaterialTheme.typography.labelSmall, maxLines = 1)
-            }
-        }
-        Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            hints.forEach { (key, label) -> PanelHint(key, label) }
-        }
-    }
-}
-
-@Composable
-private fun PanelHint(key: String, label: String) {
-    val (back, front) = when (key) {
-        "A" -> Color(0xFF7BC74D) to Color(0xFF0E1A08)
-        "B" -> Color(0xFFF07D4A) to Color(0xFF2B0E05)
-        "X" -> Color(0xFF4FB3D9) to Color(0xFF08202B)
-        "Y" -> Color(0xFFF5E663) to Color(0xFF2A2508)
-        else -> Color(0xFF34404A) to Color(0xFFF2F5EF)
-    }
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Box(Modifier.heightIn(min = 20.dp).widthIn(min = 20.dp).background(back, RoundedCornerShape(10.dp)).padding(horizontal = 5.dp),
-            contentAlignment = Alignment.Center) {
-            Text(key, color = front, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelSmall)
-        }
-        Text(label, color = Biomeria.colors.textPrimary, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium,
-            maxLines = 1)
-    }
-}
-
-@Composable
-private fun ContainerSlots(
-    live: PanelInventory,
-    interactive: Boolean,
-    compact: Boolean,
-    padFocus: PanelPadSlot?,
-    matchingSlots: Set<Int>?,
-    onSlot: (Int) -> Unit,
-    onClose: () -> Unit
-) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(live.menuTitle, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium,
-            maxLines = 1, overflow = TextOverflow.Ellipsis)
-        LauncherButton("Cerrar", onClose, enabled = interactive)
-    }
-    val furnace = live.furnace
-    if (furnace != null) {
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            SlotRow(listOf(0), live, interactive, "Material", compact = compact, padFocus = padFocus, onSlot = onSlot)
-            SlotRow(listOf(1), live, interactive, "Combustible", compact = compact, padFocus = padFocus, onSlot = onSlot)
-            SlotRow(listOf(2), live, interactive, "Resultado", compact = compact, padFocus = padFocus, onSlot = onSlot)
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FurnaceMeter("Cocción", furnace.cook, Modifier.weight(1f))
-            FurnaceMeter("Combustible", if (furnace.burning) furnace.fuel else 0f, Modifier.weight(1f))
-        }
-    } else {
-        val columns = live.layout.containerColumns
-        repeat(live.layout.chestRows) { row ->
-            SlotRow((row * columns until (row + 1) * columns).toList(), live, interactive, fit = columns == 9,
-                padFocus = padFocus, matchingSlots = matchingSlots, onSlot = onSlot)
-        }
-    }
-}
-
-@Composable
-private fun FurnaceMeter(label: String, progress: Float, modifier: Modifier) {
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text("$label · ${(progress * 100).toInt()} %", style = MaterialTheme.typography.labelMedium)
-        LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-    }
-}
-
 /**
  * Finger drag between slots: lift the stack where the finger starts, drop it where it ends.
  * It sends the same two "pick" clicks as tapping the source and then the target.
@@ -704,103 +568,3 @@ internal class SlotDrag(val onMove: (from: Int, to: Int) -> Unit) {
 }
 
 internal val LocalSlotDrag = compositionLocalOf<SlotDrag?> { null }
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun SlotRow(
-    slots: List<Int>,
-    live: PanelInventory?,
-    enabled: Boolean,
-    label: String? = null,
-    selected: Int? = null,
-    compact: Boolean = false,
-    fit: Boolean = false,
-    padFocus: PanelPadSlot? = null,
-    selectsHotbar: Boolean = false,
-    matchingSlots: Set<Int>? = null,
-    onSlot: (Int) -> Unit
-) {
-    Column(if (fit) Modifier.fillMaxWidth() else Modifier) {
-        if (label != null) Text(label, Modifier.padding(bottom = 4.dp), color = Color(0xFFC3CDD2),
-            style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.ExtraBold)
-        Row(if (fit) Modifier.fillMaxWidth() else Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            slots.forEach { number ->
-                val padSelected = padFocus == PanelPadSlot(number, selectsHotbar)
-                val matches = matchingSlots == null || number in matchingSlots
-                val bringIntoView = remember { BringIntoViewRequester() }
-                LaunchedEffect(padSelected) {
-                    if (padSelected) bringIntoView.bringIntoView()
-                }
-                val item = live?.slots?.get(number)
-                val drag = LocalSlotDrag.current
-                var origin by remember { mutableStateOf(Offset.Zero) }
-                val dragIcon = item?.takeIf { it.count > 0 }?.let { rememberItemIcon(it.id) }
-                val name = item?.name?.takeIf { it.isNotBlank() } ?: if (live == null) "${number + 1}" else "—"
-                val description = if (item == null) "Ranura $name" else if (item.count == 0) "Ranura vacía" else "$name, ${item.count}"
-                val palette = Biomeria.colors
-                val outline = when {
-                    padSelected -> palette.gold
-                    number == selected -> palette.textPrimary
-                    matchingSlots != null && matches -> palette.brandAccent
-                    else -> palette.ink
-                }
-                Box(
-                    (if (fit) Modifier.weight(1f) else Modifier.width(when {
-                        live == null -> 48.dp
-                        compact -> 46.dp
-                        else -> 58.dp
-                    }))
-                        .aspectRatio(1f)
-                        .bringIntoViewRequester(bringIntoView)
-                        .onGloballyPositioned { drag?.bounds?.set(number, it.boundsInRoot()); origin = it.positionInRoot() }
-                        .alpha(if (matches) 1f else .3f)
-                        .clip(RoundedCornerShape(3.dp))
-                        .background(if (number == selected) Color(0xFF2A333B) else Color(0xFF1A2026))
-                        .border(3.dp, Color(0xFF232B33), RoundedCornerShape(3.dp))
-                        .border(if (padSelected) 4.dp else 3.dp, outline, RoundedCornerShape(3.dp))
-                        .clickable(enabled = enabled && matches, role = Role.Button) { onSlot(number) }
-                        .pointerInput(enabled, matches, item?.count, live?.generation, live?.held?.count) {
-                            val canLift = drag != null && enabled && matches && (item?.count ?: 0) > 0 && (live?.held?.count ?: 0) == 0
-                            if (!canLift || drag == null) return@pointerInput
-                            detectDragGestures(
-                                onDragStart = { start ->
-                                    drag.from = number
-                                    drag.icon = dragIcon
-                                    drag.finger = origin + start
-                                },
-                                onDrag = { change, amount ->
-                                    change.consume()
-                                    drag.finger = (drag.finger ?: origin) + amount
-                                },
-                                onDragEnd = {
-                                    val target = drag.finger?.let(drag::slotAt)
-                                    if (target != null && target != number) drag.onMove(number, target)
-                                    drag.from = null; drag.finger = null; drag.icon = null
-                                },
-                                onDragCancel = { drag.from = null; drag.finger = null; drag.icon = null }
-                            )
-                        }
-                        .semantics { contentDescription = description },
-                    contentAlignment = Alignment.Center
-                ) {
-                    // The game's own icon when the mod sent the item id; the name otherwise.
-                    val shown = item?.takeIf { it.count > 0 }
-                    val icon = shown?.let { rememberItemIcon(it.id) }
-                    if (icon != null && shown != null) {
-                        Image(icon, contentDescription = null, modifier = Modifier.fillMaxSize(.74f),
-                            filterQuality = FilterQuality.None)
-                    } else if (shown != null || live == null) {
-                        Text(name, Modifier.padding(horizontal = 3.dp), color = palette.textPrimary, maxLines = 2,
-                            overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.labelSmall)
-                    }
-                    if (shown != null && shown.count > 1) Text(shown.count.toString(),
-                        Modifier.align(Alignment.BottomEnd).padding(end = 4.dp, bottom = 1.dp),
-                        color = Color.White, fontFamily = PixelFont, fontSize = if (compact) 14.sp else 17.sp,
-                        style = TextStyle(shadow = Shadow(Color.Black, Offset(3f, 3f))))
-                }
-            }
-        }
-    }
-}

@@ -68,4 +68,11 @@ class MinecraftOptionsTest {
             mavenPath("net.fabricmc:sponge-mixin:0.15.4+mixin.0.8.7"))
         assertThrows(IllegalArgumentException::class.java) { mavenPath("net.fabricmc:../bad:0.16.9") }
     }
+
+    @Test
+    fun minecraftsKeyboardTutorialIsOffUnlessAsked() {
+        assertTrue("tutorialStep:none" in minecraftOptions(listOf("tutorialStep:movement"), ""))
+        assertEquals(1, minecraftOptions(listOf("tutorialStep:movement"), "").count { it.startsWith("tutorialStep:") })
+        assertTrue("tutorialStep:movement" in minecraftOptions(listOf("tutorialStep:movement"), "", tutorial = true))
+    }
 }

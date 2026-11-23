@@ -129,6 +129,16 @@ internal fun GameHudControls(settings: GameHudSettings, onChange: (GameHudSettin
             }
         }
         PanelSwitch("Nivel de batería", settings.showBattery) { onChange(settings.copy(showBattery = it)) }
+        PanelSwitch("Consejos de Biomeria con el mando", settings.biomeriaTips) { onChange(settings.copy(biomeriaTips = it)) }
+        PanelSwitch("Tutorial de Minecraft (teclado, al volver a entrar)", settings.minecraftTutorial) {
+            onChange(settings.copy(minecraftTutorial = it))
+        }
+        Text("Velocidad de la cámara", style = MaterialTheme.typography.labelMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            com.biomeria.launcher.engine.java.CameraSpeed.entries.forEach { speed ->
+                FilterChip(settings.cameraSpeed == speed, { onChange(settings.copy(cameraSpeed = speed)) }, label = { Text(speed.label) })
+            }
+        }
         if (settings.dualScreen) {
             PanelSwitch("Indicadores en la pantalla inferior", settings.widgetsBelow) { onChange(settings.copy(widgetsBelow = it)) }
         }

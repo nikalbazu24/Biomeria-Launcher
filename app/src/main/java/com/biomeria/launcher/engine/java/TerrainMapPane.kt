@@ -180,11 +180,11 @@ private fun TerrainView(
     }
     val names = rememberTextMeasurer()
     val nameStyle = MaterialTheme.typography.labelSmall.copy(color = Color.White)
-    val shape = RoundedCornerShape(if (compact) 12.dp else 16.dp)
+    val shape = RoundedCornerShape(if (compact) 12.dp else 6.dp)
     val liveCamera by rememberUpdatedState(camera)
     var expanded by rememberSaveable { mutableStateOf(false) }
     val sidePanel = !compact && !expanded && !managingWaypoints
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
     Box(if (sidePanel) Modifier.fillMaxHeight().aspectRatio(1f, matchHeightConstraintsFirst = true).clip(shape)
             .background(Color(0xff101c23)).border(3.dp, Color(0xff0b0e11), shape)
         else Modifier.weight(1f).fillMaxHeight().clip(shape).background(Color(0xff101c23)).border(3.dp, Color(0xff0b0e11), shape)) {
@@ -285,83 +285,119 @@ private fun TerrainView(
                 drawPath(arrow, Color(0xffd7ffa8))
             }
         }
-        Column(Modifier.align(Alignment.TopStart).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            MapLabel(if (compact) "N ↑" else "N ↑    ${camera.span.toInt()} bloques")
-            if (!compact && entities.isNotEmpty()) {
-                val hostile = entities.count { it.kind == EntityKind.HOSTILE }
-                val calm = entities.count { it.kind == EntityKind.PASSIVE }
-                val nearest = entities.firstOrNull { it.kind == EntityKind.HOSTILE }
-                MapLabel("Cerca: $hostile hostiles · $calm pacíficos")
-                if (nearest != null) MapLabel("⚠ ${nearest.label} a ${kotlin.math.hypot(nearest.x - player.x, nearest.z - player.z).roundToInt()} b",
-                    Modifier.widthIn(max = 200.dp))
-            }
-            if (active != null && !compact) {
-                MapLabel(active.name, Modifier.widthIn(max = 170.dp))
-                MapLabel("${active.distanceFrom(player)} bloques")
-            }
+        Column(Modifier.align(Alignment.TopStart).padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            MapLabel(if (compact) "N ↑" else "N ↑  ·  X ${floor(player.x).toInt()}  Z ${floor(player.z).toInt()}")
+            if (active != null && !compact) MapLabel("${active.name} · ${active.distanceFrom(player)} bloques", Modifier.widthIn(max = 260.dp))
         }
-        if (!compact) MapLabel("X ${floor(player.x).toInt()}   Y ${floor(player.y).toInt()}   Z ${floor(player.z).toInt()}",
-            Modifier.align(Alignment.BottomStart).padding(8.dp))
         if (active != null && compact) {
             MapLabel("${active.distanceFrom(player)} b", Modifier.align(Alignment.BottomStart).padding(5.dp))
         }
-        if (!compact && expanded) {
-            // Enlarged: the map takes the whole panel; small controls float over it.
-            Row(Modifier.align(Alignment.TopEnd).padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                MapBlock("−", "Alejar") { view = camera.zoom(1.25f) }
-                MapBlock("+", "Acercar") { view = camera.zoom(.8f) }
-                MapBlock("⤡", "Reducir mapa") { expanded = false }
+        if (!compact) {
+            // The controls float in the corners so the map keeps the space.
+            MapFloat(if (expanded) "Reducir" else "Pantalla completa", if (expanded) "Reducir el mapa" else "Ampliar el mapa a todo el panel",
+                Modifier.align(Alignment.TopEnd).padding(10.dp), wide = true) { expanded = !expanded }
+            Column(Modifier.align(Alignment.BottomEnd).padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                MapFloat("+", "Acercar") { view = camera.zoom(.8f) }
+                MapFloat("−", "Alejar") { view = camera.zoom(1.25f) }
+                MapFloat("◎", "Centrar en ti") { view = camera.copy(follow = true) }
             }
         }
     }
     if (sidePanel) {
-        Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                MapBlock("−", "Alejar", Modifier.weight(1f)) { view = camera.zoom(1.25f) }
-                MapBlock("+", "Acercar", Modifier.weight(1f)) { view = camera.zoom(.8f) }
-                MapBlock("Centrar", "Centrar en ti", Modifier.weight(2f)) { view = camera.copy(follow = true) }
+        var showCreatures by rememberSaveable { mutableStateOf(false) }
+        Column(Modifier.weight(1f).fillMaxHeight().background(Color(0xFF161B21), RoundedCornerShape(6.dp))
+            .border(3.dp, Color(0xFF232B33), RoundedCornerShape(6.dp)).padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth().background(Color(0xFF0B0E11), RoundedCornerShape(5.dp)).padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                MapTab("Marcas", !showCreatures, Modifier.weight(1f)) { showCreatures = false }
+                MapTab("Criaturas", showCreatures, Modifier.weight(1f)) { showCreatures = true }
             }
-            MapBlock("⤢ Ampliar mapa", "Ampliar el mapa a todo el panel", Modifier.fillMaxWidth()) { expanded = true }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Marcas · ${waypoints.points.size}/$WAYPOINT_LIMIT", Modifier.weight(1f), fontWeight = FontWeight.ExtraBold,
-                    style = MaterialTheme.typography.titleSmall)
-                BlockButton({ openWaypoints(true) }, colors = BlockButtons.primary,
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
-                    Text("+ Nueva", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+            if (showCreatures) {
+                val nearby = remember(entities, player.x, player.z) {
+                    entities.sortedBy { kotlin.math.hypot(it.x - player.x, it.z - player.z) }
                 }
-            }
-            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (waypoints.points.isEmpty()) item {
-                    Text("Sin marcas todavía. Crea una donde estás para volver después.", color = Biomeria.colors.textMuted,
-                        style = MaterialTheme.typography.bodySmall)
-                }
-                items(waypoints.points, key = { it.id }) { point ->
-                    val on = point.id == waypoints.activeId
-                    Row(Modifier.fillMaxWidth().background(if (on) Color(0xFF1E252C) else Color(0xFF161B21), RoundedCornerShape(5.dp))
-                        .border(2.dp, if (on) Biomeria.colors.gold else Color(0xFF232B33), RoundedCornerShape(5.dp))
-                        .clickable { view = camera.copy(x = point.x.toDouble(), z = point.z.toDouble(), follow = false) }
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Canvas(Modifier.size(22.dp)) { drawWaypoint(point, center, 5.dp.toPx(), on) }
-                        Column(Modifier.weight(1f)) {
-                            Text(point.name, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.labelLarge)
-                            Text("X ${point.x} · Z ${point.z} · ${point.distanceFrom(player)} b", color = Biomeria.colors.textMuted,
-                                style = MaterialTheme.typography.labelSmall, maxLines = 1)
-                        }
-                        BlockButton({ saveBook(waypoints.follow(if (on) null else point.id)) },
-                            colors = if (on) BlockButtons.gold else BlockButtons.neutral,
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
-                            Text(if (on) "Dejar" else "Seguir", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelMedium)
+                LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (nearby.isEmpty()) item {
+                        Text("No hay criaturas cerca.", color = Biomeria.colors.textMuted, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    items(nearby.take(40)) { entity ->
+                        val distance = kotlin.math.hypot(entity.x - player.x, entity.z - player.z).roundToInt()
+                        Row(Modifier.fillMaxWidth().background(Color(0xFF1E252C), RoundedCornerShape(5.dp))
+                            .clickable { view = camera.copy(x = entity.x, z = entity.z, follow = false) }
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Box(Modifier.size(16.dp).background(entity.kind.color, RoundedCornerShape(50))
+                                .border(2.dp, Color(0xFF0B0E11), RoundedCornerShape(50)))
+                            Column(Modifier.weight(1f)) {
+                                Text(entity.label, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.bodyMedium)
+                                Text("${entity.kind.label} · $distance bloques", color = Biomeria.colors.textMuted,
+                                    style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                            }
                         }
                     }
                 }
-            }
-            if (waypoints.points.isNotEmpty()) MapBlock("Editar marcas", "Editar o borrar marcas", Modifier.fillMaxWidth()) {
-                openWaypoints(false)
+                Text("Las criaturas solo se ven en tus mundos, nunca en servidores.", color = Biomeria.colors.textMuted,
+                    style = MaterialTheme.typography.labelMedium)
+            } else {
+                LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (waypoints.points.isEmpty()) item {
+                        Text("Sin marcas todavía. Marca tu casa para volver después.", color = Biomeria.colors.textMuted,
+                            style = MaterialTheme.typography.bodyMedium)
+                    }
+                    items(waypoints.points, key = { it.id }) { point ->
+                        val on = point.id == waypoints.activeId
+                        Row(Modifier.fillMaxWidth().background(Color(0xFF1E252C), RoundedCornerShape(5.dp))
+                            .border(2.dp, if (on) Biomeria.colors.gold else Color(0xFF1E252C), RoundedCornerShape(5.dp))
+                            .clickable { view = camera.copy(x = point.x.toDouble(), z = point.z.toDouble(), follow = false) }
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Canvas(Modifier.size(22.dp)) { drawWaypoint(point, center, 5.dp.toPx(), on) }
+                            Column(Modifier.weight(1f)) {
+                                Text(point.name, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.bodyMedium)
+                                Text("${point.distanceFrom(player)} bloques", color = Biomeria.colors.textMuted,
+                                    style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                            }
+                            BlockButton({ saveBook(waypoints.follow(if (on) null else point.id)) },
+                                colors = if (on) BlockButtons.gold else BlockButtons.neutral,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
+                                Text(if (on) "Dejar" else "Seguir", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                    }
+                }
+                BlockButton({ openWaypoints(true) }, Modifier.fillMaxWidth().heightIn(min = 52.dp), BlockButtons.primary) {
+                    Text("+ Marcar dónde estoy", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleSmall)
+                }
+                if (waypoints.points.isNotEmpty()) MapBlock("Editar marcas", "Editar o borrar marcas", Modifier.fillMaxWidth()) {
+                    openWaypoints(false)
+                }
             }
         }
     }
+    }
+}
+
+/** A square button floating over the map, dark and readable on any terrain. */
+@Composable
+private fun MapFloat(label: String, description: String, modifier: Modifier = Modifier, wide: Boolean = false, onClick: () -> Unit) {
+    Box(modifier.then(if (wide) Modifier.heightIn(min = 48.dp) else Modifier.size(52.dp))
+        .background(Color(0xE60B0E11), RoundedCornerShape(5.dp)).border(2.dp, Color(0xFF2E3740), RoundedCornerShape(5.dp))
+        .clickable(onClickLabel = description, onClick = onClick).semantics { contentDescription = description }
+        .padding(horizontal = if (wide) 14.dp else 0.dp), contentAlignment = Alignment.Center) {
+        Text(label, color = Color(0xFFF2F5EF), fontWeight = FontWeight.ExtraBold,
+            style = if (wide) MaterialTheme.typography.labelLarge else MaterialTheme.typography.titleLarge)
+    }
+}
+
+@Composable
+private fun MapTab(label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    Box(modifier.heightIn(min = 44.dp).background(if (selected) Biomeria.colors.brandAccent else Color.Transparent, RoundedCornerShape(4.dp))
+        .clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Text(label, color = if (selected) Color(0xFF0E1A08) else Color(0xFFDCE3E6), fontWeight = FontWeight.ExtraBold,
+            style = MaterialTheme.typography.labelLarge)
     }
 }
 

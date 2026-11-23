@@ -62,13 +62,14 @@ final class RecipeBookPanel {
         needsWrite = true;
     }
 
-    void place(long generation, int id, Object player, Object world, Object handler, Object interactions, int syncId)
+    void place(long generation, int id, Object player, Object world, Object handler, Object interactions, int syncId,
+               boolean craftAll)
             throws ReflectiveOperationException {
         refreshCatalog(generation, player, world);
         Recipe recipe = recipes.get(id);
         if (recipe == null || recipe.width() == 0 || recipe.requirements().isEmpty() || !fits(recipe, handler)) return;
         Object finder = newFinder(game.getInventory.invoke(player), handler);
-        if (canMake(finder, recipe.requirements())) game.placeRecipe.invoke(interactions, syncId, recipe.networkId(), false);
+        if (canMake(finder, recipe.requirements())) game.placeRecipe.invoke(interactions, syncId, recipe.networkId(), craftAll);
     }
 
     void publish(Path destination, long generation, Object player, Object world, Object handler)

@@ -318,6 +318,8 @@ public final class GamePanelBridge {
                     case "pick" -> click(player, handler, interactions, slot, 0, game.pickup, layout.slots);
                     case "split" -> click(player, handler, interactions, slot, 1, game.pickup, layout.slots);
                     case "quick" -> click(player, handler, interactions, slot, 0, game.quickMove, layout.slots);
+                    // Drops one item from the slot, as pressing Q over it does.
+                    case "throw" -> click(player, handler, interactions, slot, 0, game.throwStack, layout.slots);
                     case "hotbar" -> {
                         if (layout == Layout.PERSONAL && slot >= 0 && slot <= 8) game.selectSlot.invoke(game.inventory.invoke(player), slot);
                     }
@@ -327,13 +329,14 @@ public final class GamePanelBridge {
                             return true;
                         }
                     }
-                    case "inspect", "recipe" -> {
+                    case "inspect", "recipe", "recipeall" -> {
                         if ((layout != Layout.CRAFTING_TABLE && layout != Layout.PERSONAL) || recipeBook == null || slot < 0) continue;
                         if (parts[1].equals("inspect")) {
                             recipeBook.inspect(slot, player);
                         } else if ((boolean) game.empty.invoke(game.cursorStack.invoke(handler))) {
                             try {
-                                recipeBook.place(generation, slot, player, world, handler, interactions, game.syncId.getInt(handler));
+                                recipeBook.place(generation, slot, player, world, handler, interactions, game.syncId.getInt(handler),
+                                        parts[1].equals("recipeall"));
                             } catch (ReflectiveOperationException | LinkageError error) {
                                 disableRecipeBook(error);
                             }
@@ -464,7 +467,7 @@ public final class GamePanelBridge {
         final Method x, y, z, mainHand, offHand, component, mapState, mapColor, integratedServer;
         final Method screenHandler, closeScreen, title, chestRows, cookProgress, fuelProgress, furnaceBurning;
         final Class<?> craftingScreen, craftingHandler, chestScreen, chestHandler, furnaceScreen, furnaceHandler;
-        final Object pickup, quickMove, mapId;
+        final Object pickup, quickMove, throwStack, mapId;
         /** Optional containers: shulker box, hopper, dispenser/dropper and every furnace kind. */
         final Class<?> shulkerScreen, shulkerHandler, hopperScreen, hopperHandler, dispenserScreen, dispenserHandler;
         final Class<?> anyFurnaceScreen, anyFurnaceHandler;
@@ -527,6 +530,7 @@ public final class GamePanelBridge {
             mapColor = type(loader, 3620).getMethod("method_38480", int.class);
             pickup = field(action, "field_7790").get(null);
             quickMove = field(action, "field_7794").get(null);
+            throwStack = field(action, "field_7795").get(null);
             Method item = null;
             Method id = null;
             Object registry = null;

@@ -49,13 +49,16 @@ class PanelPadSlotsTest {
     }
 
     @Test
-    fun hotbarSelectionIsSeparateFromMovingInventorySlots() {
+    fun personalInventoryGoesFromArmourToBackpackToHotbar() {
         val personal = panelPadRows(PanelLayout.PERSONAL, PanelPage.INVENTORY)
-        val selected = personal.last().last()
-        assertEquals(PanelPadSlot(8, selectsHotbar = true), selected)
-        assertEquals(PanelCommand.SELECT_HOTBAR, panelPadCommand(PanelPadAction.PICK, selected))
-        assertNull(panelPadCommand(PanelPadAction.TRANSFER, selected))
+        assertEquals(listOf(5, 6, 7, 8, 45), personal.first().map(PanelPadSlot::number))
+        assertEquals((36..44).toList(), personal.last().map(PanelPadSlot::number))
+        assertEquals(5, personal.size)
         assertEquals(PanelCommand.SPLIT, panelPadCommand(PanelPadAction.SPLIT, PanelPadSlot(8)))
-        assertEquals(personal.last(), panelPadRows(null, PanelPage.INVENTORY).single())
+        assertEquals(PanelCommand.THROW, panelPadCommand(PanelPadAction.DROP, PanelPadSlot(12)))
+        val noMod = panelPadRows(null, PanelPage.INVENTORY).single()
+        assertEquals(PanelPadSlot(8, selectsHotbar = true), noMod.last())
+        assertEquals(PanelCommand.SELECT_HOTBAR, panelPadCommand(PanelPadAction.PICK, noMod.last()))
+        assertNull(panelPadCommand(PanelPadAction.TRANSFER, noMod.last()))
     }
 }

@@ -23,10 +23,8 @@ internal fun panelPadRows(layout: PanelLayout?, page: PanelPage): List<List<Pane
     val rows = mutableListOf<List<Int>>()
     fun row(first: Int, size: Int) = (first until first + size).toList()
     when {
-        layout == PanelLayout.PERSONAL && page == PanelPage.INVENTORY -> {
-            rows += listOf(5, 6, 7, 8, 45)
-            rows += row(layout.hotbarStart, 9)
-        }
+        // Armour and off hand sit in the top-right corner, above the backpack and the hotbar.
+        layout == PanelLayout.PERSONAL && page == PanelPage.INVENTORY -> rows += listOf(5, 6, 7, 8, 45)
         page == PanelPage.CRAFT && (layout == PanelLayout.PERSONAL || layout == PanelLayout.CRAFTING_TABLE) -> {
             val side = layout.craftSize
             repeat(side) { line ->
@@ -41,9 +39,8 @@ internal fun panelPadRows(layout: PanelLayout?, page: PanelPage): List<List<Pane
         else -> return emptyList()
     }
     for (first in layout.inventoryStart until layout.hotbarStart step 9) rows += row(first, 9)
-    if (page != PanelPage.INVENTORY) rows += row(layout.hotbarStart, 9)
-    val targets = rows.map { row -> row.map { PanelPadSlot(it) } }
-    return if (page == PanelPage.INVENTORY) targets + listOf((0..8).map { PanelPadSlot(it, selectsHotbar = true) }) else targets
+    rows += row(layout.hotbarStart, 9)
+    return rows.map { row -> row.map { PanelPadSlot(it) } }
 }
 
 internal fun movePanelPadSlot(
@@ -71,6 +68,7 @@ internal fun panelPadCommand(action: PanelPadAction, slot: PanelPadSlot): PanelC
         PanelPadAction.PICK -> PanelCommand.PICK
         PanelPadAction.SPLIT -> PanelCommand.SPLIT
         PanelPadAction.TRANSFER -> PanelCommand.QUICK_MOVE
+        PanelPadAction.DROP -> PanelCommand.THROW
         else -> null
     }
 }

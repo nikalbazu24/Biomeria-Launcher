@@ -3,7 +3,7 @@ package com.biomeria.launcher.engine.java
 import kotlin.math.abs
 
 internal enum class PanelPadAction {
-    UP, DOWN, LEFT, RIGHT, PICK, SPLIT, TRANSFER, BACK, PREVIOUS_TAB, NEXT_TAB, MARK, SEARCH;
+    UP, DOWN, LEFT, RIGHT, PICK, SPLIT, TRANSFER, BACK, PREVIOUS_TAB, NEXT_TAB, MARK, SEARCH, DROP;
 
     val directional get() = this == UP || this == DOWN || this == LEFT || this == RIGHT
 }

@@ -57,7 +57,9 @@ internal fun AchievementHost(
     style: AchievementStyle,
     instanceId: String,
     gameDir: java.io.File? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** "Menos animaciones" in Biomeria's options; the system's animation setting also counts. */
+    lessMotion: Boolean = false
 ) {
     val context = LocalContext.current
     val queue = remember { mutableStateListOf<Achievement>() }
@@ -80,7 +82,7 @@ internal fun AchievementHost(
         }
     }
     val current = queue.firstOrNull() ?: return
-    AchievementCelebration(current, small = style == AchievementStyle.SMALL, hurry = queue.size > 1, modifier = modifier) {
+    AchievementCelebration(current, small = style == AchievementStyle.SMALL, hurry = queue.size > 1, modifier = modifier, lessMotion = lessMotion) {
         queue.remove(current)
     }
 }
@@ -92,10 +94,11 @@ internal fun AchievementCelebration(
     small: Boolean = false,
     hurry: Boolean = false,
     modifier: Modifier = Modifier,
+    lessMotion: Boolean = false,
     onDone: () -> Unit
 ) {
     val context = LocalContext.current
-    val reduceMotion = remember(context) {
+    val reduceMotion = lessMotion || remember(context) {
         Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
     }
     val style = if (small) AchievementStyle.SMALL else AchievementStyle.FULL

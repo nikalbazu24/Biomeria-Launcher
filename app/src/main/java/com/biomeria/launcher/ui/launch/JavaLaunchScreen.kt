@@ -156,7 +156,14 @@ fun JavaLaunchScreen(
             normalizeFpsLimit(settings.getInt("fps-limit-" + instance.id, 0)),
             settings.getBoolean("battery-saver-" + instance.id, false),
             settings.getBoolean("map-entities-" + instance.id, true),
-            com.biomeria.launcher.engine.java.AchievementStyle.fromPreference(settings.getString("achievements-" + instance.id, null))))
+            com.biomeria.launcher.engine.java.AchievementStyle.fromPreference(settings.getString("achievements-" + instance.id, null)),
+            com.biomeria.launcher.engine.java.PanelStyle.fromPreference(settings.getString("panel-style-" + instance.id, null)),
+            com.biomeria.launcher.engine.java.PanelTextSize.fromPreference(settings.getString("text-size-" + instance.id, null)),
+            settings.getBoolean("high-contrast-" + instance.id, true),
+            settings.getBoolean("reduce-motion-" + instance.id, false),
+            settings.getBoolean("biomeria-tips-" + instance.id, true),
+            settings.getBoolean("minecraft-tutorial-" + instance.id, false),
+            com.biomeria.launcher.engine.java.CameraSpeed.fromPreference(settings.getString("camera-speed-" + instance.id, null))))
     }
     val supported = supportsJavaLoader(instance.version, instance.loader)
 
@@ -181,7 +188,14 @@ fun JavaLaunchScreen(
             .putInt("fps-limit-" + instance.id, updated.fpsLimit)
             .putBoolean("battery-saver-" + instance.id, updated.batterySaver)
             .putBoolean("map-entities-" + instance.id, updated.showEntities)
-            .putString("achievements-" + instance.id, updated.achievements.name).apply()
+            .putString("achievements-" + instance.id, updated.achievements.name)
+            .putString("panel-style-" + instance.id, updated.panelStyle.name)
+            .putString("text-size-" + instance.id, updated.textSize.name)
+            .putBoolean("high-contrast-" + instance.id, updated.highContrast)
+            .putBoolean("reduce-motion-" + instance.id, updated.reduceMotion)
+            .putBoolean("biomeria-tips-" + instance.id, updated.biomeriaTips)
+            .putBoolean("minecraft-tutorial-" + instance.id, updated.minecraftTutorial)
+            .putString("camera-speed-" + instance.id, updated.cameraSpeed.name).apply()
     }
     var crash by remember { mutableStateOf<CrashReading?>(null) }
     var crashLog by remember { mutableStateOf("") }
@@ -230,7 +244,7 @@ fun JavaLaunchScreen(
                     runtimeManager.elyJvmArguments(installed.javaHomeDir, accounts.elyAgentMetadata())
                 } else emptyList()
                 val gameDir = File(context.filesDir, "instances/" + instance.id)
-                val scrollScale = withContext(Dispatchers.IO) { applyMinecraftOptions(gameDir, language) }
+                val scrollScale = withContext(Dispatchers.IO) { applyMinecraftOptions(gameDir, language, hud.minecraftTutorial) }
                 val classpath = runtimeManager.buildClasspath(ready)
                 val dualScreenMod = if (supportsDualInventory(instance.version, instance.configuredModLoader)) {
                     runtimeManager.dualScreenMod().absolutePath

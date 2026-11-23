@@ -49,7 +49,17 @@ internal data class GameHudSettings(
     /** Creatures on the Biomeria map. Only singleplayer and this device's LAN room send them. */
     val showEntities: Boolean = true,
     /** How unlocked advancements are announced on the top screen. */
-    val achievements: AchievementStyle = AchievementStyle.FULL
+    val achievements: AchievementStyle = AchievementStyle.FULL,
+    /** Look of the lower-screen inventory: Minecraft's grey panels or Biomeria's dark ones. */
+    val panelStyle: PanelStyle = PanelStyle.CLASSIC,
+    val textSize: PanelTextSize = PanelTextSize.NORMAL,
+    val highContrast: Boolean = true,
+    val reduceMotion: Boolean = false,
+    /** Biomeria's own first-time hints with the controller's buttons. */
+    val biomeriaTips: Boolean = true,
+    /** Minecraft's keyboard tutorial toasts ("use W A S D…"). Off: options.txt gets tutorialStep:none. */
+    val minecraftTutorial: Boolean = false,
+    val cameraSpeed: CameraSpeed = CameraSpeed.MEDIUM
 ) {
     fun routes(layout: PanelLayout) = when (layout) {
         PanelLayout.PERSONAL -> false
@@ -79,6 +89,13 @@ internal data class GameHudSettings(
         putBoolean("batterySaver", batterySaver)
         putBoolean("entities", showEntities)
         putString("achievements", achievements.name)
+        putString("panelStyle", panelStyle.name)
+        putString("textSize", textSize.name)
+        putBoolean("highContrast", highContrast)
+        putBoolean("reduceMotion", reduceMotion)
+        putBoolean("biomeriaTips", biomeriaTips)
+        putBoolean("minecraftTutorial", minecraftTutorial)
+        putString("cameraSpeed", cameraSpeed.name)
     }
 
     companion object {
@@ -102,7 +119,14 @@ internal data class GameHudSettings(
             normalizeFpsLimit(bundle?.getInt("fpsLimit") ?: 0),
             bundle?.getBoolean("batterySaver", false) ?: false,
             bundle?.getBoolean("entities", true) ?: true,
-            AchievementStyle.fromPreference(bundle?.getString("achievements"))
+            AchievementStyle.fromPreference(bundle?.getString("achievements")),
+            PanelStyle.fromPreference(bundle?.getString("panelStyle")),
+            PanelTextSize.fromPreference(bundle?.getString("textSize")),
+            bundle?.getBoolean("highContrast", true) ?: true,
+            bundle?.getBoolean("reduceMotion", false) ?: false,
+            bundle?.getBoolean("biomeriaTips", true) ?: true,
+            bundle?.getBoolean("minecraftTutorial", false) ?: false,
+            CameraSpeed.fromPreference(bundle?.getString("cameraSpeed"))
         )
     }
 }
@@ -112,5 +136,30 @@ internal enum class AchievementStyle(val label: String) {
 
     companion object {
         fun fromPreference(value: String?) = entries.firstOrNull { it.name == value } ?: FULL
+    }
+}
+
+internal enum class PanelStyle(val label: String) {
+    CLASSIC("Clásico"), DARK("Oscuro");
+
+    companion object {
+        fun fromPreference(value: String?) = entries.firstOrNull { it.name == value } ?: CLASSIC
+    }
+}
+
+internal enum class PanelTextSize(val label: String, val scale: Float) {
+    SMALL("Chico", .9f), NORMAL("Normal", 1f), LARGE("Grande", 1.15f);
+
+    companion object {
+        fun fromPreference(value: String?) = entries.firstOrNull { it.name == value } ?: NORMAL
+    }
+}
+
+/** How fast the right stick turns the camera; [factor] multiplies the stick per frame. */
+internal enum class CameraSpeed(val label: String, val factor: Double) {
+    LOW("Baja", 18.0), MEDIUM("Media", 26.0), HIGH("Alta", 36.0);
+
+    companion object {
+        fun fromPreference(value: String?) = entries.firstOrNull { it.name == value } ?: MEDIUM
     }
 }

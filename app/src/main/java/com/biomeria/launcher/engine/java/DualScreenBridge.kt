@@ -54,10 +54,10 @@ internal enum class PanelLayout(
     val craftSize get() = if (this == CRAFTING_TABLE) 3 else 2
 
     fun accepts(command: PanelCommand, slot: Int): Boolean = when (command) {
-        PanelCommand.PICK, PanelCommand.SPLIT, PanelCommand.QUICK_MOVE -> slot in 0 until slotCount
+        PanelCommand.PICK, PanelCommand.SPLIT, PanelCommand.QUICK_MOVE, PanelCommand.THROW -> slot in 0 until slotCount
         PanelCommand.SELECT_HOTBAR -> this == PERSONAL && slot in 0..8
         PanelCommand.CLOSE_MENU -> menuPage != null && slot == 0
-        PanelCommand.INSPECT_RECIPE, PanelCommand.PLACE_RECIPE -> (this == CRAFTING_TABLE || this == PERSONAL) && slot >= 0
+        PanelCommand.INSPECT_RECIPE, PanelCommand.PLACE_RECIPE, PanelCommand.PLACE_ALL -> (this == CRAFTING_TABLE || this == PERSONAL) && slot >= 0
     }
 }
 
@@ -99,7 +99,11 @@ internal class PanelSnapshotHistory {
 
 internal enum class PanelCommand(val wireName: String) {
     PICK("pick"), SPLIT("split"), QUICK_MOVE("quick"), SELECT_HOTBAR("hotbar"),
-    CLOSE_MENU("close"), INSPECT_RECIPE("inspect"), PLACE_RECIPE("recipe")
+    CLOSE_MENU("close"), INSPECT_RECIPE("inspect"), PLACE_RECIPE("recipe"),
+    /** Drops one item from the slot. */
+    THROW("throw"),
+    /** Fills the grid with as many sets of the recipe as the inventory allows. */
+    PLACE_ALL("recipeall")
 }
 
 internal class DualScreenBridge(val directory: File, val terrainDirectory: File? = null) {

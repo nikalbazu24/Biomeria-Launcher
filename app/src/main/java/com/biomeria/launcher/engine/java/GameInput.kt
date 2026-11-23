@@ -54,6 +54,9 @@ internal class GameInput(
         NativeJavaBridge.nativeInput(event.nativeId, code, action, x, y)
     }
 ) {
+    /** Camera turn per frame at full right-stick tilt; set from the HUD's camera speed. */
+    @Volatile var lookSpeed = CameraSpeed.MEDIUM.factor
+
     fun opensQuickMenu(code: Int): Boolean = bindings[code] == GamepadAction.QUICK_MENU
 
     private var viewWidth = 1
@@ -225,7 +228,7 @@ internal class GameInput(
 
     fun tick() {
         if (captured) {
-            if (lookX != 0f || lookY != 0f) relative(lookX * 26.0, lookY * 26.0)
+            if (lookX != 0f || lookY != 0f) relative(lookX * lookSpeed, lookY * lookSpeed)
         } else {
             val dx = (moveX + lookX + hatX).coerceIn(-1f, 1f)
             val dy = (moveY + lookY + hatY).coerceIn(-1f, 1f)

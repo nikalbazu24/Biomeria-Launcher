@@ -15,8 +15,10 @@ internal val gameLanguages = linkedMapOf(
     "ja_jp" to "日本語"
 )
 
-internal fun minecraftOptions(previous: List<String>, language: String): List<String> {
+internal fun minecraftOptions(previous: List<String>, language: String, tutorial: Boolean = false): List<String> {
     val updates = linkedMapOf("fullscreen" to "false", "overrideWidth" to "0", "overrideHeight" to "0")
+    // Minecraft's tutorial speaks of keyboard and mouse; Biomeria shows its own hints with the controller.
+    if (!tutorial) updates["tutorialStep"] = "none"
     // Minecraft reduces discrete wheel events to their sign before applying sensitivity.
     if (optionValue(previous, "discrete_mouse_scroll") == "true") updates["mouseWheelSensitivity"] = "1.0"
     if (language.isNotBlank() && language in gameLanguages) updates["lang"] = language
@@ -32,7 +34,7 @@ internal fun hotbarScrollScale(options: List<String>): Double {
     return Math.nextUp(1.0 / sensitivity)
 }
 
-internal fun applyMinecraftOptions(gameDirectory: File, language: String): Double {
+internal fun applyMinecraftOptions(gameDirectory: File, language: String, tutorial: Boolean = false): Double {
     check(gameDirectory.isDirectory || gameDirectory.mkdirs())
     val options = AtomicFile(File(gameDirectory, "options.txt"))
     val previous = try {
@@ -41,7 +43,7 @@ internal fun applyMinecraftOptions(gameDirectory: File, language: String): Doubl
         if (options.baseFile.exists()) throw error
         emptyList()
     }
-    val updated = minecraftOptions(previous, language)
+    val updated = minecraftOptions(previous, language, tutorial)
     val output = options.startWrite()
     try {
         val data = updated.joinToString("\n", postfix = "\n")

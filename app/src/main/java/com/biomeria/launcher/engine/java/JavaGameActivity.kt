@@ -336,8 +336,9 @@ private fun lowerPanelAction(code: Int): PanelPadAction? = when (code) {
     AndroidKeyEvent.KEYCODE_DPAD_LEFT -> PanelPadAction.LEFT
     AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> PanelPadAction.RIGHT
     AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_BUTTON_A -> PanelPadAction.PICK
-    AndroidKeyEvent.KEYCODE_BUTTON_X -> PanelPadAction.SPLIT
-    AndroidKeyEvent.KEYCODE_BUTTON_Y -> PanelPadAction.TRANSFER
+    AndroidKeyEvent.KEYCODE_BUTTON_X -> PanelPadAction.TRANSFER
+    AndroidKeyEvent.KEYCODE_BUTTON_Y -> PanelPadAction.SPLIT
+    AndroidKeyEvent.KEYCODE_BUTTON_L2 -> PanelPadAction.DROP
     AndroidKeyEvent.KEYCODE_BUTTON_B -> PanelPadAction.BACK
     AndroidKeyEvent.KEYCODE_BUTTON_L1 -> PanelPadAction.PREVIOUS_TAB
     AndroidKeyEvent.KEYCODE_BUTTON_R1 -> PanelPadAction.NEXT_TAB
@@ -452,6 +453,7 @@ private fun JavaNativeViewportScreen(
             panelBridge?.collectEntities(collectTerrain && hud.showEntities)
         }
     }
+    LaunchedEffect(hud.cameraSpeed) { input.lookSpeed = hud.cameraSpeed.factor }
     LaunchedEffect(hud.fpsLimit, hud.batterySaver) {
         activity.setFrameLimits(hud.fpsLimit, hud.batterySaver)
     }
@@ -630,7 +632,10 @@ private fun JavaNativeViewportScreen(
             }
             AchievementHost(panelBridge, hud.achievements,
                 remember(activity) { activity.intent.getStringExtra("INSTANCE_ID") ?: instanceTitle },
-                remember(activity) { activity.intent.getStringExtra("GAME_DIR_PATH")?.let(::File) })
+                remember(activity) { activity.intent.getStringExtra("GAME_DIR_PATH")?.let(::File) },
+                lessMotion = hud.reduceMotion)
+            BiomeriaTipHost(hud.biomeriaTips, captured && !showOverlay,
+                Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.displayCutout).padding(top = 52.dp, end = 12.dp))
             if (!hud.widgetsBelow || !activity.lowerPanelVisible) {
                 GameWidgets(hud, fps, panelBridge,
                     Modifier.align(Alignment.TopStart).windowInsetsPadding(WindowInsets.displayCutout)
