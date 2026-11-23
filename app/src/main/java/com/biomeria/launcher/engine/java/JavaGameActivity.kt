@@ -153,6 +153,7 @@ class JavaGameActivity : ComponentActivity() {
         }
         val down = event.action == AndroidKeyEvent.ACTION_DOWN
         val up = event.action == AndroidKeyEvent.ACTION_UP
+        if (AndroidKeyEvent.isGamepadButton(event.keyCode)) lastPadDevice = event.deviceId
         if ((down || up) && (event.isFromSource(InputDevice.SOURCE_GAMEPAD) ||
                 event.isFromSource(InputDevice.SOURCE_JOYSTICK) ||
                 event.isFromSource(InputDevice.SOURCE_DPAD) || AndroidKeyEvent.isGamepadButton(event.keyCode))
@@ -215,6 +216,21 @@ class JavaGameActivity : ComponentActivity() {
     }
 
     internal fun releaseLowerGamepad() = padRouter.release()
+
+    /** Set by the lower screen: shows its inventory page. */
+    internal var openLowerInventory: (() -> Unit)? = null
+    private var lastPadDevice = -1
+
+    internal fun openInventoryFromMenu() = openInventoryBelow(fromPad = lastPadDevice >= 0)
+
+    /** In dual screen the inventory button opens Biomeria's inventory below instead of Minecraft's. */
+    private fun openInventoryBelow(fromPad: Boolean): Boolean {
+        val open = openLowerInventory ?: return false
+        if (!lowerPanelVisible || lowerPanelInput == null) return false
+        open()
+        if (fromPad && lastPadDevice >= 0) padRouter.take(lastPadDevice)
+        return true
+    }
 
     internal fun tickLowerGamepad() = padRouter.tick(SystemClock.uptimeMillis())
 
@@ -324,7 +340,7 @@ class JavaGameActivity : ComponentActivity() {
         gameInput = GameInput(
             decodeGamepadActions(intent.getStringExtra("GAMEPAD_BINDINGS").orEmpty()),
             intent.getDoubleExtra("HOTBAR_SCROLL_SCALE", 1.0)
-        )
+        ).also { it.inventoryInterceptor = ::openInventoryBelow }
         inputManager = getSystemService(InputManager::class.java)?.also {
             it.registerInputDeviceListener(devices, Handler(Looper.getMainLooper()))
         }
@@ -476,6 +492,7 @@ private fun JavaNativeViewportScreen(
     var editingTouch by remember { mutableStateOf(false) }
     LaunchedEffect(input, panelBridge) {
         input.onHotbarSwap = { from, to -> panelBridge?.swapHotbar(from, to) }
+        input.slotScreen = { panelBridge?.slotScreen() == true }
         while (panelBridge != null) {
             panelBridge.guiScale()?.let { input.guiScale = it }
             kotlinx.coroutines.delay(1_000)
@@ -815,7 +832,7 @@ private fun JavaNativeViewportScreen(
                 bridge = panelBridge,
                 actions = GameMenuActions(
                     resume = { showOverlay = false },
-                    inventory = { showOverlay = false; pendingGameKey = 69 },
+                    inventory = { showOverlay = false; if (!activity.openInventoryFromMenu()) pendingGameKey = 69 },
                     capture = { showOverlay = false; pendingGameKey = 291 },
                     keyboard = {
                         showOverlay = false
@@ -865,7 +882,7 @@ private fun JavaNativeViewportScreen(
             hasMap = panelBridge != null,
             mapVisible = hud.showMinimap,
             onClose = { showQuickMenu = false },
-            onInventory = { showQuickMenu = false; pendingGameKey = 69 },
+            onInventory = { showQuickMenu = false; if (!activity.openInventoryFromMenu()) pendingGameKey = 69 },
             onCapture = { showQuickMenu = false; pendingGameKey = 291 },
             onMap = {
                 hud = hud.copy(showMinimap = !hud.showMinimap)

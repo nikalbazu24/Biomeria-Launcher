@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -227,6 +228,24 @@ internal fun SettingsPage(
             if (installedNotes != null) {
                 LauncherButton("Novedades de la versión instalada", { notesDialog = version to installedNotes })
             }
+            var music by remember { mutableStateOf(com.biomeria.launcher.data.MenuMusic.enabled(context)) }
+            var musicVolume by remember { mutableStateOf(com.biomeria.launcher.data.MenuMusic.volume(context)) }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Música de Minecraft en el inicio", fontWeight = FontWeight.Bold)
+                    Text(if (com.biomeria.launcher.data.MenuMusic.available(context)) "Usa las canciones de tu Minecraft Java."
+                        else "Suena cuando descargues una versión de Java.",
+                        color = Biomeria.colors.textMuted, style = MaterialTheme.typography.bodySmall)
+                }
+                androidx.compose.material3.Switch(music, {
+                    music = it
+                    com.biomeria.launcher.data.MenuMusic.setEnabled(context, it)
+                })
+            }
+            if (music) androidx.compose.material3.Slider(musicVolume, {
+                musicVolume = it
+                com.biomeria.launcher.data.MenuMusic.setVolume(context, it)
+            }, valueRange = 0f..1f)
             LauncherButton("Ver la introducción otra vez", {
                 com.biomeria.launcher.ui.intro.IntroPreferences.reset(context)
                 onNotice("La introducción aparecerá la próxima vez que abras Biomeria.")

@@ -178,6 +178,9 @@ internal class DualScreenBridge(val directory: File, val terrainDirectory: File?
     fun guiScale(): Int? = runCatching { File(directory, "gui-scale").readText(Charsets.US_ASCII).trim().toInt() }
         .getOrNull()?.takeIf { it in 1..16 }
 
+    /** True while Minecraft shows a screen with item slots (inventory, chest, crafting table…). */
+    fun slotScreen(): Boolean = File(directory, "slot-screen").isFile
+
     /** Swaps two hotbar slots (0-8) when no menu is open. */
     fun swapHotbar(from: Int, to: Int): Boolean = from in 0..8 && to in 0..8 && from != to &&
         writeMarker("hotbar-swap", "$from $to")

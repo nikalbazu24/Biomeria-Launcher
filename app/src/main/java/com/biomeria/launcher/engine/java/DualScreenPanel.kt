@@ -339,6 +339,10 @@ private fun DualScreenPanel(
         if (showingMap && page == actionPage) mapPadInput?.pan?.invoke(x, y)
     })
     DisposableEffect(activity) {
+        activity.openLowerInventory = { openPage(PanelPage.INVENTORY) }
+        onDispose { activity.openLowerInventory = null }
+    }
+    DisposableEffect(activity) {
         val detach = activity.attachLowerPanelInput({ panelAction(it) }, { x, y -> panelPan(x, y) })
         onDispose(detach)
     }

@@ -63,6 +63,13 @@ internal class PanelPadRouter(
         return true
     }
 
+    /** Gives the controller to the lower screen right away, e.g. when the inventory button is pressed. */
+    fun take(device: Int): Boolean {
+        if (!available) return false
+        if (owner != device) changeOwner(device)
+        return true
+    }
+
     fun release() {
         if (owner != null) changeOwner(null)
     }

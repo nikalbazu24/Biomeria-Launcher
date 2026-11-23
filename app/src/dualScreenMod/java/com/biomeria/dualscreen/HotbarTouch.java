@@ -16,13 +16,15 @@ final class HotbarTouch {
     private static Method getWindow, scaleFactor, clickSlot;
     private static Field player, interactions, currentScreen, playerHandler, currentHandler, syncId;
     private static Object swap;
+    private static Class<?> handledScreen;
+    private static boolean slotScreenWritten;
     private static int writtenScale = -1;
     private static int ticks;
 
     private HotbarTouch() {}
 
     static void tick(Object client, Path root) {
-        if (failed || ++ticks % 5 != 0) return;
+        if (failed || ++ticks % 2 != 0) return;
         try {
             if (getWindow == null) init(client.getClass().getClassLoader());
             int scale = (int) Math.round((double) scaleFactor.invoke(getWindow.invoke(client)));
@@ -31,6 +33,14 @@ final class HotbarTouch {
                 Files.writeString(staged, Integer.toString(scale), StandardCharsets.US_ASCII);
                 Files.move(staged, root.resolve("gui-scale"), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
                 writtenScale = scale;
+            }
+            // Tells Android when an inventory-like screen (with slots) is open, for drag and drop.
+            Object screen = currentScreen.get(client);
+            boolean slots = screen != null && handledScreen.isInstance(screen);
+            if (slots != slotScreenWritten) {
+                Path marker = root.resolve("slot-screen");
+                if (slots) Files.writeString(marker, "1", StandardCharsets.US_ASCII); else Files.deleteIfExists(marker);
+                slotScreenWritten = slots;
             }
             Path request = root.resolve("hotbar-swap");
             if (!Files.isRegularFile(request)) return;
@@ -62,6 +72,7 @@ final class HotbarTouch {
         Class<?> playerEntity = type(loader, 1657);
         Class<?> handler = type(loader, 1703);
         Class<?> action = type(loader, 1713);
+        handledScreen = type(loader, 465);
         getWindow = client.getMethod("method_22683");
         scaleFactor = window.getMethod("method_4495");
         player = field(client, "field_1724");

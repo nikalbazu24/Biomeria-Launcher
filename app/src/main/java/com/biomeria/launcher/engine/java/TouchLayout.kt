@@ -72,7 +72,7 @@ internal fun TouchControls(
             PlacedKey(place, Modifier.align(Alignment.BottomEnd)) { size ->
                 TouchButton(key.label, key.description, size) { down ->
                     when (key) {
-                        TouchKey.INVENTORY -> input.key(69, down)
+                        TouchKey.INVENTORY -> input.inventoryKey(down)
                         TouchKey.JUMP -> input.key(32, down)
                         TouchKey.CHAT -> if (down) onChat()
                         TouchKey.USE -> input.mouseButton(1, down)

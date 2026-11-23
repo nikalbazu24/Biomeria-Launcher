@@ -103,8 +103,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        com.biomeria.launcher.data.MenuMusic.start(this)
         refreshBedrock()
         starling = starlingLauncher.detect()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        com.biomeria.launcher.data.MenuMusic.pause()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

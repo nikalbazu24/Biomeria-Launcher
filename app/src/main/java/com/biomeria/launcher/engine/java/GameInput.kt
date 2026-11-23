@@ -73,6 +73,33 @@ internal class GameInput(
     private var touchHotbar = -1
     /** GUI scale from the mod; 0 means "work it out like Minecraft's automatic scale". */
     @Volatile var guiScale = 0
+    /** True while Minecraft shows a screen with item slots; touches there become tap, hold and drag. */
+    var slotScreen: () -> Boolean = { false }
+    private var slotTouch = false
+    private var slotDragging = false
+    private var slotDownTime = 0L
+    private var slotStartX = 0f
+    private var slotStartY = 0f
+
+    private fun viewPointer(x: Float, y: Float) = movePointer(x * width.toDouble() / viewWidth, y * height.toDouble() / viewHeight)
+
+    private fun clickAt(x: Float, y: Float, button: Int) {
+        viewPointer(x, y)
+        mouseButton(button, true)
+        mouseButton(button, false)
+    }
+
+    /** Returns true when something else (the lower screen) handled the inventory button. */
+    var inventoryInterceptor: ((fromPad: Boolean) -> Boolean)? = null
+
+    /** The inventory key from touch or a menu: goes to the lower screen when there is one. */
+    fun inventoryKey(down: Boolean) {
+        if (down && captured && inventoryInterceptor?.invoke(false) == true) { touchInventoryIntercepted = true; return }
+        if (!down && touchInventoryIntercepted) { touchInventoryIntercepted = false; return }
+        key(69, down)
+    }
+    private var touchInventoryIntercepted = false
+
     /** Called when an item is dragged from one hotbar slot to another. */
     var onHotbarSwap: ((Int, Int) -> Unit)? = null
     /** Slot being dragged and the slot under the finger, for the on-screen highlight. */
@@ -113,6 +140,8 @@ internal class GameInput(
         touchId = -1
         touchHotbar = -1
         hotbarDrag = null
+        slotTouch = false
+        slotDragging = false
         touchClick = false
         mousePositionKnown = false
         lookX = 0f
@@ -141,6 +170,14 @@ internal class GameInput(
                 if (touchHotbar >= 0) {
                     selectHotbarSlot(touchHotbar + 1)
                     hotbarDrag = touchHotbar to touchHotbar
+                } else if (!captured && slotScreen()) {
+                    // Tap = click, hold = right click (half a stack / one item), drag = carry the stack.
+                    slotTouch = true
+                    slotDragging = false
+                    slotDownTime = event.eventTime
+                    slotStartX = touchX
+                    slotStartY = touchY
+                    viewPointer(touchX, touchY)
                 } else if (!captured) {
                     movePointer(touchX * width.toDouble() / viewWidth, touchY * height.toDouble() / viewHeight)
                     mouseButton(0, true)
@@ -152,7 +189,13 @@ internal class GameInput(
                 if (active >= 0) {
                     val x = event.getX(active)
                     val y = event.getY(active)
-                    if (touchHotbar >= 0) {
+                    if (slotTouch) {
+                        if (!slotDragging && abs(x - slotStartX) + abs(y - slotStartY) > viewWidth * .012f) {
+                            slotDragging = true
+                            clickAt(slotStartX, slotStartY, 0) // picks the stack up
+                        }
+                        viewPointer(x, y) // the stack follows the finger
+                    } else if (touchHotbar >= 0) {
                         val over = hotbarSlotAt(x, y)
                         hotbarDrag = touchHotbar to (if (over >= 0) over else touchHotbar)
                     } else if (captured) relative((x - touchX) * width.toDouble() / viewWidth, (y - touchY) * height.toDouble() / viewHeight)
@@ -164,6 +207,17 @@ internal class GameInput(
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
                 if (event.actionMasked == MotionEvent.ACTION_CANCEL || touchId == event.getPointerId(index)) {
                     if (touchClick) mouseButton(0, false)
+                    if (slotTouch && event.actionMasked != MotionEvent.ACTION_CANCEL) {
+                        val x = event.getX(index)
+                        val y = event.getY(index)
+                        when {
+                            slotDragging -> clickAt(x, y, 0) // drops it where the finger lifted
+                            event.eventTime - slotDownTime >= 450L -> clickAt(x, y, 1)
+                            else -> clickAt(x, y, 0)
+                        }
+                    }
+                    slotTouch = false
+                    slotDragging = false
                     if (touchHotbar >= 0 && event.actionMasked != MotionEvent.ACTION_CANCEL) {
                         val target = hotbarSlotAt(event.getX(index), event.getY(index))
                         if (target >= 0 && target != touchHotbar) {
@@ -287,6 +341,7 @@ internal class GameInput(
         val mapping = gamepadAction(code) ?: return false
         if (down && repeated) return true
         if (down) {
+            if (mapping == GamepadAction.INVENTORY && captured && inventoryInterceptor?.invoke(true) == true) return true
             if (gamepadButtons.putIfAbsent(code, mapping) != null) return true
             gamepadUsed = true
             updateGamepadAction(mapping)
