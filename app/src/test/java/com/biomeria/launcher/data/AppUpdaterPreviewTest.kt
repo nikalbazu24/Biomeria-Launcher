@@ -25,4 +25,12 @@ class AppUpdaterPreviewTest {
         assertEquals("v1.0.0-beta.70", newestPreview(releases, 69)?.versionTag)
         assertNull(betaBuildNumber("v1.0.0-beta.9223372036854775808"))
     }
+
+    @Test
+    fun stableReleasesAreComparedByVersion() {
+        org.junit.Assert.assertTrue(isNewerRelease("v1.0.2", "1.0.1"))
+        org.junit.Assert.assertTrue(isNewerRelease("1.0.0", "1.0.0-beta.113"))
+        org.junit.Assert.assertTrue(!isNewerRelease("v1.0.1", "1.0.1"))
+        org.junit.Assert.assertTrue(!isNewerRelease("1.0.0-beta.9", "1.0.1"))
+    }
 }

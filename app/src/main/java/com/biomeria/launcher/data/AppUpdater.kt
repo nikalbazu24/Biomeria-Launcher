@@ -35,6 +35,23 @@ data class UpdateInfo(
 internal fun betaBuildNumber(tag: String): Long? = Regex("""1\.0\.0-beta\.(\d+)""")
     .matchEntire(tag.trim().removePrefix("v"))?.groupValues?.get(1)?.toLongOrNull()
 
+/** Orden de versiones "1.0.2" o "1.0.0-beta.9": una estable vale más que cualquier beta de la misma base. */
+internal fun releaseVersionKey(tag: String): List<Long>? {
+    val m = Regex("""(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?""").matchEntire(tag.trim().removePrefix("v")) ?: return null
+    val core = (1..3).map { m.groupValues[it].toLongOrNull() ?: return null }
+    val beta = m.groupValues[4].takeIf { it.isNotEmpty() }?.let { it.toLongOrNull() ?: return null }
+    return core + (beta ?: Long.MAX_VALUE)
+}
+
+internal fun isNewerRelease(remoteTag: String, installedName: String): Boolean {
+    val remote = releaseVersionKey(remoteTag) ?: return false
+    val installed = releaseVersionKey(installedName) ?: return true
+    for (i in remote.indices) {
+        if (remote[i] != installed[i]) return remote[i] > installed[i]
+    }
+    return false
+}
+
 internal fun newestPreview(releases: Sequence<UpdateInfo>, installedBuild: Long): UpdateInfo? =
     releases.mapNotNull { release -> betaBuildNumber(release.versionTag)?.let { it to release } }
         .filter { (build, _) -> build > installedBuild }
@@ -59,7 +76,7 @@ class AppUpdater(private val context: Context) {
     private val updatePreferences = context.getSharedPreferences("biomeria_updates", Context.MODE_PRIVATE)
 
     suspend fun installedReleaseNotes(version: String): String? = withContext(Dispatchers.IO) {
-        if (betaBuildNumber(version) == null) return@withContext null
+        if (releaseVersionKey(version) == null) return@withContext null
         val tag = version.trim().removePrefix("v")
         runCatching {
             context.assets.open("release-notes/$tag.md").bufferedReader().use { it.readText().trim() }
@@ -86,8 +103,7 @@ class AppUpdater(private val context: Context) {
             val release = JSONObject(fetchReleases("/latest"))
             if (release.optBoolean("prerelease")) return@runCatching null
             val update = parseRelease(release) ?: return@runCatching null
-            val remoteBuild = betaBuildNumber(update.versionTag) ?: return@runCatching null
-            update.takeIf { remoteBuild > installedBuild() }
+            update.takeIf { isNewerRelease(update.versionTag, getCurrentVersionName()) }
         }
     }
 
@@ -127,7 +143,7 @@ class AppUpdater(private val context: Context) {
     private fun parseRelease(json: JSONObject): UpdateInfo? {
         if (json.optBoolean("draft")) return null
         val tag = json.optString("tag_name").trim().removePrefix("v")
-        if (betaBuildNumber(tag) == null) return null
+        if (releaseVersionKey(tag) == null) return null
         val assets = json.optJSONArray("assets") ?: return null
         val apkUrl = (0 until assets.length()).asSequence()
             .map(assets::getJSONObject)
