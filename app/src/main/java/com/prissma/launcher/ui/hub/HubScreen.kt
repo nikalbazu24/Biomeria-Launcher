@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -79,6 +80,7 @@ private enum class HubPage(val label: String, val icon: ImageVector) {
     LIBRARY("Mis mundos", Icons.Default.Home),
     WORKSHOP("Taller", Icons.Default.Build),
     CONNECTIONS("Jugar juntos", Icons.Default.Share),
+    ACHIEVEMENTS("Logros", Icons.Default.Star),
     SETTINGS("Ajustes", Icons.Default.Settings)
 }
 
@@ -369,6 +371,7 @@ internal fun HubScreen(
                     updater, version, update, installedNotes, ::acknowledgeReleaseNotes, { update = it }, ::notify
                 )
                 HubPage.WORKSHOP -> EmptyWorkshop { showNew = true }
+                HubPage.ACHIEVEMENTS -> AchievementsPage(instances, selected?.id, Modifier.fillMaxSize())
             }
         }
     }

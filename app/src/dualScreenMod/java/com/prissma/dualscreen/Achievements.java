@@ -37,7 +37,8 @@ public final class Achievements {
             Optional<?> display = (Optional<?>) access.display.getAccessor().invoke(advancement);
             if (display.isEmpty()) return false;
             Object shown = display.get();
-            int[] counts = counts();
+            Map<String, int[]> byMod = new java.util.TreeMap<>();
+            int[] counts = counts(byMod);
             ByteArrayOutputStream bytes = new ByteArrayOutputStream(512);
             try (DataOutputStream out = new DataOutputStream(bytes)) {
                 out.writeInt(MAGIC);
@@ -50,6 +51,16 @@ public final class Achievements {
                 out.writeUTF(clip(id == null ? "" : id.toString(), 96));
                 out.writeShort(Math.min(65535, counts[0]));
                 out.writeShort(Math.min(65535, counts[1]));
+                // Done and total per namespace ("minecraft" or each mod), so mods get their own tab.
+                int written = Math.min(64, byMod.size());
+                out.writeShort(written);
+                int index = 0;
+                for (Map.Entry<String, int[]> mod : byMod.entrySet()) {
+                    if (index++ == written) break;
+                    out.writeUTF(clip(mod.getKey(), 64));
+                    out.writeShort(Math.min(65535, mod.getValue()[0]));
+                    out.writeShort(Math.min(65535, mod.getValue()[1]));
+                }
             }
             String name = String.format("achievement-%013d-%04d", System.currentTimeMillis(), ++sequence % 10000);
             GamePanelBridge.writeAtomically(session.resolve(name), bytes.toByteArray());
@@ -62,7 +73,7 @@ public final class Achievements {
     }
 
     /** Done and total advancements that have a display (the ones on Minecraft's advancement screen). */
-    private static int[] counts() throws ReflectiveOperationException {
+    private static int[] counts(Map<String, int[]> byMod) throws ReflectiveOperationException {
         Object client = access.instance.invoke(null);
         Object network = access.networkHandler.invoke(client);
         if (network == null) return new int[] {0, 0};
@@ -73,7 +84,13 @@ public final class Achievements {
             Object advancement = access.entryValue.invoke(item.getKey());
             if (((Optional<?>) access.display.getAccessor().invoke(advancement)).isEmpty()) continue;
             total++;
-            if ((boolean) access.isDone.invoke(item.getValue())) done++;
+            boolean finished = (boolean) access.isDone.invoke(item.getValue());
+            if (finished) done++;
+            String id = access.entryId.invoke(item.getKey()).toString();
+            int split = id.indexOf(':');
+            int[] mod = byMod.computeIfAbsent(split > 0 ? id.substring(0, split) : "minecraft", key -> new int[2]);
+            mod[1]++;
+            if (finished) mod[0]++;
         }
         return new int[] {done, total};
     }

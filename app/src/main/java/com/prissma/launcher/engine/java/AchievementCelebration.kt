@@ -68,9 +68,26 @@ internal fun AchievementHost(bridge: DualScreenBridge?, style: AchievementStyle,
         }
     }
     val current = queue.firstOrNull() ?: return
+    AchievementCelebration(current, small = style == AchievementStyle.SMALL, hurry = queue.size > 1, modifier = modifier) {
+        queue.remove(current)
+    }
+}
+
+/** Plays one celebration from the start; [onDone] runs when it has fully left the screen. */
+@Composable
+internal fun AchievementCelebration(
+    current: Achievement,
+    small: Boolean = false,
+    hurry: Boolean = false,
+    modifier: Modifier = Modifier,
+    onDone: () -> Unit
+) {
+    val context = LocalContext.current
     val reduceMotion = remember(context) {
         Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
     }
+    val style = if (small) AchievementStyle.SMALL else AchievementStyle.FULL
+    val finished by rememberUpdatedState(onDone)
     var phase by remember(current) {
         mutableStateOf(if (style == AchievementStyle.SMALL) CelebrationPhase.PILL
             else if (reduceMotion) CelebrationPhase.CARD else CelebrationPhase.DROP)
@@ -90,8 +107,8 @@ internal fun AchievementHost(bridge: DualScreenBridge?, style: AchievementStyle,
             delay(3000)
             phase = CelebrationPhase.PILL
         }
-        delay(if (queue.size > 1) 1600 else 4200)
-        queue.remove(current)
+        delay(if (hurry) 1600 else 4200)
+        finished()
     }
 
     Box(modifier.fillMaxSize().semantics {
@@ -174,7 +191,7 @@ private fun AchievementCard(achievement: Achievement, still: Boolean, modifier: 
         }
         Box(Modifier.size(64.dp).clip(frame).background(Color(0xFF1A2026)).border(4.dp, kind.color, frame),
             contentAlignment = Alignment.Center) {
-            val icon = if (achievement.icon.isBlank()) null else rememberItemIcon(achievement.icon)
+            val icon = rememberAchievementIcon(achievement.icon)
             if (icon != null) Image(icon, null, Modifier.size(38.dp), filterQuality = FilterQuality.None)
             else Box(Modifier.size(26.dp).background(kind.color).border(3.dp, Ink))
         }
@@ -198,7 +215,7 @@ private fun AchievementPill(achievement: Achievement, modifier: Modifier) {
             .padding(horizontal = 12.dp, vertical = 7.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically
     ) {
-        val icon = if (achievement.icon.isBlank()) null else rememberItemIcon(achievement.icon)
+        val icon = rememberAchievementIcon(achievement.icon)
         if (icon != null) Image(icon, null, Modifier.size(20.dp), filterQuality = FilterQuality.None)
         else Box(Modifier.size(12.dp).background(achievement.kind.color))
         Text(achievement.title, color = Color(0xFFF2F5EF), fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, maxLines = 1,

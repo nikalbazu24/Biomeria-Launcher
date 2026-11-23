@@ -13,6 +13,9 @@ class AchievementsTest {
             it.writeInt(magic); it.writeUTF("minecraft:story/mine_diamond"); it.writeUTF(frame)
             it.writeUTF("¡Diamantes!"); it.writeUTF("Consigue diamantes."); it.writeUTF("minecraft:diamond")
             it.writeShort(done); it.writeShort(total)
+            it.writeShort(2)
+            it.writeUTF("create"); it.writeShort(1); it.writeShort(10)
+            it.writeUTF("minecraft"); it.writeShort(12); it.writeShort(112)
         }
         return bytes.toByteArray()
     }
@@ -24,6 +27,9 @@ class AchievementsTest {
         assertEquals("¡Diamantes!", read.title)
         assertEquals("minecraft:diamond", read.icon)
         assertEquals(13, read.done)
+        assertEquals(1 to 10, read.byMod["create"])
+        assertEquals(false, read.fromMod)
+        assertEquals("Create New Age", modLabel("create_new_age"))
     }
 
     @Test
