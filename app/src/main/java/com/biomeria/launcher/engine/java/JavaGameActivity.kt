@@ -130,6 +130,14 @@ class JavaGameActivity : ComponentActivity() {
     internal var selectOpensMap: (() -> Boolean)? = null
 
     override fun dispatchKeyEvent(event: AndroidKeyEvent): Boolean {
+        // While shaders load, the controller only cancels (B); nothing else moves.
+        if (ShaderJob.busy && (event.keyCode == AndroidKeyEvent.KEYCODE_BACK || AndroidKeyEvent.isGamepadButton(event.keyCode) ||
+                event.isFromSource(InputDevice.SOURCE_GAMEPAD) || event.isFromSource(InputDevice.SOURCE_DPAD))
+        ) {
+            if (event.action == AndroidKeyEvent.ACTION_UP && !event.isCanceled &&
+                (event.keyCode == AndroidKeyEvent.KEYCODE_BUTTON_B || event.keyCode == AndroidKeyEvent.KEYCODE_BACK)) ShaderJob.cancel()
+            return true
+        }
         val opensMap = selectOpensMap
         if (event.keyCode == AndroidKeyEvent.KEYCODE_BUTTON_SELECT && opensMap != null && !lowerPanelVisible) {
             if (event.action == AndroidKeyEvent.ACTION_UP && !event.isCanceled) {
@@ -586,16 +594,18 @@ private fun JavaNativeViewportScreen(
             onToggleQuickMenu(null)
         }
     }
-    val canSendInput = jvmStarted && !editingTouch && !showPause && !showGameOptions && !showOverlay && !showKeyboard && !showQuickMenu && !showHudDialog &&
+    val canSendInput = jvmStarted && !editingTouch && !showPause && !showGameOptions && !ShaderJob.busy && !showOverlay && !showKeyboard && !showQuickMenu && !showHudDialog &&
         !showLanDialog && !showInternetDialog && !mapExpanded
     val singleScreenMap = hud.showMinimap && !activity.lowerPanelVisible
     LaunchedEffect(panelBridge, hud.biomeriaMenus) { panelBridge?.useBiomeriaMenus(hud.biomeriaMenus) }
     // Minecraft's pause screen opened (Start, Esc, losing focus): show Biomeria's on top while the world stays paused.
-    val pauseBlocked = showOverlay || showGameOptions || showLanDialog || showInternetDialog || showKeyboard || editingTouch
+    val pauseBlocked = showOverlay || showGameOptions || ShaderJob.busy || showLanDialog || showInternetDialog || showKeyboard || editingTouch
     // Full options pause the world: Esc opens Minecraft's pause screen, and closing the options sends the Esc that resumes.
     var pausedByOptions by remember { mutableStateOf(false) }
-    LaunchedEffect(showGameOptions) {
-        if (showGameOptions) {
+    // Loading shaders pauses too, even when they were changed from the lower screen.
+    val holdPaused = showGameOptions || ShaderJob.busy
+    LaunchedEffect(holdPaused) {
+        if (holdPaused) {
             if (jvmStarted && NativeJavaBridge.nativeCursorCaptured()) {
                 pausedByOptions = true
                 input.tapKey(256)
@@ -926,9 +936,12 @@ private fun JavaNativeViewportScreen(
                 saveAndQuit = { if (panelBridge?.requestQuit() == true) saving = true }
             ), saving)
         }
-        if (showGameOptions) {
+        androidx.compose.animation.AnimatedVisibility(showGameOptions,
+            enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(160)),
+            exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200))) {
             BiomeriaOptionsScreen(File(gameDirPath), panelBridge, activity.optionGuide) { showGameOptions = false }
         }
+        ShaderJobOverlay()
         if (editingTouch) {
             TouchLayoutEditor(touchLayout) { updated ->
                 touchLayout = updated

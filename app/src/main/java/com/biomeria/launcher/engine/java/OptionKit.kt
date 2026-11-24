@@ -350,44 +350,24 @@ internal fun shaderSky(name: String?): Brush {
     return Brush.verticalGradient(0f to top, .58f to horizon, .58f to Color(0xFF4E8A33), 1f to Color(0xFF2B4D1D))
 }
 
-/** The shader state with what it takes to change it, shared by the top options and the lower panel. */
-internal class ShaderController(private val gameDirectory: File?, private val bridge: DualScreenBridge?) {
+/** The shader state, shared by the top options and the lower panel. Changing it goes through [ShaderJob]. */
+internal class ShaderController(internal val gameDirectory: File?, internal val bridge: DualScreenBridge?) {
     var settings by mutableStateOf<ShaderSettings?>(null)
-        private set
+        internal set
     var status by mutableStateOf<String?>(null)
-        private set
+        internal set
 
     suspend fun load() {
         val directory = gameDirectory ?: return
         settings = withContext(Dispatchers.IO) { readShaderSettings(directory) }
-    }
-
-    suspend fun choose(pack: ShaderPack?) {
-        val directory = gameDirectory ?: return
-        val now = settings ?: return
-        settings = now.copy(enabled = pack != null, current = pack?.file ?: now.current)
-        status = "Cargando shaders…"
-        withContext(Dispatchers.IO) { runCatching { writeShaderChoice(directory, pack?.file) } }
-        if (bridge?.reloadShaders() != true) {
-            status = "Guardado · se aplica al volver a abrir el juego"
-            return
-        }
-        repeat(80) {
-            delay(150)
-            bridge.shadersApplied()?.let { applied ->
-                status = if (applied) (if (pack == null) "Shaders apagados" else "${pack.title} activado")
-                    else "Se aplicará la próxima vez que abras el juego"
-                return
-            }
-        }
-        status = "Se aplicará la próxima vez que abras el juego"
     }
 }
 
 @Composable
 internal fun rememberShaderController(gameDirectory: File?, bridge: DualScreenBridge?): ShaderController {
     val controller = remember(gameDirectory, bridge) { ShaderController(gameDirectory, bridge) }
-    LaunchedEffect(controller) { controller.load() }
+    // Reloads after any shader change, wherever it was made.
+    LaunchedEffect(controller, ShaderJob.revision) { controller.load() }
     return controller
 }
 

@@ -203,6 +203,9 @@ internal class DualScreenBridge(val directory: File, val terrainDirectory: File?
     }
 
     /** null while waiting, true when Iris applied the pack, false when it applies on restart. */
+    /** Takes back a shader reload the game has not started yet; false if it already began. */
+    fun cancelShaderReload(): Boolean = File(directory, "shaders-reload").let { it.isFile && it.delete() }
+
     fun shadersApplied(): Boolean? = runCatching { File(directory, "shaders-result").readText().trim() == "1" }.getOrNull()
 
     /** True while Minecraft shows a screen with item slots (inventory, chest, crafting table…). */

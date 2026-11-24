@@ -121,7 +121,26 @@ internal fun formatOptionNumber(value: Double, decimals: Boolean): String =
 
 internal enum class ModValueType { BOOLEAN, NUMBER, TEXT }
 
-internal data class ModSetting(val path: String, val label: String, val type: ModValueType, val value: String)
+/** One setting from a mod's file, with the author's note above it, its range and its allowed values when the file says them. */
+internal data class ModSetting(
+    val path: String, val label: String, val type: ModValueType, val value: String,
+    val comment: String? = null, val min: Double? = null, val max: Double? = null, val choices: List<String>? = null
+)
+
+private val rangeNote = Regex("""(?i)range:?\s*\[?\s*(-?[\d.]+)\s*(?:~|to|,|\.\.)\s*(-?[\d.]+)""")
+private val allowedNote = Regex("""(?i)allowed values:?\s*(.+)""")
+
+/** Builds a setting, reading the range and the allowed values out of the comment above it. */
+private fun noted(path: String, label: String, type: ModValueType, value: String, comment: List<String>): ModSetting {
+    val text = comment.map { it.trim() }.filter { it.isNotEmpty() }
+    val range = text.firstNotNullOfOrNull { rangeNote.find(it) }
+    val allowed = text.firstNotNullOfOrNull { allowedNote.find(it) }?.groupValues?.get(1)
+        ?.split(',')?.map { it.trim().trim('"') }?.filter { it.isNotEmpty() }?.takeIf { it.size in 2..12 }
+    val note = text.filterNot { rangeNote.containsMatchIn(it) || allowedNote.containsMatchIn(it) }
+        .joinToString(" ").takeIf { it.isNotBlank() }
+    return ModSetting(path, label, type, value, note,
+        range?.groupValues?.get(1)?.toDoubleOrNull(), range?.groupValues?.get(2)?.toDoubleOrNull(), allowed)
+}
 
 internal data class ModConfigFile(val file: File, val modName: String, val settings: List<ModSetting>)
 
@@ -173,12 +192,20 @@ internal fun readModConfigs(gameDirectory: File): List<ModConfigFile> {
     }.sortedBy { it.modName.lowercase() }
 }
 
-private fun readProperties(file: File) = file.readLines().mapNotNull { line ->
-    val trimmed = line.trim()
-    if (trimmed.isEmpty() || trimmed.startsWith('#') || trimmed.startsWith('!') || '=' !in trimmed) return@mapNotNull null
-    val key = trimmed.substringBefore('=').trim()
-    val value = trimmed.substringAfter('=').trim()
-    ModSetting(key, prettyKey(key), typeOf(value), value)
+private fun readProperties(file: File): List<ModSetting> {
+    val comment = mutableListOf<String>()
+    return file.readLines().mapNotNull { line ->
+        val trimmed = line.trim()
+        when {
+            trimmed.startsWith('#') || trimmed.startsWith('!') -> { comment += trimmed.trimStart('#', '!', ' '); null }
+            trimmed.isEmpty() || '=' !in trimmed -> { comment.clear(); null }
+            else -> {
+                val key = trimmed.substringBefore('=').trim()
+                val value = trimmed.substringAfter('=').trim()
+                noted(key, prettyKey(key), typeOf(value), value, comment.toList()).also { comment.clear() }
+            }
+        }
+    }
 }
 
 private fun readJson(file: File): List<ModSetting> {
@@ -202,18 +229,21 @@ private fun readJson(file: File): List<ModSetting> {
 
 private fun readToml(file: File): List<ModSetting> {
     var section = ""
+    val comment = mutableListOf<String>()
     return file.readLines().mapNotNull { line ->
         val trimmed = line.trim()
         when {
-            trimmed.startsWith("[") -> { section = trimmed.trim('[', ']', ' '); null }
-            trimmed.isEmpty() || trimmed.startsWith('#') || '=' !in trimmed -> null
+            trimmed.startsWith("[") -> { section = trimmed.trim('[', ']', ' '); comment.clear(); null }
+            trimmed.startsWith('#') -> { comment += trimmed.trimStart('#', ' '); null }
+            trimmed.isEmpty() || '=' !in trimmed -> { comment.clear(); null }
             else -> {
                 val key = trimmed.substringBefore('=').trim()
                 val raw = trimmed.substringAfter('=').substringBefore(" #").trim()
+                val note = comment.toList().also { comment.clear() }
                 if (raw.startsWith("[") || raw.startsWith("{")) return@mapNotNull null
                 val value = raw.trim('"')
                 val path = if (section.isEmpty()) key else "$section.$key"
-                ModSetting(path, prettyKey(key), if (raw.startsWith('"')) ModValueType.TEXT else typeOf(value), value)
+                noted(path, prettyKey(key), if (raw.startsWith('"')) ModValueType.TEXT else typeOf(value), value, note)
             }
         }
     }

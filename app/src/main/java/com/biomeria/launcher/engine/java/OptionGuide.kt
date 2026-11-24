@@ -1,5 +1,12 @@
 package com.biomeria.launcher.engine.java
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -41,6 +48,25 @@ internal class OptionGuideState {
     var key by mutableStateOf("fov")
     var values by mutableStateOf<Map<String, String>>(emptyMap())
     var shader by mutableStateOf<String?>(null)
+    /** What the options above are showing: Minecraft's options, the list of mods, or one mod's settings. */
+    var mode by mutableStateOf(GuideMode.OPTION)
+    var mods by mutableStateOf<List<InstalledMod>>(emptyList())
+    var mod by mutableStateOf<InstalledMod?>(null)
+    var modSetting by mutableStateOf<GuideModSetting?>(null)
+}
+
+internal enum class GuideMode { OPTION, MODS, MOD }
+
+/** A mod setting as the guide explains it. */
+internal class GuideModSetting(
+    val label: String, val value: String, val note: String?, val type: ModValueType, val level: Float?, val file: String,
+    val choices: List<String>?
+)
+
+/** The first sentence of what an option does, for the line under its name in the options. */
+internal fun shortHelp(key: String): String? = helps[key]?.what?.let { text ->
+    val end = text.indexOf(". ")
+    if (end in 1..90) text.substring(0, end + 1) else text.takeIf { it.length <= 110 }
 }
 
 private enum class Demo { FOV, SHADERS, CHUNKS, LEAVES, FPS, VSYNC, LIGHT, SCALE, CLOUDS, PARTICLES, CREATURES, SOUND, CHAT, WAVE, SWITCH }
@@ -150,46 +176,196 @@ private fun level(key: String, guide: OptionGuideState): Float {
  */
 @Composable
 internal fun OptionGuidePage(guide: OptionGuideState, onBack: () -> Unit, modifier: Modifier = Modifier) {
-    val key = guide.key
-    val help = helpFor(key)
-    val value = shownValue(key, guide)
+    val mod = guide.mod
     Column(modifier.background(Color(0xFF101418))) {
         Row(Modifier.fillMaxWidth().background(Kit.ink).padding(horizontal = 14.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            PixelGlyph(Glyph.EYE, Kit.lilac, Modifier.size(26.dp))
-            Text("Guía de ajustes", Modifier.weight(1f), color = Kit.text, fontFamily = PixelFont, fontSize = TypeScale.title,
-                fontWeight = FontWeight.Bold, maxLines = 1)
+            when {
+                guide.mode == GuideMode.MOD && mod != null -> ModBadge(mod, 34.dp)
+                guide.mode == GuideMode.MODS -> PixelGlyph(Glyph.PUZZLE, Kit.ember, Modifier.size(26.dp))
+                else -> PixelGlyph(Glyph.EYE, Kit.lilac, Modifier.size(26.dp))
+            }
+            Column(Modifier.weight(1f)) {
+                Text(when (guide.mode) {
+                    GuideMode.MOD -> "Estás en los ajustes de"
+                    GuideMode.MODS -> "Estás en"
+                    GuideMode.OPTION -> "Estás en las opciones del juego"
+                }, color = Kit.muted, fontWeight = FontWeight.ExtraBold, fontSize = TypeScale.detail, maxLines = 1)
+                Text(when (guide.mode) {
+                    GuideMode.MOD -> mod?.name ?: "Un mod"
+                    GuideMode.MODS -> "Mods instalados"
+                    GuideMode.OPTION -> "Guía de ajustes"
+                }, color = Kit.text, fontFamily = PixelFont, fontSize = TypeScale.title, fontWeight = FontWeight.Bold, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis)
+            }
             BlockButton(onBack, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) {
-                Text("Volver a ajustes rápidos", fontWeight = FontWeight.ExtraBold, fontSize = TypeScale.body, maxLines = 1)
+                Text("Ajustes rápidos", fontWeight = FontWeight.ExtraBold, fontSize = TypeScale.body, maxLines = 1)
                 Spacer(Modifier.width(8.dp))
                 PadKey("Select")
             }
         }
-        Row(Modifier.weight(1f).fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Column(Modifier.weight(1.1f).fillMaxHeight().kitCard().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Así se ve", Modifier.weight(1f), color = Kit.text, fontFamily = PixelFont, fontSize = TypeScale.section,
-                        fontWeight = FontWeight.Bold)
-                    Text(value, color = Kit.gold, fontFamily = PixelFont, fontSize = TypeScale.section, maxLines = 1)
-                }
-                DemoCanvas(help.demo, level(key, guide), key, Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(8.dp)))
-            }
-            Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(help.title, color = Kit.text, fontFamily = PixelFont, fontSize = TypeScale.title, fontWeight = FontWeight.Bold,
-                    lineHeight = TypeScale.title * 1.1f)
-                Text("Ahora: $value", color = Kit.gold, fontFamily = PixelFont, fontSize = TypeScale.section, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis)
-                GuideBlock("Qué hace", help.what, Kit.line)
-                GuideBlock("Cuándo cambiarlo", help.change, Kit.line)
-                GuideBlock("Recomendado en la Thor", help.best, Kit.grass)
+        val page: Any = when (guide.mode) {
+            GuideMode.OPTION -> "o:" + guide.key
+            GuideMode.MODS -> "l:" + (mod?.id ?: "")
+            GuideMode.MOD -> "m:" + (mod?.id ?: "") + ":" + (guide.modSetting?.label ?: "")
+        }
+        AnimatedContent(page, Modifier.weight(1f).fillMaxWidth(), transitionSpec = {
+            (fadeIn(tween(220)) + slideInHorizontally(tween(260)) { it / 14 }) togetherWith fadeOut(tween(140))
+        }, label = "guide") { _ ->
+            when (guide.mode) {
+                GuideMode.OPTION -> OptionHelp(guide)
+                GuideMode.MODS -> ModsHelp(guide)
+                GuideMode.MOD -> ModSettingHelp(guide)
             }
         }
         Row(Modifier.fillMaxWidth().background(Kit.ink).padding(horizontal = 14.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            HintPair("✛", "Elige un ajuste arriba")
-            HintPair("A", "Cambiarlo")
-            HintPair("Select", "Volver")
+            HintPair("✛", if (guide.mode == GuideMode.MODS) "Elige un mod arriba" else "Elige un ajuste arriba")
+            HintPair("A", if (guide.mode == GuideMode.MODS) "Abrirlo" else "Cambiarlo")
+            HintPair("B", if (guide.mode == GuideMode.MOD) "Volver a Mods" else "Cerrar")
         }
+    }
+}
+
+@Composable
+private fun OptionHelp(guide: OptionGuideState) {
+    val key = guide.key
+    val help = helpFor(key)
+    val value = shownValue(key, guide)
+    Row(Modifier.fillMaxSize().padding(14.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(Modifier.weight(1.1f).fillMaxHeight().kitCard().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Así está ahora", Modifier.weight(1f), color = Kit.text, fontFamily = PixelFont, fontSize = TypeScale.section,
+                    fontWeight = FontWeight.Bold)
+                ValueChip(value)
+            }
+            DemoCanvas(help.demo, level(key, guide), key, Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(8.dp)))
+        }
+        Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(help.title, color = Kit.text, fontFamily = PixelFont, fontSize = TypeScale.title, fontWeight = FontWeight.Bold,
+                lineHeight = TypeScale.title * 1.1f)
+            GuideBlock("Qué hace", help.what, Kit.line)
+            GuideBlock("Cuándo cambiarlo", help.change, Kit.line)
+            GuideBlock("Recomendado en la Thor", help.best, Kit.grass)
+        }
+    }
+}
+
+@Composable
+private fun ValueChip(value: String) {
+    Text(value, Modifier.background(Kit.gold, RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 2.dp),
+        color = Kit.ink, fontFamily = PixelFont, fontSize = TypeScale.section, maxLines = 1, overflow = TextOverflow.Ellipsis)
+}
+
+/** A mod's own picture, or a coloured square with its first letter. */
+@Composable
+internal fun ModBadge(mod: InstalledMod, size: androidx.compose.ui.unit.Dp) {
+    val icon = mod.icon
+    if (icon != null) androidx.compose.foundation.Image(icon, null, Modifier.size(size).clip(RoundedCornerShape(size / 5)),
+        filterQuality = androidx.compose.ui.graphics.FilterQuality.None)
+    else Box(Modifier.size(size).background(mod.color, RoundedCornerShape(size / 5)), contentAlignment = Alignment.Center) {
+        Text(mod.name.take(1).uppercase(), color = Kit.ink, fontFamily = PixelFont, fontWeight = FontWeight.Bold,
+            fontSize = androidx.compose.ui.unit.TextUnit(size.value * .5f, androidx.compose.ui.unit.TextUnitType.Sp))
+    }
+}
+
+@Composable
+private fun ModsHelp(guide: OptionGuideState) {
+    val chosen = guide.mod
+    Row(Modifier.fillMaxSize().padding(14.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            guide.mods.forEach { mod ->
+                val on = mod.id == chosen?.id
+                val shift by animateDpAsState(if (on) 8.dp else 0.dp, tween(220), label = "shift")
+                Row(Modifier.fillMaxWidth().offset(x = shift).kitCard(if (on) Kit.raised else Kit.card, if (on) mod.color else Kit.line)
+                    .padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ModBadge(mod, 30.dp)
+                    Text(mod.name, Modifier.weight(1f), color = Kit.text, fontWeight = FontWeight.ExtraBold, fontSize = TypeScale.body,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(if (mod.settingCount > 0) "${mod.settingCount}" else "—", color = Kit.muted, fontWeight = FontWeight.Bold,
+                        fontSize = TypeScale.detail)
+                }
+            }
+        }
+        Column(Modifier.weight(1.1f).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (chosen == null) GuideBlock("Tus mods", "Elige un mod arriba para ver qué hace y abrir sus ajustes.", Kit.line)
+            else {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ModBadge(chosen, 52.dp)
+                    Column {
+                        Text(chosen.name, color = Kit.text, fontFamily = PixelFont, fontSize = TypeScale.title, fontWeight = FontWeight.Bold)
+                        chosen.version?.let { Text("Versión $it", color = Kit.muted, fontWeight = FontWeight.Bold, fontSize = TypeScale.detail) }
+                    }
+                }
+                GuideBlock("Qué hace", chosen.description ?: "Su autor no dejó una descripción.", Kit.line)
+                GuideBlock("Sus ajustes", if (chosen.settingCount > 0) "Tiene ${chosen.settingCount} ajustes que Biomeria puede cambiar. Aprieta A para abrirlos."
+                    else "No tiene ajustes que Biomeria pueda leer: funciona solo, o se configura dentro del juego.", chosen.color)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModSettingHelp(guide: OptionGuideState) {
+    val mod = guide.mod
+    val setting = guide.modSetting
+    Row(Modifier.fillMaxSize().padding(14.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(Modifier.weight(1f).fillMaxHeight().kitCard().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Así está ahora", Modifier.weight(1f), color = Kit.text, fontFamily = PixelFont, fontSize = TypeScale.section,
+                    fontWeight = FontWeight.Bold)
+                setting?.let { ValueChip(it.value) }
+            }
+            Box(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(8.dp)).background(Kit.ink), contentAlignment = Alignment.Center) {
+                when {
+                    setting == null -> mod?.let { ModBadge(it, 96.dp) }
+                    setting.type == ModValueType.BOOLEAN -> DemoCanvas(Demo.SWITCH, if (setting.value == "Sí") 1f else 0f, "", Modifier.fillMaxSize())
+                    setting.level != null -> LevelDemo(setting.level, setting.value)
+                    setting.choices != null -> Column(verticalArrangement = Arrangement.spacedBy(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        setting.choices.forEach { choice ->
+                            val on = choice == setting.value
+                            Text(choice, Modifier.background(if (on) Kit.sky else Kit.raised, RoundedCornerShape(8.dp))
+                                .padding(horizontal = 14.dp, vertical = 4.dp), color = if (on) Kit.ink else Kit.muted,
+                                fontWeight = FontWeight.ExtraBold, fontSize = TypeScale.body)
+                        }
+                    }
+                    else -> Text(setting.value, color = Kit.gold, fontFamily = PixelFont, fontSize = TypeScale.title)
+                }
+            }
+        }
+        Column(Modifier.weight(1.1f).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (setting == null) {
+                GuideBlock("Qué hace ${mod?.name ?: "este mod"}", mod?.description ?: "Su autor no dejó una descripción.", Kit.line)
+                GuideBlock("Sus ajustes", "Elige uno arriba y aquí verás qué hace.", Kit.line)
+            } else {
+                Text(setting.label, color = Kit.text, fontFamily = PixelFont, fontSize = TypeScale.title, fontWeight = FontWeight.Bold,
+                    lineHeight = TypeScale.title * 1.1f)
+                GuideBlock("Qué hace", setting.note ?: genericModHelp(setting, mod?.name), Kit.line)
+                GuideBlock("Cuándo se aplica", "Se guarda al momento en ${setting.file}. El mod lo lee al volver a abrir el juego.", Kit.line)
+                if (setting.note == null) GuideBlock("Ojo", "${mod?.name ?: "Este mod"} no trae explicación para este ajuste. Si no sabes qué hace, mejor déjalo como está.", Kit.gold)
+            }
+        }
+    }
+}
+
+private fun genericModHelp(setting: GuideModSetting, mod: String?): String = when (setting.type) {
+    ModValueType.BOOLEAN -> "Enciende o apaga «${setting.label}» en ${mod ?: "el mod"}."
+    ModValueType.NUMBER -> "Un número que ${mod ?: "el mod"} usa para «${setting.label}». Cámbialo de a poco y prueba."
+    ModValueType.TEXT -> if (setting.choices != null) "Elige cómo funciona «${setting.label}» entre ${setting.choices.size} modos."
+        else "Un texto que ${mod ?: "el mod"} usa internamente. Biomeria lo muestra pero no lo cambia."
+}
+
+@Composable
+private fun LevelDemo(level: Float, value: String) {
+    val shown by animateFloatAsState(level, tween(260), label = "level")
+    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row { Text("Menos", Modifier.weight(1f), color = Kit.muted, fontWeight = FontWeight.Bold, fontSize = TypeScale.detail)
+            Text("Más", color = Kit.muted, fontWeight = FontWeight.Bold, fontSize = TypeScale.detail) }
+        Box(Modifier.fillMaxWidth().height(14.dp).background(Kit.raised, RoundedCornerShape(7.dp))) {
+            Box(Modifier.fillMaxWidth(shown.coerceIn(0.02f, 1f)).fillMaxHeight().background(Kit.grass, RoundedCornerShape(7.dp)))
+        }
+        Text(value, Modifier.align(Alignment.CenterHorizontally), color = Kit.gold, fontFamily = PixelFont, fontSize = TypeScale.title)
     }
 }
 

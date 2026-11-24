@@ -548,7 +548,7 @@ private fun DualScreenPanel(
         OptionGuidePage(activity.optionGuide, { activity.closeFullOptions() },
             Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, null) {}.safeDrawingPadding())
     }
-    if (shaderPicker) ShaderPicker(shaders, onClose = { shaderPicker = false }) { pack -> scope.launch { shaders.choose(pack) } }
+    if (shaderPicker) ShaderPicker(shaders, onClose = { shaderPicker = false }) { pack -> shaderPicker = false; ShaderJob.start(shaders, pack) }
     // The stack follows the finger while it is being dragged.
     val finger = dragState.finger
     val icon = dragState.icon
@@ -561,6 +561,7 @@ private fun DualScreenPanel(
             if (icon != null) Image(icon, null, Modifier.fillMaxSize(.8f), filterQuality = FilterQuality.None)
         }
     }
+    ShaderJobLowerOverlay()
     }
     }
 }
