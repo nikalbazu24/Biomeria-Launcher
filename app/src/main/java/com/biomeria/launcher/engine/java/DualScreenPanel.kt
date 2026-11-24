@@ -394,8 +394,8 @@ private fun DualScreenPanel(
             TipPart("Y", true), TipPart("Craftear todo"), TipPart("X", true), TipPart("Categoría"), TipPart("B", true), TipPart("Volver"))
         shaderPicker -> listOf(TipPart("B", true), TipPart("Cerrar shaders"))
         page == PanelPage.OPTIONS && optionGroup == null -> listOf(TipPart("✛", true), TipPart("Elegir"), TipPart("A", true), TipPart("Abrir"),
-            TipPart("X", true), TipPart("Y", true), TipPart("Campo de visión"), TipPart("B", true), TipPart("Devolver mando"))
-        page == PanelPage.OPTIONS -> listOf(TipPart("LB/RB", true), TipPart("Secciones"), TipPart("B", true), TipPart("Volver a Ajustes"))
+            TipPart("X/Y", true), TipPart("Visión"), TipPart("Select", true), TipPart("Ajustes completos"))
+        page == PanelPage.OPTIONS -> listOf(TipPart("LB/RB", true), TipPart("Secciones"), TipPart("B", true), TipPart("Volver"))
         padFocus != null -> listOfNotNull(TipPart("A", true), TipPart("Tomar o dejar"), TipPart("X", true), TipPart("Mover rápido a la otra parte"),
             TipPart("Y", true), TipPart("La mitad"), TipPart("L2", true), TipPart("Tirar 1"),
             TipPart("Start", true).takeIf { searchable }, TipPart("Buscar").takeIf { searchable },
@@ -423,6 +423,20 @@ private fun DualScreenPanel(
     }
     CompositionLocalProvider(LocalSlotDrag provides dragState, LocalPanelLook provides look,
         androidx.compose.ui.platform.LocalDensity provides scaled) {
+    // Select on the quick settings opens the full options above; this screen turns into their guide.
+    SideEffect { activity.quickSettingsShowing = page == PanelPage.OPTIONS }
+    val guideOpen = activity.optionGuide.open
+    LaunchedEffect(guideOpen) {
+        if (!guideOpen) {
+            gameOptions?.reload()
+            shaders.load()
+        }
+    }
+    if (guideOpen) {
+        OptionGuidePage(activity.optionGuide, { activity.closeFullOptions() },
+            Modifier.fillMaxSize().safeDrawingPadding())
+        return
+    }
     Box(Modifier.fillMaxSize().onGloballyPositioned { rootOrigin = it.positionInRoot() }) {
     Column(Modifier.fillMaxSize().background(look.background).safeDrawingPadding()
         .then(if (customizing) Modifier.blur(14.dp) else Modifier)) {
@@ -446,10 +460,11 @@ private fun DualScreenPanel(
                     onFov = { degrees -> gameOptions?.change("fov", fovRaw(degrees)) },
                     status = shaders.status ?: gameOptions?.status,
                     shaderCard = { modifier -> ShaderCard(shaders, { shaderPicker = true }, modifier, pictureHeight = 40.dp) },
+                    onFullOptions = { activity.openFullOptions() },
                     modifier = fill)
                 bridge == null -> Column(fill, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("El inventario, el crafteo y el mapa necesitan Minecraft Java 1.21.4 con Fabric.",
-                        color = Biomeria.colors.textPrimary, style = MaterialTheme.typography.bodyLarge)
+                        color = Biomeria.colors.textPrimary, style = PanelText.body)
                     Text("Barra rápida", color = Biomeria.colors.textMuted, fontWeight = FontWeight.ExtraBold)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         for (slot in 0..8) McSlot(slot, null, 52.dp, allowGameInput, onHotbar,
@@ -457,7 +472,7 @@ private fun DualScreenPanel(
                     }
                 }
                 live == null -> Text("Entra a un mundo para conectar el panel.", color = Biomeria.colors.textPrimary,
-                    style = MaterialTheme.typography.bodyLarge)
+                    style = PanelText.body)
                 showingMap -> TerrainMapPane(bridge, fill, controllerActive = controllerActive, onPadInput = { mapPadInput = it })
                 page == PanelPage.MAP -> Column(fill, verticalArrangement = Arrangement.spacedBy(10.dp),
                     horizontalAlignment = Alignment.CenterHorizontally) {
@@ -471,7 +486,7 @@ private fun DualScreenPanel(
                 menuPage != null && page == PanelPage.INVENTORY && live.layout != PanelLayout.PERSONAL ->
                     Column(fill, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(live.menuTitle.ifBlank { "Hay un menú abierto" }, color = Biomeria.colors.textPrimary,
-                            style = MaterialTheme.typography.titleMedium)
+                            style = PanelText.section)
                         if (menuSession != null) LauncherButton("Mostrar aquí", { openPage(menuPage) }, primary = true)
                         else Text("Úsalo en la pantalla del juego.", color = Biomeria.colors.textMuted)
                     }
@@ -498,7 +513,7 @@ private fun DualScreenPanel(
             if (!interactive && live != null && page != PanelPage.OPTIONS && page != PanelPage.MAP) {
                 Text("Vuelve a la vista de juego para mover objetos.", Modifier.align(Alignment.BottomCenter)
                     .background(Color(0xE60B0E11), RoundedCornerShape(4.dp)).padding(horizontal = 12.dp, vertical = 6.dp),
-                    color = Biomeria.colors.textPrimary, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                    color = Biomeria.colors.textPrimary, fontWeight = FontWeight.Bold, style = PanelText.body)
             }
         }
 
@@ -571,7 +586,7 @@ private fun tabFace(page: PanelPage, storageTitle: String?) = when (page) {
     PanelPage.INVENTORY -> TabFace("Mochila", Glyph.BAG, Kit.grass)
     PanelPage.CRAFT -> TabFace("Crafteo", Glyph.TABLE, Kit.gold)
     PanelPage.MAP -> TabFace("Mapa", Glyph.MAP, Kit.sky)
-    PanelPage.OPTIONS -> TabFace("Ajustes", Glyph.GEAR, Kit.lilac)
+    PanelPage.OPTIONS -> TabFace("Rápidos", Glyph.BOLT, Kit.lilac)
     PanelPage.STORAGE -> TabFace(storageTitle ?: "Cofre", Glyph.CHEST, Kit.wood)
 }
 
@@ -597,7 +612,7 @@ private fun PanelTabBar(
         if (closeLabel != null) {
             BlockButton(onClose, Modifier.padding(bottom = 6.dp).heightIn(min = 42.dp), BlockButtons.danger,
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
-                Text("‹ $closeLabel", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                Text("‹ $closeLabel", fontWeight = FontWeight.ExtraBold, style = PanelText.body, maxLines = 1)
                 Spacer(Modifier.width(6.dp))
                 PadKey("B")
             }
@@ -619,7 +634,7 @@ private fun PanelTabBar(
                 horizontalArrangement = Arrangement.spacedBy(7.dp, Alignment.CenterHorizontally)
             ) {
                 PixelGlyph(face.glyph, if (chosen) Kit.ink else face.color, Modifier.size(if (chosen) 26.dp else 22.dp))
-                Text(face.label, color = if (chosen) Kit.ink else Kit.muted, fontFamily = PixelFont, fontSize = 18.sp,
+                Text(face.label, color = if (chosen) Kit.ink else Kit.muted, fontFamily = PixelFont, fontSize = TypeScale.section,
                     fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
@@ -632,7 +647,7 @@ private fun ShoulderKey(key: String) {
     Box(Modifier.padding(bottom = 8.dp).size(42.dp, 34.dp).background(Kit.raised, RoundedCornerShape(7.dp))
         .drawBehind { drawRect(Color(0x55000000), Offset(0f, size.height - 3.dp.toPx()), Size(size.width, 3.dp.toPx())) },
         contentAlignment = Alignment.Center) {
-        Text(key, color = Kit.muted, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+        Text(key, color = Kit.muted, fontWeight = FontWeight.ExtraBold, style = PanelText.body)
     }
 }
 
@@ -650,7 +665,7 @@ private fun ControllerChip(active: Boolean, onRelease: () -> Unit) {
                 else "El mando controla el juego. Mantén Select para usarlo aquí" }
             .padding(horizontal = 8.dp, vertical = 5.dp),
         color = if (active) palette.ink else palette.textPrimary, fontWeight = FontWeight.ExtraBold,
-        style = MaterialTheme.typography.labelMedium, maxLines = 1)
+        style = PanelText.detail, maxLines = 1)
 }
 
 /**

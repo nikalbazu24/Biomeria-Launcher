@@ -188,7 +188,7 @@ internal fun TerrainWaypointPane(
                 editingExisting -> "Editar marca"
                 else -> "Nueva marca"
             }
-            Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+            Text(title, Modifier.weight(1f), style = PanelText.section)
             TextButton(onClick = { padAction(PanelPadAction.BACK) }) { Text(if (point == null) "Volver al mapa" else "Atrás") }
         }
         val hint = when {
@@ -198,11 +198,11 @@ internal fun TerrainWaypointPane(
             point != null -> "↑/↓ · Campo   ←/→ · Cambiar   A · Elegir   B · Volver"
             else -> "↑/↓ · Marca   A · Seguir   X · Editar   Y · Dejar de seguir   R3 · Nueva"
         }
-        hint?.let { Text(it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall) }
+        hint?.let { Text(it, color = MaterialTheme.colorScheme.primary, style = PanelText.detail) }
 
         when {
             point != null && confirmingDelete -> {
-                Text("¿Borrar «${point.name}» de este mapa?", style = MaterialTheme.typography.bodyMedium)
+                Text("¿Borrar «${point.name}» de este mapa?", style = PanelText.body)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     OutlinedButton(onClick = { confirmingDelete = false }) { Text("Cancelar") }
                     Button(onClick = { delete(point) }) { Text("Borrar marca") }
@@ -219,7 +219,7 @@ internal fun TerrainWaypointPane(
             )
             point != null -> {
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("X ${point.x} · Y ${point.y} · Z ${point.z}", style = MaterialTheme.typography.labelMedium)
+                    Text("X ${point.x} · Y ${point.y} · Z ${point.z}", style = PanelText.detail)
                     WaypointFieldButton("Nombre · ${point.name.ifBlank { "Escribe un nombre" }}",
                         controllerActive && field == WaypointField.NAME, onClick = { editName(point) })
                     WaypointFieldButton("Color · ${point.color.label}", controllerActive && field == WaypointField.COLOR,
@@ -278,7 +278,7 @@ private fun WaypointFieldButton(
         contentPadding = PaddingValues(horizontal = 10.dp)) {
         if (point != null) Canvas(Modifier.size(24.dp)) { drawWaypoint(point, center, 5.dp.toPx(), false) }
         Text(label, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        if (detail != null) Text(detail, Modifier.padding(start = 5.dp), style = MaterialTheme.typography.labelMedium)
+        if (detail != null) Text(detail, Modifier.padding(start = 5.dp), style = PanelText.detail)
     }
 }
 

@@ -12,6 +12,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import kotlinx.coroutines.launch
@@ -107,8 +112,8 @@ internal fun BiomeriaPauseMenu(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 BiomeriaMark(Modifier.size(28.dp, 30.dp))
                 Column {
-                    Text("Juego en pausa", fontFamily = PixelFont, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                    Text("$title · $version", color = palette.textMuted, style = MaterialTheme.typography.labelSmall,
+                    Text("Juego en pausa", fontFamily = PixelFont, fontSize = TypeScale.section, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("$title · $version", color = palette.textMuted, style = PanelText.detail,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
@@ -123,13 +128,13 @@ internal fun BiomeriaPauseMenu(
             }
             PauseButton(if (saving) "Guardando el mundo…" else "Guardar y salir", BlockButtons.danger, enabled = !saving,
                 onClick = actions.saveAndQuit)
-            Text("A elegir · B o Start volver", color = palette.textMuted, style = MaterialTheme.typography.labelSmall)
+            Text("A elegir · B o Start volver", color = palette.textMuted, style = PanelText.detail)
         }
         Column(
             Modifier.weight(1f).fillMaxHeight().padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(greeting, fontFamily = PixelFont, fontSize = 26.sp, color = Color.White, fontWeight = FontWeight.Bold)
+            Text(greeting, fontFamily = PixelFont, fontSize = TypeScale.title, color = Color.White, fontWeight = FontWeight.Bold)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 InfoCard("Esta sesión", if (minutes < 60) "$minutes min" else "${minutes / 60} h ${minutes % 60} min",
                     Color(0xFF7BC74D), Modifier.weight(1f))
@@ -139,9 +144,9 @@ internal fun BiomeriaPauseMenu(
             Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f).fillMaxHeight().background(Color(0xE6101519), PanelShape)
                     .border(3.dp, Color(0xFF7BC74D), PanelShape).padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("CONSEJO", fontFamily = PixelFont, fontSize = 13.sp, color = Color(0xFFA6E07E))
-                    Text(tip.title, fontFamily = PixelFont, fontSize = 18.sp, color = Color.White, fontWeight = FontWeight.Bold)
-                    Text(tip.parts.joinToString(" ") { it.text }, color = Color(0xFFDCE3E6), style = MaterialTheme.typography.bodyMedium)
+                    Text("CONSEJO", fontFamily = PixelFont, fontSize = TypeScale.detail, color = Color(0xFFA6E07E))
+                    Text(tip.title, fontFamily = PixelFont, fontSize = TypeScale.section, color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(tip.parts.joinToString(" ") { it.text }, color = Color(0xFFDCE3E6), style = PanelText.body)
                 }
                 if (bridge != null) {
                     val look = rememberCharacterLook()
@@ -160,7 +165,7 @@ internal fun BiomeriaPauseMenu(
 private fun PauseButton(label: String, colors: BlockColors, modifier: Modifier = Modifier, enabled: Boolean = true, onClick: () -> Unit) {
     BlockButton(onClick, modifier.fillMaxWidth().heightIn(min = 46.dp), colors, enabled,
         PaddingValues(horizontal = 14.dp, vertical = 6.dp)) {
-        Text(label, Modifier.fillMaxWidth(), fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleSmall,
+        Text(label, Modifier.fillMaxWidth(), fontWeight = FontWeight.ExtraBold, style = PanelText.body,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
@@ -168,14 +173,14 @@ private fun PauseButton(label: String, colors: BlockColors, modifier: Modifier =
 @Composable
 private fun InfoCard(label: String, value: String, color: Color, modifier: Modifier) {
     Column(modifier.background(Color(0xE6101519), PanelShape).border(3.dp, color, PanelShape).padding(12.dp)) {
-        Text(label, color = color, fontFamily = PixelFont, fontSize = 13.sp)
-        Text(value, color = Color.White, fontFamily = PixelFont, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Text(label, color = color, fontFamily = PixelFont, fontSize = TypeScale.detail)
+        Text(value, color = Color.White, fontFamily = PixelFont, fontSize = TypeScale.title, fontWeight = FontWeight.Bold)
     }
 }
 
 /** Every Minecraft option, plus the mods' own settings, in Biomeria's look: sections on the left, cards on the right. */
 @Composable
-internal fun BiomeriaOptionsScreen(gameDirectory: File, bridge: DualScreenBridge?, onClose: () -> Unit) {
+internal fun BiomeriaOptionsScreen(gameDirectory: File, bridge: DualScreenBridge?, guide: OptionGuideState? = null, onClose: () -> Unit) {
     val palette = Biomeria.colors
     val live = rememberLiveGameOptions(gameDirectory, bridge) ?: return
     val shaders = rememberShaderController(gameDirectory, bridge)
@@ -192,12 +197,18 @@ internal fun BiomeriaOptionsScreen(gameDirectory: File, bridge: DualScreenBridge
         if (group == OptionGroup2.MODS && mods == null) mods = withContext(Dispatchers.IO) { readModConfigs(gameDirectory) }
     }
     val status = if (picking) null else modStatus ?: live.status
+    // Tell the guide on the lower screen what is being touched and what everything is set to.
+    fun help(key: String) { guide?.key = key }
+    LaunchedEffect(live.values) { guide?.values = live.values }
+    LaunchedEffect(shaders.settings) { guide?.shader = shaders.settings?.active?.title }
+    LaunchedEffect(group) { help(gameOptionGroups[group]?.firstOrNull()?.key?.takeIf { group != OptionGroup2.VIDEO } ?: "fov") }
 
     Box(Modifier.fillMaxSize().background(Color(0xF20B0E11)).onPreviewKeyEvent { event ->
         if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
         val groups = OptionGroup2.entries
         when (event.key) {
             Key.ButtonB -> { if (picking) picking = false else onClose(); true }
+            // With the guide below, Select is handled by the activity (back to quick settings).
             Key.ButtonL1 -> { if (!picking) group = groups[(group.ordinal + groups.size - 1) % groups.size]; true }
             Key.ButtonR1 -> { if (!picking) group = groups[(group.ordinal + 1) % groups.size]; true }
             else -> false
@@ -208,7 +219,7 @@ internal fun BiomeriaOptionsScreen(gameDirectory: File, bridge: DualScreenBridge
                 Modifier.fillMaxHeight().width(212.dp).background(Color(0xFF0E1317)).padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Text("Opciones", fontFamily = PixelFont, fontSize = 24.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                Text("Opciones", fontFamily = PixelFont, fontSize = TypeScale.title, color = Color.White, fontWeight = FontWeight.Bold)
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     OptionGroup2.entries.forEachIndexed { index, entry ->
                         val selected = entry == group
@@ -227,7 +238,7 @@ internal fun BiomeriaOptionsScreen(gameDirectory: File, bridge: DualScreenBridge
                     Spacer(Modifier.width(6.dp))
                     PadKey("B")
                 }
-                Text("L1 y R1 cambian de sección", color = palette.textMuted, style = MaterialTheme.typography.labelSmall)
+                Text("L1 y R1 cambian de sección", color = palette.textMuted, style = PanelText.detail)
             }
             Column(
                 Modifier.weight(1f).fillMaxHeight().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -236,23 +247,25 @@ internal fun BiomeriaOptionsScreen(gameDirectory: File, bridge: DualScreenBridge
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     PixelGlyph(group.glyph, Color(group.color), Modifier.size(28.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(group.label, fontFamily = PixelFont, fontSize = 24.sp, color = Color.White, fontWeight = FontWeight.Bold)
-                        Text(group.detail, color = palette.textMuted, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                        Text(group.label, fontFamily = PixelFont, fontSize = TypeScale.title, color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(group.detail, color = palette.textMuted, style = PanelText.detail, maxLines = 1)
                     }
-                    status?.let { Text(it, color = Color(0xFFA6E07E), fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelMedium,
+                    status?.let { Text(it, color = Color(0xFFA6E07E), fontWeight = FontWeight.ExtraBold, style = PanelText.detail,
                         maxLines = 2, modifier = Modifier.widthIn(max = 220.dp)) }
                 }
                 if (group != OptionGroup2.MODS) {
                     Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (group == OptionGroup2.VIDEO) {
                             Row(Modifier.fillMaxWidth().height(184.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                FovCard(fovDegrees(live.values["fov"]), { live.change("fov", fovRaw(it)) }, Modifier.weight(1.15f).fillMaxHeight())
-                                ShaderCard(shaders, { picking = true }, Modifier.weight(1f).fillMaxHeight())
+                                FovCard(fovDegrees(live.values["fov"]), { live.change("fov", fovRaw(it)); help("fov") },
+                                    Modifier.weight(1.15f).fillMaxHeight().helpOn("fov", ::help))
+                                ShaderCard(shaders, { picking = true; help("shaders") }, Modifier.weight(1f).fillMaxHeight().helpOn("shaders", ::help))
                             }
                         }
                         gameOptionGroups.getValue(group).chunked(2).forEach { pair ->
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                pair.forEach { option -> OptionCell(option, live.values[option.key], live::change, Modifier.weight(1f).heightIn(min = 76.dp)) }
+                                pair.forEach { option -> OptionCell(option, live.values[option.key], live::change,
+                                    Modifier.weight(1f).heightIn(min = 76.dp).helpOn(option.key, ::help)) }
                                 if (pair.size == 1) Spacer(Modifier.weight(1f))
                             }
                         }
@@ -268,9 +281,9 @@ internal fun BiomeriaOptionsScreen(gameDirectory: File, bridge: DualScreenBridge
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 BlockButton({ modIndex = (modIndex - 1 + list.size) % list.size; modChanges = emptyMap() }) { Text("‹") }
                                 Column(Modifier.weight(1f)) {
-                                    Text(current.modName, fontFamily = PixelFont, fontSize = 20.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                                    Text(current.modName, fontFamily = PixelFont, fontSize = TypeScale.section, color = Color.White, fontWeight = FontWeight.Bold)
                                     Text("${modIndex + 1} de ${list.size} · se aplica al volver a abrir el juego",
-                                        color = palette.textMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1,
+                                        color = palette.textMuted, style = PanelText.detail, maxLines = 1,
                                         overflow = TextOverflow.Ellipsis)
                                 }
                                 BlockButton({ modIndex = (modIndex + 1) % list.size; modChanges = emptyMap() }) { Text("›") }
@@ -296,6 +309,16 @@ internal fun BiomeriaOptionsScreen(gameDirectory: File, bridge: DualScreenBridge
     }
 }
 
+/** Reports [key] to the guide when this part gets the controller's focus or a finger touches it. */
+private fun Modifier.helpOn(key: String, onHelp: (String) -> Unit): Modifier = this
+    .onFocusChanged { if (it.hasFocus) onHelp(key) }
+    .pointerInput(key) {
+        awaitEachGesture {
+            awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            onHelp(key)
+        }
+    }
+
 /** One option as a card: name and value on top, the control under it. */
 @Composable
 private fun OptionCell(option: GameOption, raw: String?, onChange: (String, String) -> Unit, modifier: Modifier = Modifier) {
@@ -320,7 +343,7 @@ private fun OptionCell(option: GameOption, raw: String?, onChange: (String, Stri
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(option.label, Modifier.weight(1f), color = Color.White, fontWeight = FontWeight.ExtraBold, maxLines = 1,
                         overflow = TextOverflow.Ellipsis)
-                    Text(option.format(snap(shown)), color = Color(0xFFF5E663), fontFamily = PixelFont, fontSize = 16.sp)
+                    Text(option.format(snap(shown)), color = Color(0xFFF5E663), fontFamily = PixelFont, fontSize = TypeScale.body)
                 }
                 Slider(shown.toFloat(), { dragging = it },
                     Modifier.fillMaxWidth().height(30.dp).semantics { contentDescription = option.label },
@@ -361,7 +384,7 @@ private fun ModRow(setting: ModSetting, value: String, onChange: (String) -> Uni
                 fun show(next: Double) = if (integer) next.toLong().toString()
                     else String.format(java.util.Locale.ROOT, "%.2f", next).trimEnd('0').trimEnd('.')
                 BlockButton({ onChange(show(number - step)) }) { Text("−", fontWeight = FontWeight.ExtraBold) }
-                Text(value, Modifier.widthIn(min = 72.dp), color = Color(0xFFF5E663), fontFamily = PixelFont, fontSize = 16.sp,
+                Text(value, Modifier.widthIn(min = 72.dp), color = Color(0xFFF5E663), fontFamily = PixelFont, fontSize = TypeScale.body,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                 BlockButton({ onChange(show(number + step)) }) { Text("+", fontWeight = FontWeight.ExtraBold) }
             }

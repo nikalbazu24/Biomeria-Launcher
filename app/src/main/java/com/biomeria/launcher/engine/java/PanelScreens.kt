@@ -85,18 +85,18 @@ internal fun InventoryPage(
                                 .border(3.dp, Color(0xFFF5E663)).clickable(onClick = onSearch).padding(horizontal = 12.dp),
                                 contentAlignment = Alignment.CenterStart) {
                                 Text(query.ifBlank { "Buscar: escribe “pico”, “madera”…" }, color = if (query.isBlank()) look.muted else look.ink,
-                                    fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium, maxLines = 1,
+                                    fontWeight = FontWeight.ExtraBold, style = PanelText.section, maxLines = 1,
                                     overflow = TextOverflow.Ellipsis)
                             }
                             PanelButton(onClearSearch, Modifier.semantics { contentDescription = "Cerrar búsqueda" }) {
-                                Text("✕", color = look.ink, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium)
+                                Text("✕", color = look.ink, fontWeight = FontWeight.ExtraBold, style = PanelText.section)
                             }
                         } else {
-                            Text("Inventario", Modifier.weight(1f), color = look.ink, fontFamily = PixelFont, fontSize = 22.sp,
+                            Text("Inventario", Modifier.weight(1f), color = look.ink, fontFamily = PixelFont, fontSize = TypeScale.title,
                                 fontWeight = FontWeight.Bold)
                             PanelButton(onSearch, Modifier.semantics { contentDescription = "Buscar objeto" }) {
                                 SearchGlyph(look.ink)
-                                Text("Buscar", color = look.ink, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+                                Text("Buscar", color = look.ink, fontWeight = FontWeight.ExtraBold, style = PanelText.body)
                             }
                         }
                     }
@@ -110,7 +110,7 @@ internal fun InventoryPage(
                 }
                 Column(Modifier.fillMaxWidth().panelFrame().padding(horizontal = 10.dp, vertical = 6.dp),
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("Barra rápida", Modifier.width(slot * 9 + gap * 8), color = look.muted, fontFamily = PixelFont, fontSize = 15.sp)
+                    Text("Barra rápida", Modifier.width(slot * 9 + gap * 8), color = look.muted, fontFamily = PixelFont, fontSize = TypeScale.body)
                     Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
                         val start = live.layout.hotbarStart
                         for (number in start until start + 9) McSlot(number, live, slot, interactive, onTap,
@@ -143,7 +143,7 @@ private fun CraftShortcut(live: PanelInventory, modifier: Modifier, onOpen: () -
     val side = live.layout.craftSize
     Column(modifier.panelCard().clickable(role = Role.Button, onClick = onOpen).padding(12.dp),
         verticalArrangement = Arrangement.SpaceBetween) {
-        Text("Crafteo", color = look.ink, fontFamily = PixelFont, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text("Crafteo", color = look.ink, fontFamily = PixelFont, fontSize = TypeScale.section, fontWeight = FontWeight.Bold)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 repeat(side) { row ->
@@ -155,12 +155,12 @@ private fun CraftShortcut(live: PanelInventory, modifier: Modifier, onOpen: () -
                     }
                 }
             }
-            Text("→", color = look.ink, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
+            Text("→", color = look.ink, fontWeight = FontWeight.ExtraBold, fontSize = TypeScale.section)
             val result = live.slots.getOrNull(0)?.takeIf { it.count > 0 }
             McIcon(result?.id.orEmpty(), 38.dp, count = result?.count ?: 0)
         }
         Text("Abrir crafteo y recetas →", color = look.muted, fontWeight = FontWeight.ExtraBold,
-            style = MaterialTheme.typography.labelMedium, maxLines = 2)
+            style = PanelText.detail, maxLines = 2)
     }
 }
 
@@ -183,9 +183,9 @@ private fun ItemActions(
                     McIcon(held.id, 48.dp, count = held.count)
                     Column(Modifier.weight(1f)) {
                         Text("Llevas ${held.name}", color = look.ink, fontWeight = FontWeight.ExtraBold,
-                            style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            style = PanelText.section, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text("Toca la casilla donde lo quieres dejar.", color = look.muted, fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.bodyMedium)
+                            style = PanelText.body)
                     }
                 }
             }
@@ -196,13 +196,13 @@ private fun ItemActions(
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     McIcon(item.id, 48.dp)
                     Column(Modifier.weight(1f)) {
-                        Text(item.name, color = look.ink, fontFamily = PixelFont, fontSize = 19.sp, fontWeight = FontWeight.Bold,
+                        Text(item.name, color = look.ink, fontFamily = PixelFont, fontSize = TypeScale.section, fontWeight = FontWeight.Bold,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text("Tienes ${item.count} · " + when {
                             worn -> "lo llevas puesto"
                             inHotbar -> "en la barra rápida"
                             else -> "en la mochila"
-                        }, color = look.muted, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+                        }, color = look.muted, fontWeight = FontWeight.ExtraBold, style = PanelText.body)
                     }
                 }
                 val actions = listOf(
@@ -228,7 +228,7 @@ private fun ItemActions(
                             }) {
                             PadKey(key)
                             Text(label, color = if (command == PanelCommand.THROW) look.ink else Color(0xFF0B0E11),
-                                fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge, maxLines = 1,
+                                fontWeight = FontWeight.ExtraBold, style = PanelText.body, maxLines = 1,
                                 overflow = TextOverflow.Ellipsis)
                         }
                     }
@@ -236,7 +236,7 @@ private fun ItemActions(
             }
             else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("Toca un objeto o elígelo con A para ver qué puedes hacer con él.", color = look.muted,
-                    fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.ExtraBold, style = PanelText.body,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             }
         }
@@ -257,7 +257,7 @@ private fun CharacterCorner(
     val panel = LocalPanelLook.current
     val look = rememberCharacterLook()
     Column(modifier.panelFrame().padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("Personaje", color = panel.ink, fontFamily = PixelFont, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        Text("Personaje", color = panel.ink, fontFamily = PixelFont, fontSize = TypeScale.section, fontWeight = FontWeight.Bold, maxLines = 1)
         BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
             val small = minOf((maxHeight - 4.dp * 4) / 5, maxWidth * .32f, 64.dp).coerceAtLeast(26.dp)
             val figureHeight = (maxHeight - 34.dp).coerceIn(70.dp, 220.dp)
@@ -275,7 +275,7 @@ private fun CharacterCorner(
                     contentAlignment = Alignment.Center) {
                     CharacterFigure(look, bridge, back = false, height = figureHeight)
                     Text("Aspecto", Modifier.align(Alignment.BottomCenter).padding(4.dp), color = panel.muted,
-                        fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelSmall)
+                        fontWeight = FontWeight.ExtraBold, style = PanelText.detail)
                 }
             }
         }
@@ -405,7 +405,7 @@ internal fun CraftPage(
     // Shelves down the side, the recipes in the middle, and the chosen recipe with its grid on the right.
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (showRecipes) {
-            Column(Modifier.width(66.dp).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(Modifier.width(76.dp).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 RecipeShelf.entries.forEach { entry ->
                     val on = shelf == entry
                     Column(Modifier.fillMaxWidth().heightIn(min = 58.dp)
@@ -415,7 +415,7 @@ internal fun CraftPage(
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically)) {
                         PixelGlyph(entry.glyph, if (on) Color(0xFF2A2508) else Color(0xFFA9B6BD), Modifier.size(24.dp))
                         Text(entry.label, color = if (on) Color(0xFF2A2508) else Color(0xFFA9B6BD), fontWeight = FontWeight.ExtraBold,
-                            fontSize = 11.sp, maxLines = 1)
+                            fontSize = TypeScale.detail, maxLines = 1)
                     }
                 }
             }
@@ -426,12 +426,12 @@ internal fun CraftPage(
                     FilterChip("Todas", !onlyReady) { onlyReady = false }
                     FilterChip("Puedo hacer", onlyReady) { onlyReady = true }
                 } else {
-                    Text("Tu inventario", color = look.ink, fontFamily = PixelFont, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text("Tu inventario", color = look.ink, fontFamily = PixelFont, fontSize = TypeScale.section, fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.weight(1f))
                 if (recipesHere) PanelButton({ manual = !manual }) {
                     Text(if (manual) "Ver recetas" else "A mano", color = look.ink, fontWeight = FontWeight.ExtraBold,
-                        style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                        style = PanelText.body, maxLines = 1)
                 }
             }
             if (showRecipes) {
@@ -481,9 +481,9 @@ internal fun CraftPage(
             val side = live.layout.craftSize
             Column {
                 Text(selected?.name ?: if (side == 3) "Mesa de crafteo" else "Crafteo 2×2", color = look.ink,
-                    fontFamily = PixelFont, fontSize = 21.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    fontFamily = PixelFont, fontSize = TypeScale.section, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(selected?.let { recipeWhere(it, side) } ?: "Elige una receta o pon los materiales tú", color = look.muted,
-                    fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    fontWeight = FontWeight.ExtraBold, style = PanelText.detail, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val cell = minOf((maxWidth * .62f - 6.dp * (side - 1)) / side, 64.dp).coerceAtLeast(32.dp)
@@ -503,7 +503,7 @@ internal fun CraftPage(
                             }
                         }
                     }
-                    Text("→", color = look.ink, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("→", color = look.ink, fontSize = TypeScale.title, fontWeight = FontWeight.ExtraBold)
                     McSlot(0, live, cell * 1.25f, interactive, onTap, focused = padFocus?.number == 0,
                         ghostId = selected?.resultId, placeholder = "Resultado")
                 }
@@ -530,12 +530,12 @@ internal fun CraftPage(
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     PanelButton({ craft(false) }, Modifier.weight(1f).heightIn(min = 50.dp), enabled = ready, face = Color(0xFF7BC74D)) {
                         PadKey("A")
-                        Text("Craftear 1", color = Color(0xFF0E1A08), fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleSmall,
+                        Text("Craftear 1", color = Color(0xFF0E1A08), fontWeight = FontWeight.ExtraBold, style = PanelText.body,
                             maxLines = 1)
                     }
                     PanelButton({ craft(true) }, Modifier.weight(1f).heightIn(min = 50.dp), enabled = ready, face = Color(0xFFF5E663)) {
                         PadKey("Y")
-                        Text("Todo", color = Color(0xFF2A2508), fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleSmall,
+                        Text("Todo", color = Color(0xFF2A2508), fontWeight = FontWeight.ExtraBold, style = PanelText.body,
                             maxLines = 1)
                     }
                 }
@@ -544,7 +544,7 @@ internal fun CraftPage(
                 PanelButton({ bridge.send(live, PanelCommand.QUICK_MOVE, 0) }, Modifier.fillMaxWidth().heightIn(min = 50.dp),
                     enabled = result != null && interactive, face = Color(0xFF7BC74D)) {
                     Text(if (result != null) "Tomar ${result.name}" else "Tomar el resultado", color = Color(0xFF0E1A08),
-                        fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium, maxLines = 1,
+                        fontWeight = FontWeight.ExtraBold, style = PanelText.section, maxLines = 1,
                         overflow = TextOverflow.Ellipsis)
                 }
             }
@@ -558,7 +558,7 @@ private fun FilterChip(label: String, on: Boolean, onClick: () -> Unit) {
         .border(2.dp, Color(0xFF0B0E11), RoundedCornerShape(20.dp))
         .clickable(role = Role.RadioButton, onClick = onClick).padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
         Text(label, color = if (on) Color(0xFF0B0E11) else Color(0xFFF2F5EF), fontWeight = FontWeight.ExtraBold,
-            style = MaterialTheme.typography.labelLarge, maxLines = 1)
+            style = PanelText.body, maxLines = 1)
     }
 }
 
@@ -579,7 +579,7 @@ private fun RecipeTile(recipe: PanelRecipe, selected: Boolean, focused: Boolean,
         McIcon(recipe.resultId, 64.dp, Modifier.fillMaxSize(), count = recipe.resultCount, faded = !ready)
         if (recipe.isNew) Text("NUEVA", Modifier.align(Alignment.TopEnd).background(Color(0xFFF5E663), RoundedCornerShape(2.dp))
             .border(2.dp, Color(0xFF0B0E11), RoundedCornerShape(2.dp)).padding(horizontal = 3.dp),
-            color = Color(0xFF0B0E11), fontWeight = FontWeight.ExtraBold, fontSize = 9.sp)
+            color = Color(0xFF0B0E11), fontWeight = FontWeight.ExtraBold, fontSize = TypeScale.detail)
     }
 }
 
@@ -588,7 +588,7 @@ private fun Legend(color: Color, label: String) {
     val look = LocalPanelLook.current
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Box(Modifier.size(14.dp).background(color).border(2.dp, Color(0xFF0B0E11)))
-        Text(label, color = look.muted, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelMedium)
+        Text(label, color = look.muted, fontWeight = FontWeight.ExtraBold, style = PanelText.detail)
     }
 }
 
@@ -599,9 +599,9 @@ private fun NeedRow(color: Color, text: String, name: String?, id: String = "") 
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         if (id.isNotBlank()) McIcon(id, 32.dp)
         if (name != null) Text(name, Modifier.weight(1f), color = look.ink, fontWeight = FontWeight.ExtraBold,
-            style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            style = PanelText.body, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(text, if (name == null) Modifier.weight(1f) else Modifier, color = color, fontWeight = FontWeight.ExtraBold,
-            style = MaterialTheme.typography.bodyMedium)
+            style = PanelText.body)
     }
 }
 
@@ -624,7 +624,7 @@ internal fun StoragePage(
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(GAP)) {
             Text(live.menuTitle.ifBlank { "Contenedor" }, Modifier.width(slot * 9 + GAP * 8), color = look.ink, fontFamily = PixelFont,
-                fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                fontSize = TypeScale.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val furnace = live.furnace
             if (furnace != null) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -645,7 +645,7 @@ internal fun StoragePage(
                     }
                 }
             }
-            Text("Tu inventario", Modifier.width(slot * 9 + GAP * 8).padding(top = 6.dp), color = look.muted, fontFamily = PixelFont, fontSize = 16.sp)
+            Text("Tu inventario", Modifier.width(slot * 9 + GAP * 8).padding(top = 6.dp), color = look.muted, fontFamily = PixelFont, fontSize = TypeScale.body)
             for (first in live.layout.inventoryStart until live.layout.hotbarStart step 9) {
                 Row(horizontalArrangement = Arrangement.spacedBy(GAP)) {
                     for (number in first until first + 9) McSlot(number, live, slot, interactive, onTap,
@@ -696,10 +696,21 @@ internal fun OptionsPage(
     onFov: (Int) -> Unit,
     status: String?,
     shaderCard: @Composable (Modifier) -> Unit,
+    onFullOptions: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (group == null) {
         Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Ajustes rápidos", Modifier.weight(1f), color = Kit.text, fontFamily = PixelFont, fontSize = TypeScale.title,
+                    fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                com.biomeria.launcher.ui.components.BlockButton(onFullOptions, Modifier.heightIn(min = 44.dp),
+                    com.biomeria.launcher.ui.components.BlockButtons.primary, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp)) {
+                    Text("Ajustes completos", fontWeight = FontWeight.ExtraBold, style = PanelText.body, maxLines = 1)
+                    Spacer(Modifier.width(8.dp))
+                    PadKey("Select")
+                }
+            }
             Row(Modifier.fillMaxWidth().weight(.95f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 val ring = { index: Int -> if (focus == index) Modifier.border(3.dp, Kit.gold, RoundedCornerShape(10.dp)) else Modifier }
                 if (fov != null) FovCard(fov, onFov, Modifier.weight(1.3f).fillMaxHeight().then(ring(0)), compact = true)
@@ -716,7 +727,7 @@ internal fun OptionsPage(
                     }
                 }
             }
-            if (status != null) Text(status, color = Kit.grass, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+            if (status != null) Text(status, color = Kit.grass, fontWeight = FontWeight.ExtraBold, style = PanelText.body)
         }
         return
     }
@@ -724,14 +735,14 @@ internal fun OptionsPage(
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             com.biomeria.launcher.ui.components.BlockButton({ onGroup(null) }, Modifier.heightIn(min = 44.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp)) {
-                Text("‹ Ajustes", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+                Text("‹ Ajustes rápidos", fontWeight = FontWeight.ExtraBold, style = PanelText.body, maxLines = 1)
                 Spacer(Modifier.width(6.dp))
                 PadKey("B")
             }
             Box(Modifier.size(40.dp).background(group.color, RoundedCornerShape(9.dp)), contentAlignment = Alignment.Center) {
                 PixelGlyph(group.glyph, Kit.ink, Modifier.size(26.dp))
             }
-            Text(group.label, Modifier.weight(1f), color = Kit.text, fontFamily = PixelFont, fontSize = 24.sp, fontWeight = FontWeight.Bold,
+            Text(group.label, Modifier.weight(1f), color = Kit.text, fontFamily = PixelFont, fontSize = TypeScale.title, fontWeight = FontWeight.Bold,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -796,7 +807,7 @@ internal fun OptionsPage(
                     PanelButton({ onHud(hud.copy(dualScreen = false)) }, Modifier.fillMaxWidth(), enabled = canTurnOff,
                         face = Color(0xFF3A1F19)) {
                         Text(if (canTurnOff) "Desactivar doble pantalla" else "Guarda el objeto que llevas antes de desactivarla",
-                            color = Color(0xFFFFD2C4), fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleSmall)
+                            color = Color(0xFFFFD2C4), fontWeight = FontWeight.ExtraBold, style = PanelText.body)
                     }
                 }
                 OptionGroup.PERFORMANCE -> {
@@ -835,7 +846,7 @@ private fun <T> ChoiceRow(label: String, detail: String, options: List<T>, selec
                     .clickable(role = Role.RadioButton, onClick = { onPick(option) }).padding(horizontal = 14.dp),
                     contentAlignment = Alignment.Center) {
                     Text(name(option), color = if (on) Color(0xFF0E1A08) else Color(0xFFF2F5EF), fontWeight = FontWeight.ExtraBold,
-                        style = MaterialTheme.typography.labelLarge)
+                        style = PanelText.body)
                 }
             }
         }
@@ -845,8 +856,8 @@ private fun <T> ChoiceRow(label: String, detail: String, options: List<T>, selec
 @Composable
 private fun OptionText(label: String, detail: String, modifier: Modifier = Modifier) {
     Column(modifier) {
-        Text(label, color = Color(0xFFF2F5EF), fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleSmall)
-        Text(detail, color = Color(0xFFB9C4CA), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+        Text(label, color = Color(0xFFF2F5EF), fontWeight = FontWeight.ExtraBold, style = PanelText.body)
+        Text(detail, color = Color(0xFFB9C4CA), fontWeight = FontWeight.Bold, style = PanelText.detail)
     }
 }
 
@@ -881,18 +892,18 @@ internal fun panelTips(page: PanelPage): List<List<TipPart>> = when (page) {
 internal fun PanelTipStrip(parts: List<TipPart>, label: String, onNext: (() -> Unit)?, modifier: Modifier = Modifier) {
     Row(modifier.fillMaxWidth().background(Color(0xFF0B0E11)).padding(horizontal = 14.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(label, color = Color(0xFFF5E663), fontFamily = PixelFont, fontSize = 15.sp)
+        Text(label, color = Color(0xFFF5E663), fontFamily = PixelFont, fontSize = TypeScale.body)
         FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             parts.forEach { part ->
                 if (part.key) PadKey(part.text)
                 else Text(part.text, color = Color(0xFFDCE3E6), fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.labelLarge)
+                    style = PanelText.body)
             }
         }
         if (onNext != null) Box(Modifier.heightIn(min = 40.dp).background(Color(0xFF2A333B), RoundedCornerShape(4.dp))
             .border(2.dp, Color(0xFF0B0E11), RoundedCornerShape(4.dp)).clickable(onClick = onNext).padding(horizontal = 12.dp),
             contentAlignment = Alignment.Center) {
-            Text("Otro consejo", color = Color(0xFFF2F5EF), fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelMedium)
+            Text("Otro consejo", color = Color(0xFFF2F5EF), fontWeight = FontWeight.ExtraBold, style = PanelText.detail)
         }
     }
 }

@@ -35,7 +35,7 @@ internal fun GameQuickMenu(
         Surface(shape = MaterialTheme.shapes.large, tonalElevation = 8.dp) {
             Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Atajos", style = MaterialTheme.typography.titleMedium)
+                Text("Atajos", style = PanelText.section)
                 LauncherButton(if (mapVisible) "Ocultar mapa" else "Mostrar mapa", onMap,
                     enabled = hasMap)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

@@ -148,9 +148,15 @@ class JavaGameActivity : ComponentActivity() {
             return true
         }
         if (event.keyCode == AndroidKeyEvent.KEYCODE_BUTTON_SELECT && togglePanel != null) {
-            if (event.action == AndroidKeyEvent.ACTION_UP && !event.isCanceled &&
-                !padRouter.select(event.deviceId, event.eventTime - event.downTime)
-            ) togglePanel?.invoke()
+            if (event.action == AndroidKeyEvent.ACTION_UP && !event.isCanceled) {
+                val short = event.eventTime - event.downTime < 500L
+                when {
+                    // Select goes between the quick settings below and the full options above.
+                    short && optionGuide.open -> closeFullOptions(event.deviceId)
+                    short && lowerGamepadFocused && quickSettingsShowing && lowerPanelVisible -> openFullOptions()
+                    !padRouter.select(event.deviceId, event.eventTime - event.downTime) -> togglePanel?.invoke()
+                }
+            }
             return true
         }
         val down = event.action == AndroidKeyEvent.ACTION_DOWN
@@ -218,6 +224,23 @@ class JavaGameActivity : ComponentActivity() {
     }
 
     internal fun releaseLowerGamepad() = padRouter.release()
+
+    /** Full options above and the settings guide below, opened from the lower screen's quick settings. */
+    internal val optionGuide = OptionGuideState()
+    /** True while the lower screen shows its quick settings, so a short Select opens the full options. */
+    internal var quickSettingsShowing = false
+
+    /** Opens the full options on the top screen; the controller goes up with them. */
+    internal fun openFullOptions() {
+        optionGuide.open = true
+        padRouter.release()
+    }
+
+    /** Back to the quick settings below, with the controller there if [device] is a controller. */
+    internal fun closeFullOptions(device: Int? = null) {
+        optionGuide.open = false
+        if (device != null) padRouter.take(device)
+    }
 
     /** Set by the lower screen: shows its inventory page. */
     internal var openLowerInventory: (() -> Unit)? = null
@@ -497,6 +520,9 @@ private fun JavaNativeViewportScreen(
     var showPause by remember { mutableStateOf(false) }
     var pauseDismissed by remember { mutableStateOf(false) }
     var showGameOptions by remember { mutableStateOf(false) }
+    // The full options and the guide on the lower screen open and close together.
+    LaunchedEffect(showGameOptions) { activity.optionGuide.open = showGameOptions }
+    LaunchedEffect(activity.optionGuide.open) { showGameOptions = activity.optionGuide.open }
     val sessionStart = remember { android.os.SystemClock.elapsedRealtime() }
     LaunchedEffect(input, panelBridge) {
         input.onHotbarSwap = { from, to -> panelBridge?.swapHotbar(from, to) }
@@ -887,7 +913,7 @@ private fun JavaNativeViewportScreen(
             ), saving)
         }
         if (showGameOptions) {
-            BiomeriaOptionsScreen(File(gameDirPath), panelBridge) { showGameOptions = false }
+            BiomeriaOptionsScreen(File(gameDirPath), panelBridge, activity.optionGuide) { showGameOptions = false }
         }
         if (editingTouch) {
             TouchLayoutEditor(touchLayout) { updated ->

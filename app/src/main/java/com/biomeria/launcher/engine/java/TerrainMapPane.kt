@@ -328,7 +328,7 @@ private fun TerrainView(
                 }
                 LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (nearby.isEmpty()) item {
-                        Text("No hay criaturas cerca.", color = Biomeria.colors.textMuted, style = MaterialTheme.typography.bodyMedium)
+                        Text("No hay criaturas cerca.", color = Biomeria.colors.textMuted, style = PanelText.body)
                     }
                     items(nearby.take(40)) { entity ->
                         val distance = kotlin.math.hypot(entity.x - player.x, entity.z - player.z).roundToInt()
@@ -340,20 +340,20 @@ private fun TerrainView(
                                 .border(2.dp, Color(0xFF0B0E11), RoundedCornerShape(50)))
                             Column(Modifier.weight(1f)) {
                                 Text(entity.label, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                    style = MaterialTheme.typography.bodyMedium)
+                                    style = PanelText.body)
                                 Text("${entity.kind.label} · $distance bloques", color = Biomeria.colors.textMuted,
-                                    style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                                    style = PanelText.detail, maxLines = 1)
                             }
                         }
                     }
                 }
                 Text("Las criaturas solo se ven en tus mundos, nunca en servidores.", color = Biomeria.colors.textMuted,
-                    style = MaterialTheme.typography.labelMedium)
+                    style = PanelText.detail)
             } else {
                 LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (waypoints.points.isEmpty()) item {
                         Text("Sin marcas todavía. Marca tu casa para volver después.", color = Biomeria.colors.textMuted,
-                            style = MaterialTheme.typography.bodyMedium)
+                            style = PanelText.body)
                     }
                     items(waypoints.points, key = { it.id }) { point ->
                         val on = point.id == waypoints.activeId
@@ -365,20 +365,20 @@ private fun TerrainView(
                             Canvas(Modifier.size(22.dp)) { drawWaypoint(point, center, 5.dp.toPx(), on) }
                             Column(Modifier.weight(1f)) {
                                 Text(point.name, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                    style = MaterialTheme.typography.bodyMedium)
+                                    style = PanelText.body)
                                 Text("${point.distanceFrom(player)} bloques", color = Biomeria.colors.textMuted,
-                                    style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                                    style = PanelText.detail, maxLines = 1)
                             }
                             BlockButton({ saveBook(waypoints.follow(if (on) null else point.id)) },
                                 colors = if (on) BlockButtons.gold else BlockButtons.neutral,
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
-                                Text(if (on) "Dejar" else "Seguir", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelMedium)
+                                Text(if (on) "Dejar" else "Seguir", fontWeight = FontWeight.ExtraBold, style = PanelText.detail)
                             }
                         }
                     }
                 }
                 BlockButton({ openWaypoints(true) }, Modifier.fillMaxWidth().heightIn(min = 52.dp), BlockButtons.primary) {
-                    Text("+ Marcar dónde estoy", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleSmall)
+                    Text("+ Marcar dónde estoy", fontWeight = FontWeight.ExtraBold, style = PanelText.body)
                 }
                 if (waypoints.points.isNotEmpty()) MapBlock("Editar marcas", "Editar o borrar marcas", Modifier.fillMaxWidth()) {
                     openWaypoints(false)
@@ -406,7 +406,7 @@ private fun MapTab(label: String, selected: Boolean, modifier: Modifier, onClick
     Box(modifier.heightIn(min = 44.dp).background(if (selected) Biomeria.colors.brandAccent else Color.Transparent, RoundedCornerShape(4.dp))
         .clickable(onClick = onClick), contentAlignment = Alignment.Center) {
         Text(label, color = if (selected) Color(0xFF0E1A08) else Color(0xFFDCE3E6), fontWeight = FontWeight.ExtraBold,
-            style = MaterialTheme.typography.labelLarge)
+            style = PanelText.body)
     }
 }
 
@@ -414,7 +414,7 @@ private fun MapTab(label: String, selected: Boolean, modifier: Modifier, onClick
 private fun MapBlock(label: String, description: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     BlockButton(onClick, modifier.semantics { contentDescription = description }, BlockButtons.neutral,
         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
-        Text(label, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge, maxLines = 1,
+        Text(label, fontWeight = FontWeight.ExtraBold, style = PanelText.body, maxLines = 1,
             modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }
@@ -422,5 +422,5 @@ private fun MapBlock(label: String, description: String, modifier: Modifier = Mo
 @Composable
 private fun MapLabel(text: String, modifier: Modifier = Modifier) {
     Text(text, modifier.background(Color(0xe51c2932), RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 4.dp),
-        color = Color(0xffe2f1e8), style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        color = Color(0xffe2f1e8), style = PanelText.detail, maxLines = 1, overflow = TextOverflow.Ellipsis)
 }

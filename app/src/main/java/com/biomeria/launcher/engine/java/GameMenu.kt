@@ -144,9 +144,9 @@ internal fun BiomeriaGameMenu(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 BiomeriaMark(Modifier.size(24.dp, 26.dp))
                 Column {
-                    Text(title, fontFamily = PixelFont, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+                    Text(title, fontFamily = PixelFont, fontSize = TypeScale.section, fontWeight = FontWeight.Bold, maxLines = 1,
                         overflow = TextOverflow.Ellipsis)
-                    Text("Minecraft $version", color = palette.textMuted, style = MaterialTheme.typography.labelSmall)
+                    Text("Minecraft $version", color = palette.textMuted, style = PanelText.detail)
                 }
             }
             BlockButton(actions.resume, Modifier.fillMaxWidth().focusRequester(resumeFocus), BlockButtons.primary,
@@ -154,7 +154,7 @@ internal fun BiomeriaGameMenu(
                 Icon(Icons.Default.PlayArrow, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(if (ready) "Volver al juego" else "Ocultar menú", fontWeight = FontWeight.ExtraBold,
-                    style = MaterialTheme.typography.labelLarge)
+                    style = PanelText.body)
             }
             Spacer(Modifier.height(4.dp))
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -162,9 +162,9 @@ internal fun BiomeriaGameMenu(
             }
             BlockButton({ onTab(GameMenuTab.EXIT) }, Modifier.fillMaxWidth(), BlockButtons.danger,
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) {
-                Text("Salir del mundo", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+                Text("Salir del mundo", fontWeight = FontWeight.ExtraBold, style = PanelText.body)
             }
-            Text("A elegir · B volver · L1/R1 secciones", color = palette.textMuted, style = MaterialTheme.typography.labelSmall,
+            Text("A elegir · B volver · L1/R1 secciones", color = palette.textMuted, style = PanelText.detail,
                 modifier = Modifier.padding(top = 4.dp, start = 2.dp))
         }
         Column(
@@ -175,14 +175,14 @@ internal fun BiomeriaGameMenu(
                 Column(Modifier.fillMaxWidth().background(palette.surfaceCard, PanelShape)
                     .border(2.dp, palette.surfaceElevated, PanelShape).padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Iniciando Minecraft…", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+                    Text("Iniciando Minecraft…", style = PanelText.section, fontWeight = FontWeight.ExtraBold)
                     LinearProgressIndicator(Modifier.fillMaxWidth(), color = palette.brandAccent, trackColor = palette.surfaceElevated)
                     Text("El primer arranque tarda más. El juego aparecerá solo.", color = palette.textMuted,
-                        style = MaterialTheme.typography.bodySmall)
+                        style = PanelText.detail)
                 }
             }
             if (tab != GameMenuTab.CHARACTER) {
-                Text(if (tab == GameMenuTab.GAME) "Atajos" else tab.label, style = MaterialTheme.typography.headlineSmall)
+                Text(if (tab == GameMenuTab.GAME) "Atajos" else tab.label, style = PanelText.title)
             }
             when (tab) {
                 GameMenuTab.GAME -> GameTab(hud, onHud, canOpenInventory, hasPanel, ready, actions)
@@ -218,7 +218,7 @@ private fun MenuTab(tab: GameMenuTab, selected: Boolean, onClick: () -> Unit) {
     ) {
         Box(Modifier.size(10.dp).background(tab.color))
         Text(tab.label, color = if (selected || focused) palette.textPrimary else palette.textMuted,
-            style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+            style = PanelText.body, fontWeight = FontWeight.ExtraBold, maxLines = 1)
     }
 }
 
@@ -261,15 +261,15 @@ private fun GameTab(
             Column(Modifier.weight(1f)) {
                 Text("Jugar juntos", fontWeight = FontWeight.ExtraBold)
                 Text("Abre este mundo a tu red local o crea una sala por internet.", color = Biomeria.colors.textMuted,
-                    style = MaterialTheme.typography.bodySmall)
+                    style = PanelText.detail)
             }
             LauncherButton("Red local", actions.lan, enabled = ready && hasPanel && canOpenInventory)
             BlockButton(actions.internet, colors = BlockButtons.ocean, enabled = ready && hasPanel) {
-                Text("Por internet", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+                Text("Por internet", fontWeight = FontWeight.ExtraBold, style = PanelText.body)
             }
         }
         if (!hasPanel) Text("El mapa, la doble pantalla y jugar juntos necesitan Minecraft 1.21.4 con Fabric.",
-            color = Biomeria.colors.textMuted, style = MaterialTheme.typography.bodySmall)
+            color = Biomeria.colors.textMuted, style = PanelText.detail)
     }
 }
 
@@ -283,12 +283,12 @@ private fun ShortcutTile(
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Box(Modifier.size(12.dp).background(color))
-                Text(title, Modifier.weight(1f), fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleSmall,
+                Text(title, Modifier.weight(1f), fontWeight = FontWeight.ExtraBold, style = PanelText.body,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(key, Modifier.background(Color(0xFF1A2026), RoundedCornerShape(3.dp)).padding(horizontal = 5.dp, vertical = 1.dp),
-                    color = Color(0xFFD6DEE2), fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                    color = Color(0xFFD6DEE2), fontSize = TypeScale.detail, fontWeight = FontWeight.ExtraBold)
             }
-            Text(detail, color = Biomeria.colors.textMuted, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+            Text(detail, color = Biomeria.colors.textMuted, style = PanelText.detail, maxLines = 2)
         }
     }
 }
@@ -299,7 +299,7 @@ private fun PerformanceTab(hud: GameHudSettings, onHud: (GameHudSettings) -> Uni
     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.fillMaxWidth().background(palette.surfaceCard, PanelShape).border(2.dp, palette.surfaceElevated, PanelShape)
             .padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Se aplica ahora", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleSmall)
+            Text("Se aplica ahora", fontWeight = FontWeight.ExtraBold, style = PanelText.body)
             Text("Límite de FPS", fontWeight = FontWeight.Bold)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 javaFpsLimits.forEach { limit ->
@@ -309,21 +309,21 @@ private fun PerformanceTab(hud: GameHudSettings, onHud: (GameHudSettings) -> Uni
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Ahorro en segundo plano", fontWeight = FontWeight.Bold)
-                    Text("Baja a 15 FPS cuando sales de la app", color = palette.textMuted, style = MaterialTheme.typography.bodySmall)
+                    Text("Baja a 15 FPS cuando sales de la app", color = palette.textMuted, style = PanelText.detail)
                 }
                 Switch(hud.batterySaver, { onHud(hud.copy(batterySaver = it)) })
             }
         }
         Column(Modifier.fillMaxWidth().background(Color(0xFF12171C), PanelShape)
             .border(2.dp, palette.borderSubtle, PanelShape).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Al volver a abrir el mundo", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleSmall)
+            Text("Al volver a abrir el mundo", fontWeight = FontWeight.ExtraBold, style = PanelText.body)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 InfoChip(if (heapMb % 1024 == 0) "RAM: ${heapMb / 1024} GB" else "RAM: $heapMb MB")
                 InfoChip("Resolución: ${renderScale.percent} %")
                 InfoChip("Gráficos: " + renderer.label)
             }
             Text("Estos se eligen antes de entrar, en la pantalla de preparación del mundo.",
-                color = palette.textMuted, style = MaterialTheme.typography.bodySmall)
+                color = palette.textMuted, style = PanelText.detail)
         }
     }
 }
@@ -335,24 +335,24 @@ private fun HudTab(hud: GameHudSettings, onHud: (GameHudSettings) -> Unit) {
         Column(Modifier.weight(1f).fillMaxHeight().background(palette.surfaceCard, PanelShape)
             .border(2.dp, palette.surfaceElevated, PanelShape).padding(14.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("En pantalla", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleSmall)
+            Text("En pantalla", fontWeight = FontWeight.ExtraBold, style = PanelText.body)
             GameHudControls(hud, onHud)
             Text("La opacidad de pausa controla el botón del menú. Cierra el menú para ver cómo queda.",
-                color = palette.textMuted, style = MaterialTheme.typography.bodySmall)
+                color = palette.textMuted, style = PanelText.detail)
         }
         Column(Modifier.weight(1f).fillMaxHeight().background(palette.surfaceCard, PanelShape)
             .border(2.dp, palette.surfaceElevated, PanelShape).padding(14.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Tu mando en partida", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleSmall)
+            Text("Tu mando en partida", fontWeight = FontWeight.ExtraBold, style = PanelText.body)
             Text("Stick izquierdo para moverte, stick derecho para la cámara. Select abre este menú.",
-                color = palette.textMuted, style = MaterialTheme.typography.bodySmall)
+                color = palette.textMuted, style = PanelText.detail)
             if (hud.dualScreen) {
-                Text("Doble pantalla", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleSmall,
+                Text("Doble pantalla", fontWeight = FontWeight.ExtraBold, style = PanelText.body,
                     modifier = Modifier.padding(top = 6.dp))
                 PanelPreferenceControls(hud, onHud)
             }
             Text("Los botones se cambian en Controles y HUD, en la pantalla de preparación.",
-                color = palette.textMuted, style = MaterialTheme.typography.bodySmall)
+                color = palette.textMuted, style = PanelText.detail)
         }
     }
 }
@@ -376,7 +376,7 @@ private fun LogTab(lines: List<String>, technical: String) {
             Text(if (errors == 1) "1 error" else "$errors errores",
                 Modifier.background(if (errors > 0) palette.engineRust else palette.brandAccent, RoundedCornerShape(3.dp))
                     .padding(horizontal = 8.dp, vertical = 2.dp),
-                color = palette.ink, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.ExtraBold)
+                color = palette.ink, style = PanelText.detail, fontWeight = FontWeight.ExtraBold)
             Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 LogFilter.entries.forEach { ChoiceChip(it.label, filter == it) { filter = it } }
             }
@@ -399,9 +399,9 @@ private fun LogTab(lines: List<String>, technical: String) {
                 }
             })
             Text(status ?: "El enlace sube el registro a mclo.gs. Tu sesión siempre aparece como [token oculto].",
-                Modifier.weight(1f), color = palette.textMuted, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                Modifier.weight(1f), color = palette.textMuted, style = PanelText.detail, maxLines = 2)
         }
-        Text(technical, color = Color(0xFF8F9CA3), fontSize = 11.sp, fontFamily = FontFamily.Monospace, maxLines = 2,
+        Text(technical, color = Color(0xFF8F9CA3), fontSize = TypeScale.detail, fontFamily = FontFamily.Monospace, maxLines = 2,
             overflow = TextOverflow.Ellipsis)
     }
 }
@@ -419,7 +419,7 @@ private fun LogSearch(query: String, onQuery: (String) -> Unit, modifier: Modifi
                 .padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Icon(Icons.Default.Search, null, Modifier.size(14.dp), tint = palette.textMuted)
                 Box(Modifier.weight(1f)) {
-                    if (query.isEmpty()) Text("Buscar en el registro", color = palette.textMuted, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                    if (query.isEmpty()) Text("Buscar en el registro", color = palette.textMuted, style = PanelText.detail, maxLines = 1)
                     field()
                 }
             }
@@ -442,40 +442,40 @@ private fun ExitTab(actions: GameMenuActions, saving: Boolean, onBack: () -> Uni
         val saveAndQuit = actions.saveAndQuit
         when {
             saving -> {
-                Text("Guardando el mundo y cerrando Minecraft…", style = MaterialTheme.typography.titleMedium,
+                Text("Guardando el mundo y cerrando Minecraft…", style = PanelText.section,
                     fontWeight = FontWeight.ExtraBold)
                 LinearProgressIndicator(Modifier.fillMaxWidth(), color = palette.brandAccent, trackColor = palette.surfaceElevated)
                 Text(if (waited < 60) "Volverás a Biomeria cuando termine. Los mundos grandes tardan más."
                     else "Minecraft está tardando. Puedes seguir esperando o salir ahora, aunque se pierda lo último.",
-                    color = palette.textMuted, style = MaterialTheme.typography.bodyMedium)
+                    color = palette.textMuted, style = PanelText.body)
                 if (waited >= 60) BlockButton(actions.exit, colors = BlockButtons.danger) {
-                    Text("Salir ahora", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+                    Text("Salir ahora", fontWeight = FontWeight.ExtraBold, style = PanelText.body)
                 }
             }
             saveAndQuit != null -> {
                 Text("Biomeria le pedirá a Minecraft que guarde el mundo y se cierre, igual que al cerrar su ventana.",
-                    style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                    style = PanelText.body, fontWeight = FontWeight.Bold)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     BlockButton(saveAndQuit, colors = BlockButtons.primary) {
-                        Text("Guardar y salir", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+                        Text("Guardar y salir", fontWeight = FontWeight.ExtraBold, style = PanelText.body)
                     }
                     LauncherButton("Seguir jugando", onBack)
                     BlockButton(actions.exit, colors = BlockButtons.danger) {
-                        Text("Salir sin guardar", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+                        Text("Salir sin guardar", fontWeight = FontWeight.ExtraBold, style = PanelText.body)
                     }
                 }
             }
             else -> {
                 Text("Antes de salir, guarda en Minecraft: abre la Pausa de Minecraft y elige «Guardar y salir al título».",
-                    style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                    style = PanelText.body, fontWeight = FontWeight.Bold)
                 Text("Al volver al título, sal del juego desde ahí y Biomeria se abrirá sola. Salir ahora cierra el juego de inmediato.",
-                    color = palette.textMuted, style = MaterialTheme.typography.bodyMedium)
+                    color = palette.textMuted, style = PanelText.body)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     BlockButton(actions.minecraftPause, colors = BlockButtons.primary) {
-                        Text("Abrir la pausa para guardar", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+                        Text("Abrir la pausa para guardar", fontWeight = FontWeight.ExtraBold, style = PanelText.body)
                     }
                     BlockButton(actions.exit, colors = BlockButtons.danger) {
-                        Text("Salir ahora", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+                        Text("Salir ahora", fontWeight = FontWeight.ExtraBold, style = PanelText.body)
                     }
                     LauncherButton("Seguir jugando", onBack)
                 }
@@ -499,14 +499,14 @@ private fun ChoiceChip(label: String, selected: Boolean, onClick: () -> Unit) {
         contentAlignment = Alignment.Center
     ) {
         Text(label, color = if (selected) palette.ink else Color(0xFFD6DEE2), fontWeight = FontWeight.ExtraBold,
-            style = MaterialTheme.typography.labelLarge, maxLines = 1)
+            style = PanelText.body, maxLines = 1)
     }
 }
 
 @Composable
 private fun InfoChip(text: String) {
     Text(text, Modifier.background(Color(0xFF1A2026), ControlShape).padding(horizontal = 12.dp, vertical = 8.dp),
-        fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+        fontWeight = FontWeight.Bold, style = PanelText.body)
 }
 
 /** The only button over the game: the Biomeria block plus the Select hint. */
@@ -518,6 +518,6 @@ internal fun GameMenuPill(opacity: Float, onClick: () -> Unit, modifier: Modifie
         BiomeriaMark(Modifier.size(20.dp, 22.dp))
         Spacer(Modifier.width(8.dp))
         Text("SELECT", Modifier.background(Color(0xFF34404A), RoundedCornerShape(3.dp)).padding(horizontal = 5.dp, vertical = 1.dp),
-            color = Color(0xFFF2F5EF), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+            color = Color(0xFFF2F5EF), fontSize = TypeScale.detail, fontWeight = FontWeight.ExtraBold)
     }
 }

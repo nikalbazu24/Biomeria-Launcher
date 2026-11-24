@@ -97,7 +97,7 @@ internal fun CharacterCard(
             .background(Color(0xFF161B21)).padding(horizontal = 6.dp, vertical = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
             CharacterFigure(look, bridge, false, 92.dp)
-            Text("Tocar para ver", color = Biomeria.colors.textMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text("Tocar para ver", color = Biomeria.colors.textMuted, fontSize = TypeScale.detail, fontWeight = FontWeight.Bold)
         }
         offHand()
     }
@@ -167,7 +167,7 @@ internal fun CharacterEditor(
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Personalizar", fontFamily = PixelFont, fontSize = 26.sp, modifier = Modifier.weight(1f))
+                Text("Personalizar", fontFamily = PixelFont, fontSize = TypeScale.title, modifier = Modifier.weight(1f))
                 LauncherButton("Listo", onDone, Modifier.pad("done"), primary = true)
             }
             EditorSection("Skin") {
@@ -185,7 +185,7 @@ internal fun CharacterEditor(
                         change(look.copy(source = SkinSource.ACCOUNT))
                     }
                 }
-                message?.let { Text(it, color = Color(0xFFFFB4A6), style = MaterialTheme.typography.bodySmall) }
+                message?.let { Text(it, color = Color(0xFFFFB4A6), style = PanelText.detail) }
             }
             EditorSection("Brazos") {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -216,21 +216,21 @@ internal fun CharacterEditor(
 @Composable
 private fun EditorSection(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+        Text(title, style = PanelText.section, fontWeight = FontWeight.ExtraBold)
         content()
     }
 }
 
 @Composable
 private fun Note(text: String) {
-    Text(text, color = Biomeria.colors.textMuted, style = MaterialTheme.typography.bodySmall)
+    Text(text, color = Biomeria.colors.textMuted, style = PanelText.detail)
 }
 
 @Composable
 private fun OptionBlock(label: String, selected: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true, onClick: () -> Unit) {
     BlockButton(onClick, modifier, if (selected) BlockButtons.primary else BlockButtons.neutral, enabled) {
         Text((if (selected) "✓ " else "") + label, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+            fontWeight = FontWeight.ExtraBold, style = PanelText.body)
     }
 }
 
@@ -247,7 +247,7 @@ private fun PresetTile(source: SkinSource, selected: Boolean, modifier: Modifier
                     Row(Modifier.weight(1f)) { row.forEach { Box(Modifier.weight(1f).fillMaxHeight().background(it)) } }
                 }
             }
-            Text(source.label, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp, maxLines = 1)
+            Text(source.label, fontWeight = FontWeight.ExtraBold, fontSize = TypeScale.detail, maxLines = 1)
         }
     }
 }
@@ -255,7 +255,7 @@ private fun PresetTile(source: SkinSource, selected: Boolean, modifier: Modifier
 @Composable
 private fun LayerSwitch(label: String, on: Boolean, modifier: Modifier = Modifier, onChange: (Boolean) -> Unit) {
     Row(modifier.fillMaxWidth().heightIn(min = 44.dp).padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.ExtraBold)
+        Text(label, Modifier.weight(1f), style = PanelText.body, fontWeight = FontWeight.ExtraBold)
         Switch(on, onChange)
     }
 }

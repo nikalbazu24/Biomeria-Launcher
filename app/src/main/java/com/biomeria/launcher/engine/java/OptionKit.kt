@@ -59,6 +59,29 @@ internal object Kit {
     val muted = Color(0xFFA9B6BD)
 }
 
+/**
+ * One type scale for every Biomeria menu in game: title, section, body and detail. Everything grows
+ * together with the panel's text size, and nothing goes under the detail size.
+ */
+internal object TypeScale {
+    val title = 22.sp
+    val section = 18.sp
+    val body = 15.sp
+    val detail = 13.sp
+}
+
+/** Text styles on [TypeScale], in Biomeria's body font. */
+internal object PanelText {
+    val title: androidx.compose.ui.text.TextStyle
+        @Composable @ReadOnlyComposable get() = MaterialTheme.typography.titleLarge.copy(fontSize = TypeScale.title, lineHeight = 26.sp, letterSpacing = 0.sp)
+    val section: androidx.compose.ui.text.TextStyle
+        @Composable @ReadOnlyComposable get() = MaterialTheme.typography.titleMedium.copy(fontSize = TypeScale.section, lineHeight = 22.sp, letterSpacing = 0.sp)
+    val body: androidx.compose.ui.text.TextStyle
+        @Composable @ReadOnlyComposable get() = MaterialTheme.typography.labelLarge.copy(fontSize = TypeScale.body, lineHeight = 20.sp, letterSpacing = 0.sp)
+    val detail: androidx.compose.ui.text.TextStyle
+        @Composable @ReadOnlyComposable get() = MaterialTheme.typography.labelMedium.copy(fontSize = TypeScale.detail, lineHeight = 17.sp, letterSpacing = 0.sp)
+}
+
 // ---------------------------------------------------------------- Pixel glyphs
 
 /** Small 8×8 pixel drawings for tabs and menu tiles, in Minecraft's blocky spirit. */
@@ -111,6 +134,11 @@ internal class LiveGameOptions(private val file: GameOptionsFile, private val br
     var status by mutableStateOf<String?>(null)
         internal set
     internal var pending by mutableStateOf<Map<String, String>>(emptyMap())
+
+    /** Reads options.txt again, e.g. after the full options changed it. */
+    fun reload() {
+        if (pending.isEmpty()) values = file.read()
+    }
 
     fun change(key: String, value: String) {
         values = values + (key to value)
@@ -202,7 +230,7 @@ private val fovPresets = listOf("Normal" to 70, "Amplio" to 90, "Quake Pro" to 1
 internal fun FovCard(degrees: Int, onDegrees: (Int) -> Unit, modifier: Modifier = Modifier, compact: Boolean = false) {
     Column(modifier.kitCard().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Campo de visión", Modifier.weight(1f), color = Kit.text, fontFamily = PixelFont, fontSize = 18.sp,
+            Text("Campo de visión", Modifier.weight(1f), color = Kit.text, fontFamily = PixelFont, fontSize = TypeScale.section,
                 fontWeight = FontWeight.Bold, maxLines = 1)
             Text("$degrees°", color = Kit.gold, fontFamily = PixelFont, fontSize = if (compact) 20.sp else 26.sp, fontWeight = FontWeight.Bold)
         }
@@ -235,7 +263,7 @@ internal fun <T> Segmented(
                 .clickable(role = Role.RadioButton, onClick = { onPick(option) }).padding(horizontal = 6.dp),
                 contentAlignment = Alignment.Center) {
                 Text(name(option), color = if (on) Kit.ink else Kit.muted, fontWeight = FontWeight.ExtraBold,
-                    style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+                    style = PanelText.body, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
             }
         }
     }
@@ -263,9 +291,9 @@ internal fun MenuTile(
         Box(Modifier.size(44.dp).background(color, RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
             PixelGlyph(glyph, Kit.ink, Modifier.size(28.dp))
         }
-        Text(title, color = Kit.text, fontFamily = PixelFont, fontSize = 19.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+        Text(title, color = Kit.text, fontFamily = PixelFont, fontSize = TypeScale.section, fontWeight = FontWeight.Bold, maxLines = 1,
             overflow = TextOverflow.Ellipsis)
-        Text(detail, color = Kit.muted, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium, maxLines = 2,
+        Text(detail, color = Kit.muted, fontWeight = FontWeight.Bold, style = PanelText.detail, maxLines = 2,
             overflow = TextOverflow.Ellipsis)
     }
 }
@@ -371,8 +399,8 @@ internal fun ShaderCard(controller: ShaderController, onOpen: () -> Unit, modifi
     Column(modifier.kitCard().clickable(role = Role.Button, onClick = onOpen).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Shaders", Modifier.weight(1f), color = Kit.text, fontFamily = PixelFont, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Text("Cambiar", color = Kit.gold, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+            Text("Shaders", Modifier.weight(1f), color = Kit.text, fontFamily = PixelFont, fontSize = TypeScale.section, fontWeight = FontWeight.Bold)
+            Text("Cambiar", color = Kit.gold, fontWeight = FontWeight.ExtraBold, style = PanelText.body)
         }
         Box(Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(min = pictureHeight)
             .background(shaderSky(active?.title), RoundedCornerShape(8.dp)))
@@ -381,7 +409,7 @@ internal fun ShaderCard(controller: ShaderController, onOpen: () -> Unit, modifi
             !settings.irisInstalled -> "Instala Iris en el Taller para usar shaders"
             active == null -> "Apagados"
             else -> active.title
-        }, color = Kit.muted, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge, maxLines = 1,
+        }, color = Kit.muted, fontWeight = FontWeight.ExtraBold, style = PanelText.body, maxLines = 1,
             overflow = TextOverflow.Ellipsis)
     }
 }
@@ -398,13 +426,13 @@ internal fun ShaderPicker(controller: ShaderController, onClose: () -> Unit, onC
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 PixelGlyph(Glyph.SHADER, Kit.gold, Modifier.size(26.dp))
-                Text("Shaders", Modifier.weight(1f), color = Kit.text, fontFamily = PixelFont, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                controller.status?.let { Text(it, color = Kit.grass, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge) }
+                Text("Shaders", Modifier.weight(1f), color = Kit.text, fontFamily = PixelFont, fontSize = TypeScale.title, fontWeight = FontWeight.Bold)
+                controller.status?.let { Text(it, color = Kit.grass, fontWeight = FontWeight.ExtraBold, style = PanelText.body) }
             }
             when {
                 settings == null -> Text("Buscando tus shaders…", color = Kit.muted)
                 !settings.irisInstalled -> Text("Para usar shaders, este mundo necesita el mod Iris. Instálalo desde el Taller de Biomeria y vuelve a abrir el juego.",
-                    color = Kit.text, style = MaterialTheme.typography.bodyLarge)
+                    color = Kit.text, style = PanelText.body)
                 else -> {
                     val choices = listOf<ShaderPack?>(null) + settings.packs
                     LazyVerticalGrid(GridCells.Adaptive(170.dp), Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -416,10 +444,10 @@ internal fun ShaderPicker(controller: ShaderController, onClose: () -> Unit, onC
                                 .clickable(role = Role.RadioButton, onClick = { onChoose(pack) }).padding(8.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Box(Modifier.fillMaxWidth().height(84.dp).background(shaderSky(pack?.title), RoundedCornerShape(6.dp)))
-                                Text(pack?.title ?: "Sin shaders", color = Kit.text, fontFamily = PixelFont, fontSize = 16.sp,
+                                Text(pack?.title ?: "Sin shaders", color = Kit.text, fontFamily = PixelFont, fontSize = TypeScale.body,
                                     fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(if (pack == null) "Lo más rápido" else if (on) "En uso" else "Tocar para usar", color = Kit.muted,
-                                    fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                                    fontWeight = FontWeight.Bold, style = PanelText.detail, maxLines = 1)
                             }
                         }
                     }

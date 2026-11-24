@@ -176,7 +176,7 @@ internal fun BiomeriaMapScreen(
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 BlockButton(onClose, Modifier.heightIn(min = 40.dp), BlockButtons.neutral,
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
-                    Text("‹ Volver al juego", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+                    Text("‹ Volver al juego", fontWeight = FontWeight.ExtraBold, style = PanelText.body)
                     Spacer(Modifier.width(6.dp))
                     PadKey("B")
                 }
@@ -186,14 +186,14 @@ internal fun BiomeriaMapScreen(
                     BlockButton({ tab = entry }, Modifier.heightIn(min = 38.dp),
                         if (tab == entry) BlockButtons.primary else BlockButtons.neutral,
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp)) {
-                        Text(entry.label, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                        Text(entry.label, fontWeight = FontWeight.ExtraBold, style = PanelText.body, maxLines = 1)
                     }
                 }
                 PadKey("RB")
                 Spacer(Modifier.weight(1f))
                 BlockButton(onMenu, Modifier.heightIn(min = 38.dp), BlockButtons.neutral,
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
-                    Text("Menú de Biomeria", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                    Text("Menú de Biomeria", fontWeight = FontWeight.ExtraBold, style = PanelText.detail, maxLines = 1)
                 }
             }
             Box(Modifier.weight(1f).fillMaxWidth().padding(12.dp)) {
@@ -205,14 +205,14 @@ internal fun BiomeriaMapScreen(
             }
             Row(Modifier.fillMaxWidth().background(Color(0xFF0B0E11)).padding(horizontal = 14.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Consejo", color = Color(0xFFF5E663), fontFamily = PixelFont, fontSize = 14.sp)
+                Text("Consejo", color = Color(0xFFF5E663), fontFamily = PixelFont, fontSize = TypeScale.body)
                 Spacer(Modifier.width(4.dp))
                 val parts = if (tab == MapScreenTab.MAP) listOf("Mueve el mapa con los sticks, acerca con", "[R2]", "y aleja con", "[L2]",
                     ". Con", "[A]", "marcas dónde estás y con", "[X]", "vuelves a ti.")
                 else listOf("Elige con la cruceta y cambia con", "[A]", ". Vuelve al juego con", "[B]")
                 parts.forEach { part ->
                     if (part.startsWith("[")) PadKey(part.trim('[', ']'))
-                    else Text(part, color = Color(0xFFDCE3E6), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                    else Text(part, color = Color(0xFFDCE3E6), fontWeight = FontWeight.Bold, style = PanelText.detail)
                 }
             }
         }
@@ -226,7 +226,7 @@ private fun MapOptionsPage(options: List<MapOption>, focusRow: Int, hud: GameHud
         Column(Modifier.weight(1f).fillMaxHeight().background(Color(0xFF161B21), RoundedCornerShape(6.dp))
             .border(3.dp, Color(0xFF232B33), RoundedCornerShape(6.dp)).padding(14.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Opciones del mapa", color = Color(0xFFF2F5EF), fontFamily = PixelFont, fontSize = 22.sp)
+            Text("Opciones del mapa", color = Color(0xFFF2F5EF), fontFamily = PixelFont, fontSize = TypeScale.title)
             options.forEachIndexed { index, option ->
                 val focused = index == focusRow
                 Row(Modifier.fillMaxWidth().background(Color(0xFF1E252C), RoundedCornerShape(5.dp))
@@ -235,8 +235,8 @@ private fun MapOptionsPage(options: List<MapOption>, focusRow: Int, hud: GameHud
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Column(Modifier.weight(1f)) {
-                        Text(option.label, color = Color(0xFFF2F5EF), fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.bodyMedium)
-                        Text(option.detail, color = Color(0xFFA9B6BD), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                        Text(option.label, color = Color(0xFFF2F5EF), fontWeight = FontWeight.ExtraBold, style = PanelText.body)
+                        Text(option.detail, color = Color(0xFFA9B6BD), fontWeight = FontWeight.Bold, style = PanelText.detail)
                     }
                     if (option.toggle) {
                         val on = option.selected == 1
@@ -252,7 +252,7 @@ private fun MapOptionsPage(options: List<MapOption>, focusRow: Int, hud: GameHud
                                 BlockButton({ onFocus(index); option.select(choice) }, Modifier.heightIn(min = 36.dp),
                                     if (choice == option.selected) BlockButtons.primary else BlockButtons.neutral,
                                     contentPadding = PaddingValues(horizontal = 9.dp, vertical = 2.dp)) {
-                                    Text(label, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                                    Text(label, fontWeight = FontWeight.ExtraBold, style = PanelText.detail, maxLines = 1)
                                 }
                             }
                         }
@@ -264,7 +264,7 @@ private fun MapOptionsPage(options: List<MapOption>, focusRow: Int, hud: GameHud
         Column(Modifier.width(260.dp).fillMaxHeight().background(Color(0xFF161B21), RoundedCornerShape(6.dp))
             .border(3.dp, Color(0xFF232B33), RoundedCornerShape(6.dp)).padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Así se verá en el juego", color = Color(0xFFF2F5EF), fontFamily = PixelFont, fontSize = 17.sp)
+            Text("Así se verá en el juego", color = Color(0xFFF2F5EF), fontFamily = PixelFont, fontSize = TypeScale.section)
             BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(4.dp))
                 .background(Color(0xFF6DB8EA)).border(3.dp, Color(0xFF0B0E11), RoundedCornerShape(4.dp))) {
                 Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(.45f).background(Color(0xFF6FB04A)))
@@ -280,7 +280,7 @@ private fun MapOptionsPage(options: List<MapOption>, focusRow: Int, hud: GameHud
                 }
             }
             Text("El cuadro verde es el mapa flotante. Cámbialo de esquina, tamaño y transparencia y lo ves aquí al tiro.",
-                color = Color(0xFFA9B6BD), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                color = Color(0xFFA9B6BD), fontWeight = FontWeight.Bold, style = PanelText.detail)
         }
     }
 }
