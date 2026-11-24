@@ -592,6 +592,20 @@ private fun JavaNativeViewportScreen(
     LaunchedEffect(panelBridge, hud.biomeriaMenus) { panelBridge?.useBiomeriaMenus(hud.biomeriaMenus) }
     // Minecraft's pause screen opened (Start, Esc, losing focus): show Biomeria's on top while the world stays paused.
     val pauseBlocked = showOverlay || showGameOptions || showLanDialog || showInternetDialog || showKeyboard || editingTouch
+    // Full options pause the world: Esc opens Minecraft's pause screen, and closing the options sends the Esc that resumes.
+    var pausedByOptions by remember { mutableStateOf(false) }
+    LaunchedEffect(showGameOptions) {
+        if (showGameOptions) {
+            if (jvmStarted && NativeJavaBridge.nativeCursorCaptured()) {
+                pausedByOptions = true
+                input.tapKey(256)
+            }
+        } else if (pausedByOptions) {
+            pausedByOptions = false
+            pauseDismissed = true
+            input.tapKey(256)
+        }
+    }
     LaunchedEffect(panelBridge, hud.biomeriaMenus, pauseBlocked) {
         val bridge = panelBridge ?: return@LaunchedEffect
         while (hud.biomeriaMenus) {
