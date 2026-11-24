@@ -23,6 +23,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.draw.blur
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -432,11 +433,6 @@ private fun DualScreenPanel(
             shaders.load()
         }
     }
-    if (guideOpen) {
-        OptionGuidePage(activity.optionGuide, { activity.closeFullOptions() },
-            Modifier.fillMaxSize().safeDrawingPadding())
-        return
-    }
     Box(Modifier.fillMaxSize().onGloballyPositioned { rootOrigin = it.positionInRoot() }) {
     Column(Modifier.fillMaxSize().background(look.background).safeDrawingPadding()
         .then(if (customizing) Modifier.blur(14.dp) else Modifier)) {
@@ -547,6 +543,10 @@ private fun DualScreenPanel(
                     .padding(14.dp),
                 controllerActive = controllerActive, onPadInput = { characterPadInput = it })
         }
+    }
+    if (guideOpen) {
+        OptionGuidePage(activity.optionGuide, { activity.closeFullOptions() },
+            Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, null) {}.safeDrawingPadding())
     }
     if (shaderPicker) ShaderPicker(shaders, onClose = { shaderPicker = false }) { pack -> scope.launch { shaders.choose(pack) } }
     // The stack follows the finger while it is being dragged.
