@@ -59,7 +59,7 @@ jobs:
       - name: Preparar novedades de la versión
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_VERSION: 1.0.7
+          RELEASE_VERSION: 1.0.8
         run: |
           notes="app/src/main/assets/release-notes/$RELEASE_VERSION.md"
           if [ ! -s "$notes" ]; then
@@ -83,12 +83,12 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           chmod +x ./gradlew || true
-          VER="1.0.7"
+          VER="1.0.8"
           ./gradlew testDebugUnitTest assembleRelease -PversionCode=${{ github.run_number }} -PversionName=$VER || gradle testDebugUnitTest assembleRelease -PversionCode=${{ github.run_number }} -PversionName=$VER
 
       - name: Renombrar APK con número de build
         run: |
-          TAG="v1.0.7"
+          TAG="v1.0.8"
           echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
           cp app/build/outputs/apk/release/app-release.apk "BIOMERIA-Launcher-${TAG}.apk"
 
