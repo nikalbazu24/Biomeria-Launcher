@@ -260,6 +260,7 @@ private fun CharacterCorner(
         Text("Personaje", color = panel.ink, fontFamily = PixelFont, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1)
         BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
             val small = minOf((maxHeight - 4.dp * 4) / 5, maxWidth * .32f, 64.dp).coerceAtLeast(26.dp)
+            val figureHeight = (maxHeight - 34.dp).coerceIn(70.dp, 220.dp)
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (live.layout == PanelLayout.PERSONAL) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -272,7 +273,7 @@ private fun CharacterCorner(
                 Box(Modifier.weight(1f).fillMaxHeight().panelCard()
                     .clickable(onClickLabel = "Cambiar el aspecto de tu personaje", onClick = onCustomize),
                     contentAlignment = Alignment.Center) {
-                    CharacterFigure(look, bridge, back = false, height = (maxHeight - 34.dp).coerceIn(70.dp, 220.dp))
+                    CharacterFigure(look, bridge, back = false, height = figureHeight)
                     Text("Aspecto", Modifier.align(Alignment.BottomCenter).padding(4.dp), color = panel.muted,
                         fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelSmall)
                 }
