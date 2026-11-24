@@ -61,66 +61,66 @@ internal fun InventoryPage(
     modifier: Modifier = Modifier
 ) {
     val look = LocalPanelLook.current
-    // Slots first: thin frame, tight gaps, and the item card and character in a band under the hotbar.
-    BoxWithConstraints(modifier.panelFrame().padding(horizontal = 6.dp, vertical = 6.dp)) {
+    // Two columns that start and end together: the character and crafting on the left,
+    // the backpack, the hotbar and the chosen item on the right, all on one slot size.
+    BoxWithConstraints(modifier) {
         val gap = 4.dp
-        val byWidth = (maxWidth - gap * 8) / 9
-        // Header 44 + hotbar label 18 + spacing; the band under the hotbar is about 1.7 slots tall.
-        val byHeight = (maxHeight - 44.dp - 18.dp - 36.dp - gap * 3) / 5.7f
-        val slot = minOf(byWidth, maxOf(byHeight, 40.dp), 120.dp)
-        val band = maxOf(slot * 1.7f, 110.dp)
-        val gridWidth = slot * 9 + gap * 8
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(Modifier.width(gridWidth).heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (editingSearch || query.isNotBlank()) {
-                    Box(Modifier.weight(1f).heightIn(min = 44.dp).background(if (look.classic) Color.White else Color(0xFF0B0E11))
-                        .border(3.dp, Color(0xFFF5E663)).clickable(onClick = onSearch).padding(horizontal = 12.dp),
-                        contentAlignment = Alignment.CenterStart) {
-                        Text(query.ifBlank { "Buscar: escribe “pico”, “madera”…" }, color = if (query.isBlank()) look.muted else look.ink,
-                            fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium, maxLines = 1,
-                            overflow = TextOverflow.Ellipsis)
-                    }
-                    PanelButton(onClearSearch, Modifier.semantics { contentDescription = "Cerrar búsqueda" }) {
-                        Text("✕", color = look.ink, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium)
-                    }
-                } else {
-                    Text("Inventario", Modifier.weight(1f), color = look.ink, fontFamily = PixelFont, fontSize = 26.sp,
-                        fontWeight = FontWeight.Bold)
-                    PanelButton(onSearch, Modifier.semantics { contentDescription = "Buscar objeto" }) { SearchGlyph(look.ink) }
-                }
+        val side = (maxWidth * .23f).coerceIn(140.dp, 250.dp)
+        val right = maxWidth - side - 10.dp
+        val byWidth = (right - 30.dp - gap * 8) / 9
+        val byHeight = (maxHeight - 40.dp - 22.dp - 64.dp - 124.dp - 20.dp - gap * 3) / 4
+        val slot = minOf(byWidth, byHeight, 96.dp).coerceAtLeast(32.dp)
+        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.width(side).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                CharacterCorner(live, bridge, interactive, padFocus, onTap, onCustomize, Modifier.fillMaxWidth().weight(1f))
+                CraftShortcut(live, Modifier.fillMaxWidth(), onOpenCraft)
             }
-
-            Column(verticalArrangement = Arrangement.spacedBy(gap)) {
-                for (first in live.layout.inventoryStart until live.layout.hotbarStart step 9) {
+            Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.fillMaxWidth().panelFrame().padding(horizontal = 10.dp, vertical = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(gap)) {
+                    Row(Modifier.width(slot * 9 + gap * 8).heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        if (editingSearch || query.isNotBlank()) {
+                            Box(Modifier.weight(1f).heightIn(min = 40.dp).background(if (look.classic) Color.White else Color(0xFF0B0E11))
+                                .border(3.dp, Color(0xFFF5E663)).clickable(onClick = onSearch).padding(horizontal = 12.dp),
+                                contentAlignment = Alignment.CenterStart) {
+                                Text(query.ifBlank { "Buscar: escribe “pico”, “madera”…" }, color = if (query.isBlank()) look.muted else look.ink,
+                                    fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium, maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis)
+                            }
+                            PanelButton(onClearSearch, Modifier.semantics { contentDescription = "Cerrar búsqueda" }) {
+                                Text("✕", color = look.ink, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium)
+                            }
+                        } else {
+                            Text("Inventario", Modifier.weight(1f), color = look.ink, fontFamily = PixelFont, fontSize = 22.sp,
+                                fontWeight = FontWeight.Bold)
+                            PanelButton(onSearch, Modifier.semantics { contentDescription = "Buscar objeto" }) {
+                                SearchGlyph(look.ink)
+                                Text("Buscar", color = look.ink, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+                            }
+                        }
+                    }
+                    for (first in live.layout.inventoryStart until live.layout.hotbarStart step 9) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                            for (number in first until first + 9) McSlot(number, live, slot, interactive, onTap,
+                                chosen = chosen == number, focused = padFocus?.number == number,
+                                dim = matchingSlots != null && number !in matchingSlots)
+                        }
+                    }
+                }
+                Column(Modifier.fillMaxWidth().panelFrame().padding(horizontal = 10.dp, vertical = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("Barra rápida", Modifier.width(slot * 9 + gap * 8), color = look.muted, fontFamily = PixelFont, fontSize = 15.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
-                        for (number in first until first + 9) McSlot(number, live, slot, interactive, onTap,
-                            chosen = chosen == number, focused = padFocus?.number == number,
-                            dim = matchingSlots != null && number !in matchingSlots)
+                        val start = live.layout.hotbarStart
+                        for (number in start until start + 9) McSlot(number, live, slot, interactive, onTap,
+                            chosen = chosen == number, inHand = number == start + live.selectedSlot,
+                            focused = padFocus?.number == number, dim = matchingSlots != null && number !in matchingSlots)
                     }
                 }
+                if (editingSearch) keyboard(Modifier.fillMaxWidth().weight(1f))
+                else ItemActions(live, chosen, interactive, onCommand, Modifier.fillMaxWidth().weight(1f))
             }
-            Column(Modifier.width(gridWidth), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Barra rápida", color = look.muted, fontFamily = PixelFont, fontSize = 14.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
-                    val start = live.layout.hotbarStart
-                    for (number in start until start + 9) McSlot(number, live, slot, interactive, onTap,
-                        chosen = chosen == number, inHand = number == start + live.selectedSlot,
-                        focused = padFocus?.number == number, dim = matchingSlots != null && number !in matchingSlots)
-                }
-            }
-            if (editingSearch) {
-                keyboard(Modifier.width(gridWidth).height(band + 20.dp))
-            } else {
-                Row(Modifier.width(gridWidth).height(band), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CraftShortcut(live, Modifier.weight(.27f).fillMaxHeight(), onOpenCraft)
-                    ItemActions(live, chosen, interactive, onCommand, Modifier.weight(.5f).fillMaxHeight())
-                    CharacterCorner(live, bridge, interactive, slot, band, padFocus, onTap, onCustomize,
-                        Modifier.weight(.23f).fillMaxHeight())
-                }
-            }
-
         }
     }
 }
@@ -176,7 +176,7 @@ private fun ItemActions(
     val look = LocalPanelLook.current
     val held = live.held.takeIf { it.count > 0 }
     val item = chosen?.let { live.slots.getOrNull(it) }?.takeIf { it.count > 0 }
-    Column(modifier.panelCard().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(modifier.panelFrame().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         when {
             held != null -> {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -206,24 +206,30 @@ private fun ItemActions(
                     }
                 }
                 val actions = listOf(
-                    Triple("A", "Tomar para moverlo", PanelCommand.PICK),
+                    Triple("A", "Tomar", PanelCommand.PICK),
                     Triple("X", when {
-                        worn -> "Quitar y guardar"
-                        inHotbar -> "Guardar en la mochila"
-                        else -> "Pasar a la barra rápida"
+                        worn -> "Quitar"
+                        inHotbar -> "A la mochila"
+                        else -> "A la barra"
                     }, PanelCommand.QUICK_MOVE),
-                    Triple("Y", if (item.count > 1) "Tomar la mitad (${(item.count + 1) / 2})" else "Tomar la mitad", PanelCommand.SPLIT),
-                    Triple("L2", "Tirar 1 al suelo", PanelCommand.THROW)
+                    Triple("Y", if (item.count > 1) "Mitad (${(item.count + 1) / 2})" else "La mitad", PanelCommand.SPLIT),
+                    Triple("L2", "Tirar 1", PanelCommand.THROW)
                 )
-                for (pair in actions.chunked(2)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        for ((key, label, command) in pair) {
-                            PanelButton({ onCommand(command, chosen) }, Modifier.weight(1f),
-                                enabled = interactive && (command != PanelCommand.SPLIT || item.count > 1)) {
-                                PadKey(key)
-                                Text(label, color = look.ink, fontWeight = FontWeight.ExtraBold,
-                                    style = MaterialTheme.typography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            }
+                Spacer(Modifier.weight(1f))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for ((key, label, command) in actions) {
+                        PanelButton({ onCommand(command, chosen) }, Modifier.weight(1f),
+                            enabled = interactive && (command != PanelCommand.SPLIT || item.count > 1),
+                            face = when (command) {
+                                PanelCommand.PICK -> Color(0xFF7BC74D)
+                                PanelCommand.QUICK_MOVE -> Color(0xFF4FB3D9)
+                                PanelCommand.SPLIT -> Color(0xFFF5E663)
+                                else -> null
+                            }) {
+                            PadKey(key)
+                            Text(label, color = if (command == PanelCommand.THROW) look.ink else Color(0xFF0B0E11),
+                                fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge, maxLines = 1,
+                                overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
@@ -237,35 +243,38 @@ private fun ItemActions(
     }
 }
 
-/** The character, small, in the right corner with its armour and off hand. Tap it to customise. */
+/** The character with its armour down one side and the off hand under it. Tap the figure to change your look. */
 @Composable
 private fun CharacterCorner(
     live: PanelInventory,
     bridge: DualScreenBridge,
     interactive: Boolean,
-    slot: Dp,
-    band: Dp,
     padFocus: PanelPadSlot?,
     onTap: (Int) -> Unit,
     onCustomize: () -> Unit,
     modifier: Modifier
 ) {
+    val panel = LocalPanelLook.current
     val look = rememberCharacterLook()
-    val small = maxOf(minOf(slot * .52f, (band - 40.dp) / 3), 28.dp)
-    Row(modifier.panelCard().padding(8.dp), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)) {
-        Box(Modifier.clickable(onClickLabel = "Personalizar tu personaje", onClick = onCustomize)) {
-            CharacterFigure(look, bridge, back = false, height = (band - 34.dp).coerceAtLeast(70.dp))
-        }
-        if (live.layout == PanelLayout.PERSONAL) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                listOf(listOf(5, 6), listOf(7, 8), listOf(45)).forEach { line ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        line.forEach { number ->
+    Column(modifier.panelFrame().padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Personaje", color = panel.ink, fontFamily = PixelFont, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+            val small = minOf((maxHeight - 4.dp * 4) / 5, maxWidth * .32f, 64.dp).coerceAtLeast(26.dp)
+            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (live.layout == PanelLayout.PERSONAL) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        listOf(5, 6, 7, 8, 45).forEach { number ->
                             McSlot(number, live, small, interactive, onTap, focused = padFocus?.number == number,
                                 placeholder = when (number) { 5 -> "Casco"; 6 -> "Pechera"; 7 -> "Pantalones"; 8 -> "Botas"; else -> "Segunda mano" })
                         }
                     }
+                }
+                Box(Modifier.weight(1f).fillMaxHeight().panelCard()
+                    .clickable(onClickLabel = "Cambiar el aspecto de tu personaje", onClick = onCustomize),
+                    contentAlignment = Alignment.Center) {
+                    CharacterFigure(look, bridge, back = false, height = (maxHeight - 34.dp).coerceIn(70.dp, 220.dp))
+                    Text("Aspecto", Modifier.align(Alignment.BottomCenter).padding(4.dp), color = panel.muted,
+                        fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
@@ -274,7 +283,9 @@ private fun CharacterCorner(
 
 // ---------------------------------------------------------------- Crafting
 
-private enum class RecipeShelf(val label: String) { ALL("Todo"), TOOLS("Herramientas"), BLOCKS("Bloques"), FOOD("Comida"), FURNACE("Horno") }
+private enum class RecipeShelf(val label: String, val glyph: Glyph) {
+    ALL("Todo", Glyph.ALL), TOOLS("Herram.", Glyph.TOOL), BLOCKS("Bloques", Glyph.BLOCK), FOOD("Comida", Glyph.FOOD), FURNACE("Horno", Glyph.FLAME)
+}
 
 private val toolWords = listOf("pickaxe", "_axe", "shovel", "_hoe", "sword", "bow", "shield", "helmet", "chestplate", "leggings",
     "boots", "fishing_rod", "shears", "flint_and_steel", "compass", "clock", "bucket", "arrow", "spyglass", "brush", "lead",
@@ -328,11 +339,14 @@ internal fun CraftPage(
         }
     }
     var shelf by remember { mutableStateOf(RecipeShelf.ALL) }
+    var onlyReady by remember { mutableStateOf(false) }
     var selectedId by remember(live.generation) { mutableStateOf<Int?>(null) }
     var focusIndex by remember(live.generation, shelf) { mutableIntStateOf(0) }
     val snapshot = book
-    val results = remember(snapshot?.recipes, shelf) {
-        snapshot?.recipes.orEmpty().filter { shelf == RecipeShelf.ALL || shelfOf(it) == shelf }
+    val results = remember(snapshot?.recipes, shelf, onlyReady) {
+        snapshot?.recipes.orEmpty().filter {
+            (shelf == RecipeShelf.ALL || shelfOf(it) == shelf) && (!onlyReady || it.state == PanelRecipeState.READY)
+        }
     }
     val selected = snapshot?.recipes?.firstOrNull { it.id == selectedId }
     var pending by remember { mutableStateOf<PendingCraft?>(null) }
@@ -387,48 +401,52 @@ internal fun CraftPage(
         if (controllerActive && showRecipes && results.isNotEmpty()) gridState.animateScrollToItem(focusIndex.coerceIn(0, results.lastIndex))
     }
 
-    fun quickCraft(recipe: PanelRecipe) {
-        if (recipe.state != PanelRecipeState.READY || live.held.count > 0 || !interactive || busy) return
-        selectedId = recipe.id
-        if (bridge.send(live, PanelCommand.PLACE_RECIPE, recipe.id)) {
-            pending = PendingCraft(recipe.resultId, SystemClock.elapsedRealtime() + 2500L)
-        }
-    }
-    val quick = remember(snapshot?.recipes) {
-        snapshot?.recipes.orEmpty().filter { it.state == PanelRecipeState.READY }.take(24)
-    }
-
-    // The grid in the middle is the star; recipes on the left, one-tap crafts on the right.
+    // Shelves down the side, the recipes in the middle, and the chosen recipe with its grid on the right.
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Column(Modifier.weight(if (showRecipes) .33f else .44f).fillMaxHeight().panelFrame().padding(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(if (showRecipes) "Recetas" else "Tu inventario", Modifier.weight(1f), color = look.ink, fontFamily = PixelFont,
-                    fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        if (showRecipes) {
+            Column(Modifier.width(66.dp).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                RecipeShelf.entries.forEach { entry ->
+                    val on = shelf == entry
+                    Column(Modifier.fillMaxWidth().heightIn(min = 58.dp)
+                        .background(if (on) Color(0xFFF5E663) else Color(0xFF1E252C), RoundedCornerShape(8.dp))
+                        .border(2.dp, if (on) Color(0xFFC9B93A) else Color(0xFF2C343A), RoundedCornerShape(8.dp))
+                        .clickable(role = Role.Tab, onClickLabel = entry.label) { shelf = entry }.padding(4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically)) {
+                        PixelGlyph(entry.glyph, if (on) Color(0xFF2A2508) else Color(0xFFA9B6BD), Modifier.size(24.dp))
+                        Text(entry.label, color = if (on) Color(0xFF2A2508) else Color(0xFFA9B6BD), fontWeight = FontWeight.ExtraBold,
+                            fontSize = 11.sp, maxLines = 1)
+                    }
+                }
+            }
+        }
+        Column(Modifier.weight(.52f).fillMaxHeight().panelFrame().padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (showRecipes) {
+                    FilterChip("Todas", !onlyReady) { onlyReady = false }
+                    FilterChip("Puedo hacer", onlyReady) { onlyReady = true }
+                } else {
+                    Text("Tu inventario", color = look.ink, fontFamily = PixelFont, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.weight(1f))
                 if (recipesHere) PanelButton({ manual = !manual }) {
-                    Text(if (manual) "Ver recetas" else "Colocar a mano", color = look.ink, fontWeight = FontWeight.ExtraBold,
-                        style = MaterialTheme.typography.labelLarge)
+                    Text(if (manual) "Ver recetas" else "A mano", color = look.ink, fontWeight = FontWeight.ExtraBold,
+                        style = MaterialTheme.typography.labelLarge, maxLines = 1)
                 }
             }
             if (showRecipes) {
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    RecipeShelf.entries.forEach { entry ->
-                        PanelButton({ shelf = entry }, face = if (shelf == entry) Color(0xFF7BC74D) else null) {
-                            Text(entry.label, color = if (shelf == entry) Color(0xFF0E1A08) else look.ink, fontWeight = FontWeight.ExtraBold,
-                                style = MaterialTheme.typography.labelLarge, maxLines = 1)
-                        }
-                    }
-                }
                 when {
                     snapshot == null -> Text("Leyendo las recetas de Minecraft…", color = look.muted)
-                    results.isEmpty() -> Text(if (snapshot.recipes.isEmpty()) "Todavía no tienes recetas. Minecraft te las da al recoger materiales."
-                        else "No hay recetas en esta categoría.", color = look.muted, fontWeight = FontWeight.Bold)
+                    results.isEmpty() -> Text(when {
+                        snapshot.recipes.isEmpty() -> "Todavía no tienes recetas. Minecraft te las da al recoger materiales."
+                        onlyReady -> "Aún no puedes hacer nada de esta categoría. Junta materiales."
+                        else -> "No hay recetas en esta categoría."
+                    }, color = look.muted, fontWeight = FontWeight.Bold)
                 }
                 BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-                    val tile = 52.dp
+                    val tile = 54.dp
                     columns = ((maxWidth + GAP) / (tile + GAP)).toInt().coerceAtLeast(3)
                     LazyVerticalGrid(GridCells.Fixed(columns), state = gridState, horizontalArrangement = Arrangement.spacedBy(GAP),
-                        verticalArrangement = Arrangement.spacedBy(GAP), contentPadding = PaddingValues(top = 8.dp, end = 8.dp)) {
+                        verticalArrangement = Arrangement.spacedBy(GAP), contentPadding = PaddingValues(top = 4.dp, end = 4.dp, bottom = 4.dp)) {
                         itemsIndexed(results, key = { _, recipe -> recipe.id }) { index, recipe ->
                             RecipeTile(recipe, recipe.id == selectedId, controllerActive && index == focusIndex) {
                                 focusIndex = index
@@ -436,10 +454,6 @@ internal fun CraftPage(
                             }
                         }
                     }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Legend(Color(0xFF7BC74D), "Puedes craftearla")
-                    Legend(Color(0xFF6B6B6B), "Te faltan cosas")
                 }
             } else {
                 BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
@@ -462,19 +476,20 @@ internal fun CraftPage(
             }
         }
 
-        Column(Modifier.weight(if (showRecipes) .40f else .56f).fillMaxHeight().panelFrame().padding(10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.weight(.48f).fillMaxHeight().panelFrame().padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             val side = live.layout.craftSize
-            Text(selected?.name ?: if (side == 3) "Mesa de crafteo" else "Crafteo 2×2", color = look.ink,
-                fontFamily = PixelFont, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(selected?.let { recipeWhere(it, side) } ?: "Pon los materiales en la cuadrícula", color = look.muted,
-                fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+            Column {
+                Text(selected?.name ?: if (side == 3) "Mesa de crafteo" else "Crafteo 2×2", color = look.ink,
+                    fontFamily = PixelFont, fontSize = 21.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(selected?.let { recipeWhere(it, side) } ?: "Elige una receta o pon los materiales tú", color = look.muted,
+                    fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
             BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val cell = minOf((maxWidth - 6.dp * (side - 1)) / side * .9f, 84.dp).coerceAtLeast(34.dp)
+                val cell = minOf((maxWidth * .62f - 6.dp * (side - 1)) / side, 64.dp).coerceAtLeast(32.dp)
                 val pattern = snapshot?.takeIf { selected != null && it.selectedId == selected.id && it.pattern.size == 9 }?.pattern
                 val gridEmpty = (1..side * side).all { (live.slots.getOrNull(it)?.count ?: 0) == 0 }
-                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally)) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         repeat(side) { row ->
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -487,14 +502,13 @@ internal fun CraftPage(
                             }
                         }
                     }
-                    Text("↓", color = look.ink, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("→", color = look.ink, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
                     McSlot(0, live, cell * 1.25f, interactive, onTap, focused = padFocus?.number == 0,
                         ghostId = selected?.resultId, placeholder = "Resultado")
                 }
             }
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (selected != null) {
-                    Text("Necesitas", color = look.muted, fontFamily = PixelFont, fontSize = 16.sp)
                     when (selected.state) {
                         PanelRecipeState.READY -> NeedRow(look.good, "Tienes todo lo necesario", null)
                         PanelRecipeState.MISSING -> {
@@ -510,48 +524,40 @@ internal fun CraftPage(
                     NeedRow(look.muted, "Llevas ${live.held.name}: toca una casilla para dejarlo", null)
                 }
             }
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                val ready = selected?.state == PanelRecipeState.READY && interactive && live.held.count == 0 && !busy
-                if (selected != null) {
-                    PanelButton({ craft(false) }, Modifier.fillMaxWidth().heightIn(min = 50.dp), enabled = ready, face = Color(0xFF7BC74D)) {
-                        Text("Craftear 1", color = Color(0xFF0E1A08), fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium)
+            val ready = selected?.state == PanelRecipeState.READY && interactive && live.held.count == 0 && !busy
+            if (selected != null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    PanelButton({ craft(false) }, Modifier.weight(1f).heightIn(min = 50.dp), enabled = ready, face = Color(0xFF7BC74D)) {
                         PadKey("A")
+                        Text("Craftear 1", color = Color(0xFF0E1A08), fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleSmall,
+                            maxLines = 1)
                     }
-                    PanelButton({ craft(true) }, Modifier.fillMaxWidth().heightIn(min = 50.dp), enabled = ready) {
-                        Text("Craftear todo lo posible", color = look.ink, fontWeight = FontWeight.ExtraBold,
-                            style = MaterialTheme.typography.titleSmall, maxLines = 2)
+                    PanelButton({ craft(true) }, Modifier.weight(1f).heightIn(min = 50.dp), enabled = ready, face = Color(0xFFF5E663)) {
                         PadKey("Y")
+                        Text("Todo", color = Color(0xFF2A2508), fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleSmall,
+                            maxLines = 1)
                     }
-                } else {
-                    val result = live.slots.getOrNull(0)?.takeIf { it.count > 0 }
-                    PanelButton({ bridge.send(live, PanelCommand.QUICK_MOVE, 0) }, Modifier.fillMaxWidth().heightIn(min = 50.dp),
-                        enabled = result != null && interactive, face = Color(0xFF7BC74D)) {
-                        Text(if (result != null) "Tomar ${result.name}" else "Tomar el resultado", color = Color(0xFF0E1A08),
-                            fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium, maxLines = 1,
-                            overflow = TextOverflow.Ellipsis)
-                    }
+                }
+            } else {
+                val result = live.slots.getOrNull(0)?.takeIf { it.count > 0 }
+                PanelButton({ bridge.send(live, PanelCommand.QUICK_MOVE, 0) }, Modifier.fillMaxWidth().heightIn(min = 50.dp),
+                    enabled = result != null && interactive, face = Color(0xFF7BC74D)) {
+                    Text(if (result != null) "Tomar ${result.name}" else "Tomar el resultado", color = Color(0xFF0E1A08),
+                        fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis)
                 }
             }
         }
-        if (showRecipes) {
-            Column(Modifier.weight(.27f).fillMaxHeight().panelFrame().padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Rápidas", color = look.ink, fontFamily = PixelFont, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                Text("Lo que ya puedes hacer. Un toque y va a tu inventario.", color = look.muted,
-                    fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
-                if (quick.isEmpty()) Text("Junta materiales y aquí aparecerán.", color = look.muted, fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.bodySmall)
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    quick.forEach { recipe ->
-                        PanelButton({ quickCraft(recipe) }, Modifier.fillMaxWidth(),
-                            enabled = interactive && live.held.count == 0 && !busy) {
-                            McIcon(recipe.resultId, 30.dp, count = recipe.resultCount)
-                            Text(recipe.name, Modifier.weight(1f), color = look.ink, fontWeight = FontWeight.ExtraBold,
-                                style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
-                }
-            }
-        }
+    }
+}
+
+@Composable
+private fun FilterChip(label: String, on: Boolean, onClick: () -> Unit) {
+    Box(Modifier.heightIn(min = 40.dp).background(if (on) Color(0xFFF2F5EF) else Color(0xFF2A333B), RoundedCornerShape(20.dp))
+        .border(2.dp, Color(0xFF0B0E11), RoundedCornerShape(20.dp))
+        .clickable(role = Role.RadioButton, onClick = onClick).padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
+        Text(label, color = if (on) Color(0xFF0B0E11) else Color(0xFFF2F5EF), fontWeight = FontWeight.ExtraBold,
+            style = MaterialTheme.typography.labelLarge, maxLines = 1)
     }
 }
 
@@ -664,45 +670,70 @@ private fun Meter(progress: Float, color: Color, length: Dp) {
 
 // ---------------------------------------------------------------- Options
 
-internal enum class OptionGroup(val label: String, val detail: String) {
-    TEXT("Texto y contraste", "Tamaño de letra y colores"),
-    HUD("HUD", "Lo que ves en la pantalla de arriba"),
-    CONTROLS("Controles", "Cámara y botones táctiles"),
-    MAP("Mapa", "Minimapa y criaturas"),
-    SCREENS("Doble pantalla", "Qué se abre aquí abajo"),
-    PERFORMANCE("Rendimiento", "FPS y batería")
+internal enum class OptionGroup(val label: String, val detail: String, val glyph: Glyph, val color: Color) {
+    TEXT("Apariencia", "Tamaño, letra y contraste", Glyph.TEXT, Kit.lilac),
+    HUD("Pantalla de arriba", "FPS, coordenadas y logros", Glyph.SUN, Kit.sky),
+    CONTROLS("Controles", "Cámara y botones táctiles", Glyph.PAD, Kit.gold),
+    MAP("Mapa", "Minimapa y criaturas", Glyph.MAP, Kit.grass),
+    SCREENS("Doble pantalla", "Qué se abre aquí abajo", Glyph.SCREENS, Kit.ember),
+    PERFORMANCE("Rendimiento", "FPS y batería", Glyph.BOLT, Kit.wood)
 }
 
-/** The options, grouped: categories on the left, their switches and choices on the right. */
+/**
+ * Ajustes: quick field of view and shaders on top, then one tile per section. A tile opens its
+ * section on its own page, with a way back.
+ */
 @Composable
 internal fun OptionsPage(
     hud: GameHudSettings,
     onHud: (GameHudSettings) -> Unit,
-    group: OptionGroup,
-    onGroup: (OptionGroup) -> Unit,
+    group: OptionGroup?,
+    onGroup: (OptionGroup?) -> Unit,
+    focus: Int?,
     canTurnOff: Boolean,
+    fov: Int?,
+    onFov: (Int) -> Unit,
+    status: String?,
+    shaderCard: @Composable (Modifier) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        Column(Modifier.weight(.34f).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            OptionGroup.entries.forEach { entry ->
-                val on = entry == group
-                Column(Modifier.fillMaxWidth().heightIn(min = 64.dp)
-                    .background(if (on) Color(0xFF7BC74D) else Color(0xFF1E252C), RoundedCornerShape(4.dp))
-                    .border(2.dp, Color(0xFF0B0E11), RoundedCornerShape(4.dp))
-                    .clickable(role = Role.Tab, onClick = { onGroup(entry) }).padding(horizontal = 14.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.Center) {
-                    Text(entry.label, color = if (on) Color(0xFF0E1A08) else Color(0xFFF2F5EF), fontFamily = PixelFont, fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold)
-                    Text(entry.detail, color = if (on) Color(0xFF2C4A1B) else Color(0xFFB9C4CA), fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.labelMedium)
+    if (group == null) {
+        Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth().weight(.95f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                val ring = { index: Int -> if (focus == index) Modifier.border(3.dp, Kit.gold, RoundedCornerShape(10.dp)) else Modifier }
+                if (fov != null) FovCard(fov, onFov, Modifier.weight(1.3f).fillMaxHeight().then(ring(0)), compact = true)
+                else Box(Modifier.weight(1.3f).fillMaxHeight().kitCard().padding(12.dp), contentAlignment = Alignment.Center) {
+                    Text("Entra a un mundo para cambiar el campo de visión.", color = Kit.muted, fontWeight = FontWeight.Bold)
+                }
+                shaderCard(Modifier.weight(1f).fillMaxHeight().then(ring(1)))
+            }
+            OptionGroup.entries.chunked(3).forEachIndexed { row, entries ->
+                Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    entries.forEachIndexed { column, entry ->
+                        MenuTile(entry.label, entry.detail, entry.glyph, entry.color, { onGroup(entry) },
+                            Modifier.weight(1f).fillMaxHeight(), focused = focus == 2 + row * 3 + column)
+                    }
                 }
             }
+            if (status != null) Text(status, color = Kit.grass, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
         }
-        Column(Modifier.weight(.66f).fillMaxHeight().background(Color(0xFF161B21), RoundedCornerShape(6.dp))
-            .border(3.dp, Color(0xFF232B33), RoundedCornerShape(6.dp)).padding(16.dp).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(group.label, color = Color(0xFFF2F5EF), fontFamily = PixelFont, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        return
+    }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            com.biomeria.launcher.ui.components.BlockButton({ onGroup(null) }, Modifier.heightIn(min = 44.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp)) {
+                Text("‹ Ajustes", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+                Spacer(Modifier.width(6.dp))
+                PadKey("B")
+            }
+            Box(Modifier.size(40.dp).background(group.color, RoundedCornerShape(9.dp)), contentAlignment = Alignment.Center) {
+                PixelGlyph(group.glyph, Kit.ink, Modifier.size(26.dp))
+            }
+            Text(group.label, Modifier.weight(1f), color = Kit.text, fontFamily = PixelFont, fontSize = 24.sp, fontWeight = FontWeight.Bold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             when (group) {
                 OptionGroup.TEXT -> {
                     ChoiceRow("Tamaño de la interfaz", "Achica o agranda todo este panel", InterfaceSize.entries, hud.interfaceSize,
@@ -755,7 +786,7 @@ internal fun OptionsPage(
                     SwitchRow("Mesa de crafteo abajo", "Se abre en esta pantalla", hud.routeCrafting) { onHud(hud.copy(routeCrafting = it)) }
                     SwitchRow("Cofres, tolvas y dispensadores abajo", "Se abren en esta pantalla", hud.routeChests) { onHud(hud.copy(routeChests = it)) }
                     SwitchRow("Hornos abajo", "Se abren en esta pantalla", hud.routeFurnaces) { onHud(hud.copy(routeFurnaces = it)) }
-                    SwitchRow("Indicador del mando", "El botón \"Juego · Select\" de arriba", hud.showPadChip) {
+                    SwitchRow("Indicador del mando", "Muestra abajo a la derecha quién usa el mando", hud.showPadChip) {
                         onHud(hud.copy(showPadChip = it))
                     }
                     SwitchRow("Indicadores en esta pantalla", "FPS y coordenadas aquí en vez de arriba", hud.widgetsBelow) {
@@ -785,11 +816,7 @@ private fun SwitchRow(label: String, detail: String, on: Boolean, onChange: (Boo
         .clickable(role = Role.Switch, onClick = { onChange(!on) }).padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         OptionText(label, detail, Modifier.weight(1f))
-        Box(Modifier.size(68.dp, 36.dp).background(if (on) Color(0xFF7BC74D) else Color(0xFF3A454F), RoundedCornerShape(4.dp))
-            .border(3.dp, Color(0xFF0B0E11), RoundedCornerShape(4.dp)).padding(4.dp),
-            contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart) {
-            Box(Modifier.size(24.dp).background(Color(0xFFF2F5EF), RoundedCornerShape(2.dp)).border(2.dp, Color(0xFF0B0E11), RoundedCornerShape(2.dp)))
-        }
+        KitSwitch(on)
     }
 }
 

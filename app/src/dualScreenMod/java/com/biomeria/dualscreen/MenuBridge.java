@@ -47,6 +47,11 @@ public final class MenuBridge {
                 Files.deleteIfExists(reload);
                 Files.writeString(root.resolve("options-result"), applyOptions(client) ? "1" : "0", StandardCharsets.US_ASCII);
             }
+            Path shaders = root.resolve("shaders-reload");
+            if (Files.isRegularFile(shaders)) {
+                Files.deleteIfExists(shaders);
+                Files.writeString(root.resolve("shaders-result"), reloadShaders(client) ? "1" : "0", StandardCharsets.US_ASCII);
+            }
         } catch (Exception | LinkageError error) {
             failed = true;
             hiddenScreen = null;
@@ -68,6 +73,23 @@ public final class MenuBridge {
             System.err.println("[BIOMERIA] No se pudieron recargar las opciones: " + error);
             return false;
         }
+    }
+
+    /** Iris reads config/iris.properties again and loads the chosen pack, without leaving the world. */
+    private static boolean reloadShaders(Object client) {
+        for (String name : new String[] { "net.irisshaders.iris.Iris", "net.coderbot.iris.Iris" }) {
+            try {
+                Class<?> iris = Class.forName(name, true, client.getClass().getClassLoader());
+                iris.getMethod("reload").invoke(null);
+                return true;
+            } catch (ClassNotFoundException missing) {
+                // Try the older package name.
+            } catch (Exception | LinkageError error) {
+                System.err.println("[BIOMERIA] No se pudieron recargar los shaders: " + error);
+                return false;
+            }
+        }
+        return false;
     }
 
     private static void init(ClassLoader loader) throws ReflectiveOperationException {

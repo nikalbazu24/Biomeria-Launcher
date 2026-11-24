@@ -196,6 +196,15 @@ internal class DualScreenBridge(val directory: File, val terrainDirectory: File?
     /** null while waiting, true when the game applied the options, false when they apply on restart. */
     fun optionsApplied(): Boolean? = runCatching { File(directory, "options-result").readText().trim() == "1" }.getOrNull()
 
+    /** Asks the game to reload the shader pack after Android changed config/iris.properties. */
+    fun reloadShaders(): Boolean {
+        File(directory, "shaders-result").delete()
+        return writeMarker("shaders-reload", "1")
+    }
+
+    /** null while waiting, true when Iris applied the pack, false when it applies on restart. */
+    fun shadersApplied(): Boolean? = runCatching { File(directory, "shaders-result").readText().trim() == "1" }.getOrNull()
+
     /** True while Minecraft shows a screen with item slots (inventory, chest, crafting table…). */
     fun slotScreen(): Boolean = File(directory, "slot-screen").isFile
 

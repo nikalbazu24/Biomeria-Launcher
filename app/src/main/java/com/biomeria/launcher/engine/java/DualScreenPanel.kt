@@ -73,6 +73,7 @@ import com.biomeria.launcher.ui.theme.BiomeriaTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun DualScreenHost(
@@ -183,7 +184,17 @@ private fun DualScreenPanel(
     var previousMenuPage by remember { mutableStateOf<PanelPage?>(null) }
     var inventory by remember(bridge) { mutableStateOf<PanelInventory?>(null) }
     var pixels by remember(bridge) { mutableStateOf<IntArray?>(null) }
-    var optionGroup by remember { mutableStateOf(OptionGroup.TEXT) }
+    // Ajustes opens on its menu of tiles; a tile opens its own page.
+    var optionGroup by remember { mutableStateOf<OptionGroup?>(null) }
+    var optionFocus by remember { mutableIntStateOf(0) }
+    var shaderPicker by remember { mutableStateOf(false) }
+    val gameOptions = rememberLiveGameOptions(activity.gameDirectory, bridge)
+    val shaders = rememberShaderController(activity.gameDirectory, bridge)
+    val scope = rememberCoroutineScope()
+    fun nudgeFov(by: Int) {
+        val options = gameOptions ?: return
+        options.change("fov", fovRaw(fovDegrees(options.values["fov"]) + by))
+    }
     var tipIndex by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(bridge) {
@@ -292,6 +303,8 @@ private fun DualScreenPanel(
     val panelAction by rememberUpdatedState<(PanelPadAction) -> Unit>({ action ->
         val target = padSlot?.takeIf { slot -> padRows.any { slot in it } } ?: padRows.firstOrNull()?.firstOrNull()
         when {
+            shaderPicker -> if (action == PanelPadAction.BACK) shaderPicker = false
+            action == PanelPadAction.BACK && page == PanelPage.OPTIONS && optionGroup != null -> optionGroup = null
             showingMap && page == actionPage && mapPadInput?.managingWaypoints?.invoke() == true ->
                 mapPadInput?.action?.invoke(action)
             customizing -> characterPadInput?.invoke(action)
@@ -314,11 +327,18 @@ private fun DualScreenPanel(
             action == PanelPadAction.MARK && page == PanelPage.INVENTORY && live?.layout == PanelLayout.PERSONAL &&
                 bridge != null -> customizing = true
             action == PanelPadAction.SEARCH && searchable -> editingSearch = true
-            page == PanelPage.OPTIONS -> when (action) {
-                PanelPadAction.UP -> optionGroup = OptionGroup.entries[(optionGroup.ordinal - 1).coerceAtLeast(0)]
-                PanelPadAction.DOWN -> optionGroup = OptionGroup.entries[(optionGroup.ordinal + 1).coerceAtMost(OptionGroup.entries.lastIndex)]
+            page == PanelPage.OPTIONS && optionGroup == null -> when {
+                action.directional -> optionFocus = moveHubFocus(optionFocus, action)
+                action == PanelPadAction.TRANSFER -> nudgeFov(-5)
+                action == PanelPadAction.SPLIT -> nudgeFov(5)
+                action == PanelPadAction.PICK -> when (optionFocus) {
+                    0 -> Unit
+                    1 -> shaderPicker = true
+                    else -> OptionGroup.entries.getOrNull(optionFocus - 2)?.let { optionGroup = it }
+                }
                 else -> Unit
             }
+            page == PanelPage.OPTIONS -> Unit
             showingMap -> mapPadInput?.action?.invoke(action)
             craftingByRecipes -> craftPadInput?.invoke(action)
             action.directional -> padSlot = movePanelPadSlot(padRows, target, action)
@@ -372,8 +392,10 @@ private fun DualScreenPanel(
             TipPart("Alejar"), TipPart("A", true), TipPart("Centrar"), TipPart("R3", true), TipPart("Marcar"), TipPart("B", true), TipPart("Volver"))
         craftingByRecipes -> listOf(TipPart("✛", true), TipPart("Recetas"), TipPart("A", true), TipPart("Elegir o craftear 1"),
             TipPart("Y", true), TipPart("Craftear todo"), TipPart("X", true), TipPart("Categoría"), TipPart("B", true), TipPart("Volver"))
-        page == PanelPage.OPTIONS -> listOf(TipPart("↕", true), TipPart("Categoría"), TipPart("LB/RB", true), TipPart("Secciones"),
-            TipPart("B", true), TipPart("Volver"))
+        shaderPicker -> listOf(TipPart("B", true), TipPart("Cerrar shaders"))
+        page == PanelPage.OPTIONS && optionGroup == null -> listOf(TipPart("✛", true), TipPart("Elegir"), TipPart("A", true), TipPart("Abrir"),
+            TipPart("X", true), TipPart("Y", true), TipPart("Campo de visión"), TipPart("B", true), TipPart("Devolver mando"))
+        page == PanelPage.OPTIONS -> listOf(TipPart("LB/RB", true), TipPart("Secciones"), TipPart("B", true), TipPart("Volver a Ajustes"))
         padFocus != null -> listOfNotNull(TipPart("A", true), TipPart("Tomar o dejar"), TipPart("X", true), TipPart("Mover rápido a la otra parte"),
             TipPart("Y", true), TipPart("La mitad"), TipPart("L2", true), TipPart("Tirar 1"),
             TipPart("Start", true).takeIf { searchable }, TipPart("Buscar").takeIf { searchable },
@@ -404,46 +426,27 @@ private fun DualScreenPanel(
     Box(Modifier.fillMaxSize().onGloballyPositioned { rootOrigin = it.positionInRoot() }) {
     Column(Modifier.fillMaxSize().background(look.background).safeDrawingPadding()
         .then(if (customizing) Modifier.blur(14.dp) else Modifier)) {
-        Row(
-            Modifier.fillMaxWidth().background(Biomeria.colors.ink)
-                .drawBehind { drawRect(Color(0xFF232B33), Offset(0f, size.height - 3.dp.toPx()), Size(size.width, 3.dp.toPx())) }
-                .padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            if (page != PanelPage.INVENTORY && bridge != null) {
-                BlockButton({ goBack(fromPad = false) }, Modifier.heightIn(min = 40.dp), BlockButtons.neutral,
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
-                    Text(if (routed != null && page == menuPage) "‹ Cerrar" else "‹ Volver", fontWeight = FontWeight.ExtraBold,
-                        style = MaterialTheme.typography.labelLarge)
-                    Spacer(Modifier.width(6.dp))
-                    PadKey("B")
-                }
-                Box(Modifier.width(2.dp).height(28.dp).background(Color(0xFF232B33)))
-            }
-            Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                PanelKeyChip("LB")
-                (tabs + listOfNotNull(PanelPage.STORAGE.takeIf { menuPage == PanelPage.STORAGE })).forEach { tab ->
-                    BlockButton({ openPage(tab) }, Modifier.heightIn(min = 38.dp),
-                        if (page == tab) BlockButtons.primary else BlockButtons.neutral,
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp)) {
-                        Text(if (tab == PanelPage.STORAGE) live?.menuTitle?.takeIf { it.isNotBlank() } ?: tab.label else tab.label,
-                            style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.ExtraBold, maxLines = 1)
-                    }
-                }
-                PanelKeyChip("RB")
-            }
-            if (hud.widgetsBelow) GameWidgets(hud, fps, bridge)
-            else if (live != null) Text("X ${live.x} · Y ${live.y} · Z ${live.z}", color = Biomeria.colors.textMuted,
-                fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium, maxLines = 1)
-            if (hud.showPadChip) ControllerChip(controllerActive) { activity.releaseLowerGamepad() }
-        }
+        val shownTabs = tabs + listOfNotNull(PanelPage.STORAGE.takeIf { menuPage == PanelPage.STORAGE })
+        PanelTabBar(
+            tabs = shownTabs,
+            page = page,
+            storageTitle = live?.menuTitle?.takeIf { it.isNotBlank() },
+            closeLabel = if (routed != null && page == menuPage) "Cerrar" else null,
+            onClose = { goBack(fromPad = false) },
+            onTab = { openPage(it) }
+        )
 
         Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
             val fill = Modifier.fillMaxSize()
             when {
                 page == PanelPage.OPTIONS -> OptionsPage(hud, onHud, optionGroup, { optionGroup = it },
-                    canTurnOff = (live?.held?.count ?: 0) == 0, modifier = fill)
+                    focus = optionFocus.takeIf { controllerActive && optionGroup == null },
+                    canTurnOff = (live?.held?.count ?: 0) == 0,
+                    fov = gameOptions?.let { fovDegrees(it.values["fov"]) },
+                    onFov = { degrees -> gameOptions?.change("fov", fovRaw(degrees)) },
+                    status = shaders.status ?: gameOptions?.status,
+                    shaderCard = { modifier -> ShaderCard(shaders, { shaderPicker = true }, modifier, pictureHeight = 40.dp) },
+                    modifier = fill)
                 bridge == null -> Column(fill, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("El inventario, el crafteo y el mapa necesitan Minecraft Java 1.21.4 con Fabric.",
                         color = Biomeria.colors.textPrimary, style = MaterialTheme.typography.bodyLarge)
@@ -499,10 +502,21 @@ private fun DualScreenPanel(
             }
         }
 
-        if (!hud.panelTips) Unit
-        else if (hints.isNotEmpty()) PanelTipStrip(hints, "Mando", null)
-        else if (pageTips.isNotEmpty()) PanelTipStrip(pageTips[tipIndex % pageTips.size], "Consejo",
-            if (pageTips.size > 1) ({ tipIndex++ }) else null)
+        // The strip at the bottom: what the buttons do, the indicators and who has the controller.
+        Row(Modifier.fillMaxWidth().background(Kit.ink)
+            .drawBehind { drawRect(Kit.line, Offset.Zero, Size(size.width, 3.dp.toPx())) }
+            .padding(top = 3.dp, end = 10.dp).heightIn(min = 44.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val tipModifier = Modifier.weight(1f)
+            when {
+                hints.isNotEmpty() -> PanelTipStrip(hints, "Mando", null, tipModifier)
+                hud.panelTips && pageTips.isNotEmpty() -> PanelTipStrip(pageTips[tipIndex % pageTips.size], "Consejo",
+                    if (pageTips.size > 1) ({ tipIndex++ }) else null, tipModifier)
+                else -> Spacer(tipModifier)
+            }
+            if (hud.widgetsBelow) GameWidgets(hud, fps, bridge)
+            if (hud.showPadChip) ControllerChip(controllerActive) { activity.releaseLowerGamepad() }
+        }
     }
     // The character in its own window, over the blurred panel.
     if (customizing && bridge != null) {
@@ -519,6 +533,7 @@ private fun DualScreenPanel(
                 controllerActive = controllerActive, onPadInput = { characterPadInput = it })
         }
     }
+    if (shaderPicker) ShaderPicker(shaders, onClose = { shaderPicker = false }) { pack -> scope.launch { shaders.choose(pack) } }
     // The stack follows the finger while it is being dragged.
     val finger = dragState.finger
     val icon = dragState.icon
@@ -535,11 +550,90 @@ private fun DualScreenPanel(
     }
 }
 
-/** Small key label for the shoulder buttons on either side of the tabs. */
+/** Hub focus on the Ajustes page: row 0 holds the field of view (0) and shaders (1), then two rows of three tiles. */
+private fun moveHubFocus(focus: Int, action: PanelPadAction): Int {
+    val rows = listOf(listOf(0, 1), listOf(2, 3, 4), listOf(5, 6, 7))
+    val row = rows.indexOfFirst { focus in it }.coerceAtLeast(0)
+    val column = rows[row].indexOf(focus).coerceAtLeast(0)
+    fun at(r: Int, c: Int) = rows[r][c.coerceIn(0, rows[r].lastIndex)]
+    return when (action) {
+        PanelPadAction.LEFT -> at(row, column - 1)
+        PanelPadAction.RIGHT -> at(row, column + 1)
+        PanelPadAction.UP -> if (row == 0) focus else at(row - 1, if (row == 1) (column * 2 + 1) / 3 else column)
+        PanelPadAction.DOWN -> if (row == 2) focus else at(row + 1, if (row == 0) column * 2 else column)
+        else -> focus
+    }
+}
+
+private data class TabFace(val label: String, val glyph: Glyph, val color: Color)
+
+private fun tabFace(page: PanelPage, storageTitle: String?) = when (page) {
+    PanelPage.INVENTORY -> TabFace("Mochila", Glyph.BAG, Kit.grass)
+    PanelPage.CRAFT -> TabFace("Crafteo", Glyph.TABLE, Kit.gold)
+    PanelPage.MAP -> TabFace("Mapa", Glyph.MAP, Kit.sky)
+    PanelPage.OPTIONS -> TabFace("Ajustes", Glyph.GEAR, Kit.lilac)
+    PanelPage.STORAGE -> TabFace(storageTitle ?: "Cofre", Glyph.CHEST, Kit.wood)
+}
+
+/**
+ * The sections as a hotbar: blocks of the same width, each with its glyph and colour; the chosen one
+ * rises and lights up. LB and RB sit fixed at both ends.
+ */
 @Composable
-private fun PanelKeyChip(key: String) {
-    Text(key, Modifier.background(Biomeria.colors.borderSubtle, RoundedCornerShape(3.dp)).padding(horizontal = 5.dp, vertical = 3.dp),
-        color = Biomeria.colors.textPrimary, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelSmall)
+private fun PanelTabBar(
+    tabs: List<PanelPage>,
+    page: PanelPage,
+    storageTitle: String?,
+    closeLabel: String?,
+    onClose: () -> Unit,
+    onTab: (PanelPage) -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth().background(Kit.ink)
+            .drawBehind { drawRect(Kit.line, Offset(0f, size.height - 3.dp.toPx()), Size(size.width, 3.dp.toPx())) }
+            .padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 3.dp),
+        verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        if (closeLabel != null) {
+            BlockButton(onClose, Modifier.padding(bottom = 6.dp).heightIn(min = 42.dp), BlockButtons.danger,
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp)) {
+                Text("‹ $closeLabel", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                Spacer(Modifier.width(6.dp))
+                PadKey("B")
+            }
+        }
+        if (tabs.size > 1) ShoulderKey("LB")
+        tabs.forEach { tab ->
+            val face = tabFace(tab, storageTitle)
+            val chosen = tab == page
+            Row(
+                Modifier.weight(1f).height(if (chosen) 52.dp else 46.dp)
+                    .background(if (chosen) face.color else Kit.card, RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp))
+                    .drawBehind {
+                        drawRect(if (chosen) Color(0x66FFFFFF) else Color(0x14FFFFFF), size = Size(size.width, 3.dp.toPx()))
+                    }
+                    .clickable(role = Role.Tab, onClickLabel = face.label) { onTab(tab) }
+                    .semantics { contentDescription = face.label }
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp, Alignment.CenterHorizontally)
+            ) {
+                PixelGlyph(face.glyph, if (chosen) Kit.ink else face.color, Modifier.size(if (chosen) 26.dp else 22.dp))
+                Text(face.label, color = if (chosen) Kit.ink else Kit.muted, fontFamily = PixelFont, fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        if (tabs.size > 1) ShoulderKey("RB")
+    }
+}
+
+@Composable
+private fun ShoulderKey(key: String) {
+    Box(Modifier.padding(bottom = 8.dp).size(42.dp, 34.dp).background(Kit.raised, RoundedCornerShape(7.dp))
+        .drawBehind { drawRect(Color(0x55000000), Offset(0f, size.height - 3.dp.toPx()), Size(size.width, 3.dp.toPx())) },
+        contentAlignment = Alignment.Center) {
+        Text(key, color = Kit.muted, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelLarge)
+    }
 }
 
 /**

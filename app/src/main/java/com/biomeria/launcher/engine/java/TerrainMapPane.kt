@@ -292,7 +292,7 @@ private fun TerrainView(
             }
         }
         Column(Modifier.align(Alignment.TopStart).padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            MapLabel(if (compact) "N ↑" else "N ↑  ·  X ${floor(player.x).toInt()}  Z ${floor(player.z).toInt()}")
+            MapLabel(if (compact) "N ↑" else "N ↑  ·  X ${floor(player.x).toInt()}  ·  Y ${floor(player.y).toInt()}  ·  Z ${floor(player.z).toInt()}")
             if (active != null && !compact) MapLabel("${active.name} · ${active.distanceFrom(player)} bloques", Modifier.widthIn(max = 260.dp))
         }
         if (active != null && compact) {

@@ -19,9 +19,13 @@ internal sealed class GameOption(val key: String, val label: String) {
     class Choice(key: String, label: String, val values: List<Pair<String, String>>) : GameOption(key, label)
 }
 
-internal enum class OptionGroup2(val label: String, val color: Long) {
-    VIDEO("Video", 0xFF7BC74D), SOUND("Sonido", 0xFF4FB3D9), CONTROLS("Controles", 0xFFF5E663),
-    CHAT("Chat", 0xFFE0B48C), ACCESS("Accesibilidad", 0xFFB48CE0), MODS("Mods", 0xFFF07D4A)
+internal enum class OptionGroup2(val label: String, val color: Long, val glyph: Glyph, val detail: String) {
+    VIDEO("Imagen", 0xFF7BC74D, Glyph.EYE, "Campo de visión, shaders y gráficos"),
+    SOUND("Sonido", 0xFF4FB3D9, Glyph.NOTE, "Volumen de cada cosa"),
+    CONTROLS("Controles", 0xFFF5E663, Glyph.PAD, "Cámara y movimiento"),
+    CHAT("Chat", 0xFFE0B48C, Glyph.CHAT, "Cómo se ve el chat"),
+    ACCESS("Accesibilidad", 0xFFB48CE0, Glyph.HAND, "Efectos y contraste"),
+    MODS("Mods", 0xFFF07D4A, Glyph.PUZZLE, "Opciones de tus mods")
 }
 
 private fun percent(value: Double) = "${(value * 100).roundToInt()} %"
@@ -33,7 +37,6 @@ internal val gameOptionGroups: Map<OptionGroup2, List<GameOption>> = linkedMapOf
         GameOption.Choice("graphicsMode", "Gráficos", listOf("0" to "Rápidos", "1" to "Detallados", "2" to "Fabulosos")),
         GameOption.Number("maxFps", "FPS máximos", 10.0, 260.0, 10.0, { if (it >= 260) "Sin límite" else "${it.toInt()}" }),
         GameOption.Toggle("enableVsync", "Sincronización vertical"),
-        GameOption.Number("fov", "Campo de visión", -1.0, 1.0, .05, { "${(70 + it * 40).roundToInt()}°" }, true),
         GameOption.Number("gamma", "Brillo", 0.0, 1.0, .05, ::percent, true),
         GameOption.Number("guiScale", "Tamaño de la interfaz", 0.0, 6.0, 1.0, { if (it == 0.0) "Automático" else "${it.toInt()}" }),
         GameOption.Choice("renderClouds", "Nubes", listOf("\"false\"" to "No", "\"fast\"" to "Rápidas", "\"true\"" to "Detalladas")),

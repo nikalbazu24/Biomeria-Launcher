@@ -7,7 +7,15 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -165,164 +173,171 @@ private fun InfoCard(label: String, value: String, color: Color, modifier: Modif
     }
 }
 
-/** Every Minecraft option, plus the mods' own settings, in Biomeria's look. */
+/** Every Minecraft option, plus the mods' own settings, in Biomeria's look: sections on the left, cards on the right. */
 @Composable
 internal fun BiomeriaOptionsScreen(gameDirectory: File, bridge: DualScreenBridge?, onClose: () -> Unit) {
     val palette = Biomeria.colors
-    val optionsFile = remember(gameDirectory) { GameOptionsFile(gameDirectory) }
-    var values by remember { mutableStateOf(optionsFile.read()) }
+    val live = rememberLiveGameOptions(gameDirectory, bridge) ?: return
+    val shaders = rememberShaderController(gameDirectory, bridge)
+    val scope = rememberCoroutineScope()
     var group by remember { mutableStateOf(OptionGroup2.VIDEO) }
-    var status by remember { mutableStateOf<String?>(null) }
-    var pending by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var picking by remember { mutableStateOf(false) }
     var mods by remember { mutableStateOf<List<ModConfigFile>?>(null) }
     var modIndex by remember { mutableIntStateOf(0) }
     var modChanges by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var modStatus by remember { mutableStateOf<String?>(null) }
     val firstFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { firstFocus.requestFocus() } }
     LaunchedEffect(group) {
         if (group == OptionGroup2.MODS && mods == null) mods = withContext(Dispatchers.IO) { readModConfigs(gameDirectory) }
     }
-    // Write and ask the game to apply a moment after the last change, so a held button does not spam it.
-    LaunchedEffect(pending) {
-        if (pending.isEmpty()) return@LaunchedEffect
-        delay(400)
-        val changes = pending
-        pending = emptyMap()
-        withContext(Dispatchers.IO) { optionsFile.write(changes) }
-        if (bridge?.reloadOptions() == true) {
-            status = "Aplicando…"
-            repeat(20) {
-                delay(150)
-                bridge.optionsApplied()?.let { applied ->
-                    status = if (applied) "Aplicado" else "Se aplicará la próxima vez que abras el juego"
-                    return@LaunchedEffect
-                }
-            }
-            status = "Se aplicará la próxima vez que abras el juego"
-        } else status = "Guardado · se aplica al volver a abrir el juego"
-    }
-    fun change(key: String, value: String) {
-        values = values + (key to value)
-        pending = pending + (key to value)
-    }
+    val status = if (picking) null else modStatus ?: live.status
 
-    Row(
-        Modifier.fillMaxSize().background(Color(0xF20B0E11)).onPreviewKeyEvent { event ->
-            if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
-            val groups = OptionGroup2.entries
-            when (event.key) {
-                Key.ButtonB -> { onClose(); true }
-                Key.ButtonL1 -> { group = groups[(group.ordinal + groups.size - 1) % groups.size]; true }
-                Key.ButtonR1 -> { group = groups[(group.ordinal + 1) % groups.size]; true }
-                else -> false
-            }
+    Box(Modifier.fillMaxSize().background(Color(0xF20B0E11)).onPreviewKeyEvent { event ->
+        if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
+        val groups = OptionGroup2.entries
+        when (event.key) {
+            Key.ButtonB -> { if (picking) picking = false else onClose(); true }
+            Key.ButtonL1 -> { if (!picking) group = groups[(group.ordinal + groups.size - 1) % groups.size]; true }
+            Key.ButtonR1 -> { if (!picking) group = groups[(group.ordinal + 1) % groups.size]; true }
+            else -> false
         }
-    ) {
-        Column(
-            Modifier.fillMaxHeight().width(220.dp).background(Color(0xFF0E1317)).padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Text("Opciones", fontFamily = PixelFont, fontSize = 22.sp, color = Color.White, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(4.dp))
-            OptionGroup2.entries.forEachIndexed { index, entry ->
-                val selected = entry == group
-                BlockButton({ group = entry }, Modifier.fillMaxWidth().then(if (index == 0) Modifier.focusRequester(firstFocus) else Modifier),
-                    if (selected) block(entry.color, entry.color, 0xFF0B0E11) else BlockButtons.neutral) {
-                    Box(Modifier.size(10.dp).background(Color(entry.color)))
-                    Spacer(Modifier.width(10.dp))
-                    Text(entry.label, Modifier.weight(1f), fontWeight = FontWeight.ExtraBold)
-                }
-            }
-            Spacer(Modifier.weight(1f))
-            status?.let { Text(it, color = Color(0xFFA6E07E), style = MaterialTheme.typography.labelMedium) }
-            BlockButton(onClose, Modifier.fillMaxWidth(), BlockButtons.primary) { Text("Listo", fontWeight = FontWeight.ExtraBold) }
-            Text("L1/R1 secciones · B volver", color = palette.textMuted, style = MaterialTheme.typography.labelSmall)
-        }
-        Column(
-            Modifier.weight(1f).fillMaxHeight().drawBehind {
-                drawRect(Color(group.color), size = Size(size.width, 5.dp.toPx()))
-            }.padding(horizontal = 20.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            if (group != OptionGroup2.MODS) {
-                Text(group.label, fontFamily = PixelFont, fontSize = 22.sp, color = Color.White, fontWeight = FontWeight.Bold)
+    }) {
+        Row(Modifier.fillMaxSize()) {
+            Column(
+                Modifier.fillMaxHeight().width(212.dp).background(Color(0xFF0E1317)).padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text("Opciones", fontFamily = PixelFont, fontSize = 24.sp, color = Color.White, fontWeight = FontWeight.Bold)
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    gameOptionGroups.getValue(group).forEach { option -> OptionRow(option, values[option.key], ::change) }
-                }
-            } else {
-                val list = mods
-                when {
-                    list == null -> Text("Buscando las opciones de tus mods…", color = palette.textMuted)
-                    list.isEmpty() -> Text("Este mundo no tiene mods con opciones que Biomeria pueda leer.", color = palette.textMuted)
-                    else -> {
-                        val current = list[modIndex.coerceIn(0, list.lastIndex)]
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            BlockButton({ modIndex = (modIndex - 1 + list.size) % list.size; modChanges = emptyMap() }) { Text("‹") }
-                            Column(Modifier.weight(1f)) {
-                                Text(current.modName, fontFamily = PixelFont, fontSize = 22.sp, color = Color.White, fontWeight = FontWeight.Bold)
-                                Text("${current.file.name} · ${modIndex + 1} de ${list.size} · se aplica al volver a abrir el juego",
-                                    color = palette.textMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis)
-                            }
-                            BlockButton({ modIndex = (modIndex + 1) % list.size; modChanges = emptyMap() }) { Text("›") }
-                            BlockButton({
-                                saveModConfig(current, modChanges)
-                                mods = readModConfigs(gameDirectory)
-                                modChanges = emptyMap()
-                                status = "${current.modName} guardado · se aplica al volver a abrir el juego"
-                            }, colors = BlockButtons.primary, enabled = modChanges.isNotEmpty()) { Text("Guardar", fontWeight = FontWeight.ExtraBold) }
+                    OptionGroup2.entries.forEachIndexed { index, entry ->
+                        val selected = entry == group
+                        BlockButton({ group = entry }, Modifier.fillMaxWidth().then(if (index == 0) Modifier.focusRequester(firstFocus) else Modifier),
+                            if (selected) block(entry.color, entry.color, 0xFF0B0E11) else BlockButtons.neutral,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
+                            Box(Modifier.size(30.dp).background(if (selected) Color(0x220B0E11) else Color(entry.color), RoundedCornerShape(6.dp)),
+                                contentAlignment = Alignment.Center) { PixelGlyph(entry.glyph, Color(0xFF0B0E11), Modifier.size(20.dp)) }
+                            Spacer(Modifier.width(10.dp))
+                            Text(entry.label, Modifier.weight(1f), fontWeight = FontWeight.ExtraBold, maxLines = 1)
                         }
-                        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            current.settings.forEach { setting ->
-                                val value = modChanges[setting.path] ?: setting.value
-                                ModRow(setting, value) { modChanges = modChanges + (setting.path to it) }
+                    }
+                }
+                BlockButton(onClose, Modifier.fillMaxWidth(), BlockButtons.primary) {
+                    Text("Listo", fontWeight = FontWeight.ExtraBold)
+                    Spacer(Modifier.width(6.dp))
+                    PadKey("B")
+                }
+                Text("L1 y R1 cambian de sección", color = palette.textMuted, style = MaterialTheme.typography.labelSmall)
+            }
+            Column(
+                Modifier.weight(1f).fillMaxHeight().padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    PixelGlyph(group.glyph, Color(group.color), Modifier.size(28.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(group.label, fontFamily = PixelFont, fontSize = 24.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(group.detail, color = palette.textMuted, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                    }
+                    status?.let { Text(it, color = Color(0xFFA6E07E), fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.labelMedium,
+                        maxLines = 2, modifier = Modifier.widthIn(max = 220.dp)) }
+                }
+                if (group != OptionGroup2.MODS) {
+                    Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (group == OptionGroup2.VIDEO) {
+                            Row(Modifier.fillMaxWidth().height(184.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FovCard(fovDegrees(live.values["fov"]), { live.change("fov", fovRaw(it)) }, Modifier.weight(1.15f).fillMaxHeight())
+                                ShaderCard(shaders, { picking = true }, Modifier.weight(1f).fillMaxHeight())
+                            }
+                        }
+                        gameOptionGroups.getValue(group).chunked(2).forEach { pair ->
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                pair.forEach { option -> OptionCell(option, live.values[option.key], live::change, Modifier.weight(1f).heightIn(min = 76.dp)) }
+                                if (pair.size == 1) Spacer(Modifier.weight(1f))
+                            }
+                        }
+                    }
+                } else {
+                    val list = mods
+                    when {
+                        list == null -> Text("Buscando las opciones de tus mods…", color = palette.textMuted)
+                        list.isEmpty() -> Text("Este mundo no tiene mods con opciones que Biomeria pueda leer.", color = palette.textMuted)
+                        else -> {
+                            val current = list[modIndex.coerceIn(0, list.lastIndex)]
+                            Row(Modifier.fillMaxWidth().kitCard().padding(8.dp), verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                BlockButton({ modIndex = (modIndex - 1 + list.size) % list.size; modChanges = emptyMap() }) { Text("‹") }
+                                Column(Modifier.weight(1f)) {
+                                    Text(current.modName, fontFamily = PixelFont, fontSize = 20.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                                    Text("${modIndex + 1} de ${list.size} · se aplica al volver a abrir el juego",
+                                        color = palette.textMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis)
+                                }
+                                BlockButton({ modIndex = (modIndex + 1) % list.size; modChanges = emptyMap() }) { Text("›") }
+                                BlockButton({
+                                    saveModConfig(current, modChanges)
+                                    mods = readModConfigs(gameDirectory)
+                                    modChanges = emptyMap()
+                                    modStatus = "${current.modName} guardado · se aplica al volver a abrir el juego"
+                                }, colors = BlockButtons.primary, enabled = modChanges.isNotEmpty()) { Text("Guardar", fontWeight = FontWeight.ExtraBold) }
+                            }
+                            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                current.settings.forEach { setting ->
+                                    val value = modChanges[setting.path] ?: setting.value
+                                    ModRow(setting, value) { modChanges = modChanges + (setting.path to it) }
+                                }
                             }
                         }
                     }
                 }
             }
         }
+        if (picking) ShaderPicker(shaders, onClose = { picking = false }) { pack -> scope.launch { shaders.choose(pack) } }
     }
 }
 
+/** One option as a card: name and value on top, the control under it. */
 @Composable
-private fun RowCard(label: String, content: @Composable RowScope.() -> Unit) {
-    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).background(Color(0xFF161D22), PanelShape)
-        .border(2.dp, Color(0xFF2C343A), PanelShape).padding(horizontal = 12.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(label, Modifier.weight(1f), color = Color.White, fontWeight = FontWeight.Bold, maxLines = 2,
-            overflow = TextOverflow.Ellipsis)
-        content()
-    }
-}
-
-@Composable
-private fun OptionRow(option: GameOption, raw: String?, onChange: (String, String) -> Unit) {
+private fun OptionCell(option: GameOption, raw: String?, onChange: (String, String) -> Unit, modifier: Modifier = Modifier) {
     when (option) {
         is GameOption.Toggle -> {
             val on = raw == "true"
-            RowCard(option.label) {
-                BlockButton({ onChange(option.key, (!on).toString()) }, Modifier.widthIn(min = 84.dp),
-                    if (on) BlockButtons.primary else BlockButtons.neutral) { Text(if (on) "Sí" else "No", fontWeight = FontWeight.ExtraBold) }
+            Row(modifier.kitCard(Kit.raised).clickable(role = Role.Switch) { onChange(option.key, (!on).toString()) }
+                .padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(option.label, Modifier.weight(1f), color = Color.White, fontWeight = FontWeight.ExtraBold, maxLines = 2,
+                    overflow = TextOverflow.Ellipsis)
+                KitSwitch(on)
             }
         }
         is GameOption.Number -> {
             val value = raw?.trim('"')?.toDoubleOrNull()?.coerceIn(option.min, option.max) ?: option.min
-            fun set(next: Double) = onChange(option.key, formatOptionNumber(next.coerceIn(option.min, option.max), option.decimals))
-            RowCard(option.label) {
-                BlockButton({ set(value - option.step) }) { Text("−", fontWeight = FontWeight.ExtraBold) }
-                Text(option.format(value), Modifier.widthIn(min = 92.dp), color = Color(0xFFF5E663), fontFamily = PixelFont,
-                    fontSize = 16.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                BlockButton({ set(value + option.step) }) { Text("+", fontWeight = FontWeight.ExtraBold) }
+            var dragging by remember(option.key) { mutableStateOf<Float?>(null) }
+            val shown = dragging?.toDouble() ?: value
+            val intervals = ((option.max - option.min) / option.step).roundToInt()
+            fun snap(v: Double) = (option.min + ((v - option.min) / option.step).roundToInt() * option.step).coerceIn(option.min, option.max)
+            Column(modifier.kitCard(Kit.raised).padding(horizontal = 12.dp, vertical = 6.dp), verticalArrangement = Arrangement.Center) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(option.label, Modifier.weight(1f), color = Color.White, fontWeight = FontWeight.ExtraBold, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis)
+                    Text(option.format(snap(shown)), color = Color(0xFFF5E663), fontFamily = PixelFont, fontSize = 16.sp)
+                }
+                Slider(shown.toFloat(), { dragging = it },
+                    Modifier.fillMaxWidth().height(30.dp).semantics { contentDescription = option.label },
+                    valueRange = option.min.toFloat()..option.max.toFloat(),
+                    steps = if (intervals in 2..60) intervals - 1 else 0,
+                    onValueChangeFinished = {
+                        dragging?.let { onChange(option.key, formatOptionNumber(snap(it.toDouble()), option.decimals)) }
+                        dragging = null
+                    }, colors = goldSlider())
             }
         }
         is GameOption.Choice -> {
             val index = option.values.indexOfFirst { it.first == raw }.coerceAtLeast(0)
-            RowCard(option.label) {
-                BlockButton({ onChange(option.key, option.values[(index - 1 + option.values.size) % option.values.size].first) }) { Text("‹") }
-                Text(option.values[index].second, Modifier.widthIn(min = 110.dp), color = Color(0xFFF5E663), fontWeight = FontWeight.ExtraBold,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                BlockButton({ onChange(option.key, option.values[(index + 1) % option.values.size].first) }) { Text("›") }
+            Column(modifier.kitCard(Kit.raised).padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically)) {
+                Text(option.label, color = Color.White, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Segmented(option.values, option.values[index].first, { it.second }, { onChange(option.key, it.first) },
+                    Color(0xFF7BC74D), Modifier.fillMaxWidth(), keyOf = { it.first })
             }
         }
     }
@@ -330,12 +345,14 @@ private fun OptionRow(option: GameOption, raw: String?, onChange: (String, Strin
 
 @Composable
 private fun ModRow(setting: ModSetting, value: String, onChange: (String) -> Unit) {
-    RowCard(setting.label) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).kitCard(Kit.raised).padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(setting.label, Modifier.weight(1f), color = Color.White, fontWeight = FontWeight.Bold, maxLines = 2,
+            overflow = TextOverflow.Ellipsis)
         when (setting.type) {
             ModValueType.BOOLEAN -> {
                 val on = value == "true"
-                BlockButton({ onChange((!on).toString()) }, Modifier.widthIn(min = 84.dp),
-                    if (on) BlockButtons.primary else BlockButtons.neutral) { Text(if (on) "Sí" else "No", fontWeight = FontWeight.ExtraBold) }
+                KitSwitch(on, Modifier.clickable(role = Role.Switch) { onChange((!on).toString()) })
             }
             ModValueType.NUMBER -> {
                 val number = value.toDoubleOrNull() ?: 0.0

@@ -94,6 +94,8 @@ class JavaGameActivity : ComponentActivity() {
     private var togglePanel: (() -> Unit)? = null
     private var toggleQuickMenu: (() -> Unit)? = null
     private var dualScreenBridge: DualScreenBridge? = null
+    /** The game folder, for the lower panel's quick options (field of view and shaders). */
+    internal var gameDirectory: File? = null
     internal var lowerPanelVisible by mutableStateOf(false)
         private set
     private var lowerPanelInput: ((PanelPadAction) -> Unit)? = null
@@ -328,6 +330,7 @@ class JavaGameActivity : ComponentActivity() {
             runCatching { DualScreenBridge.create(cacheDir, File(gameDirPath, "biomeria-map")) }.getOrNull()
         }
         dualScreenBridge = panelBridge
+        gameDirectory = File(gameDirPath)
         // Icons for the lower screen come from the jars this game runs with; indexing is lazy.
         if (panelBridge != null) ItemIcons.install(classpath, File(gameDirPath))
         val jvmArguments = if (panelMod != null && panelBridge != null) {
@@ -476,6 +479,7 @@ private fun JavaNativeViewportScreen(
     onExitGame: () -> Unit
 ) {
     var gpuStatus by remember { mutableStateOf("Inicializando superficie EGL…") }
+    val consoleControls = remember(activity) { com.biomeria.launcher.data.DeviceProfile.detect(activity).hasGamepad }
     var showConsole by remember { mutableStateOf(false) }
     var showOverlay by remember { mutableStateOf(true) }
     var menuTab by remember { mutableStateOf(GameMenuTab.LOG) }
@@ -822,8 +826,11 @@ private fun JavaNativeViewportScreen(
                             else -> 10.dp
                         }))
             }
-            GameMenuPill(hud.pauseOpacity, { menuTab = GameMenuTab.GAME; showOverlay = true },
-                Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.displayCutout).padding(6.dp))
+            // Consoles open the menu with the real Select button; the pill is only for touch play.
+            if (!consoleControls || hud.showTouch) {
+                GameMenuPill(hud.pauseOpacity, { menuTab = GameMenuTab.GAME; showOverlay = true },
+                    Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.displayCutout).padding(6.dp))
+            }
         }
 
         if (mapExpanded && panelBridge != null) {
