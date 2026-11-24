@@ -49,6 +49,7 @@ jobs:
       - name: Compilar la muestra
         env:
           BIOMERIA_MICROSOFT_CLIENT_ID: ${{ vars.BIOMERIA_MICROSOFT_CLIENT_ID }}
+          BIOMERIA_REPORT_TOKEN: ${{ secrets.BIOMERIA_REPORT_TOKEN }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}

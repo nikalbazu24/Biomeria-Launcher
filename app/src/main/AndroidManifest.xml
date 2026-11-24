@@ -24,6 +24,7 @@
     </queries>
 
     <application
+        android:name=".BiomeriaApp"
         android:allowBackup="true"
         android:allowNativeHeapPointerTagging="false"
         android:icon="@mipmap/ic_launcher"

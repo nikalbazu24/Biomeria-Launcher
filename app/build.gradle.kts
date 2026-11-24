@@ -21,6 +21,12 @@ require(microsoftApplicationId.isEmpty() || microsoftApplicationId.matches(Regex
     "El ID público de Microsoft para BIOMERIA debe ser un UUID."
 }
 
+// Where automatic error reports go: a GitHub token that can only open issues in this repository, from the build's secrets.
+val reportToken = providers.gradleProperty("reportToken")
+    .orElse(providers.environmentVariable("BIOMERIA_REPORT_TOKEN")).orElse("").get().trim()
+val reportRepo = providers.gradleProperty("reportRepo")
+    .orElse(providers.environmentVariable("GITHUB_REPOSITORY")).orElse("nikalbazu24/Biomeria-Launcher").get().trim()
+
 val jnaAndroidVersions = listOf("5.12.1", "5.13.0", "5.14.0", "5.15.0", "5.17.0")
 val jnaAndroid = jnaAndroidVersions.associateWith { version ->
     configurations.create("jnaAndroid" + version.replace(".", ""))
@@ -246,6 +252,8 @@ android {
         versionCode = buildVersionCode
         versionName = buildVersionName
         buildConfigField("String", "MICROSOFT_CLIENT_ID", "\"$microsoftApplicationId\"")
+        buildConfigField("String", "REPORT_TOKEN", "\"$reportToken\"")
+        buildConfigField("String", "REPORT_REPO", "\"$reportRepo\"")
         buildConfigField("boolean", "SAMPLE_BUILD", biomeriaSample.toString())
         manifestPlaceholders["appLabel"] = if (biomeriaSample) "Biomeria (muestra)" else "Biomeria"
         if (biomeriaSample) applicationIdSuffix = ".muestra"

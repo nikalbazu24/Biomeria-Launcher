@@ -254,6 +254,18 @@ internal fun SettingsPage(
                     com.biomeria.launcher.data.MenuMusic.setEnabled(context, it)
                 })
             }
+            var reports by remember { mutableStateOf(com.biomeria.launcher.report.CrashReporter.enabled(context)) }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Enviar errores automáticamente", fontWeight = FontWeight.Bold)
+                    Text("Si Biomeria o el juego se cierran, se manda el error al desarrollador para arreglarlo. No incluye tu cuenta, tu nombre de jugador ni tus mundos.",
+                        color = Biomeria.colors.textMuted, style = MaterialTheme.typography.bodySmall)
+                }
+                androidx.compose.material3.Switch(reports, {
+                    reports = it
+                    com.biomeria.launcher.report.CrashReporter.setEnabled(context, it)
+                })
+            }
             if (music) androidx.compose.material3.Slider(musicVolume, {
                 musicVolume = it
                 com.biomeria.launcher.data.MenuMusic.setVolume(context, it)

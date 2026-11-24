@@ -233,6 +233,8 @@ fun JavaLaunchScreen(
             if (reading.crashed) {
                 crashLog = log
                 crash = reading
+                com.biomeria.launcher.report.CrashReporter.reportGameCrash(context, log, reading.cause,
+                    mapOf("Minecraft" to instance.version, "Cargador" to instance.loader))
             }
         }
     }
