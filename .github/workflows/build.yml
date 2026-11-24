@@ -87,7 +87,7 @@ jobs:
 
       - name: Renombrar APK con número de build
         run: |
-          TAG="v1.0.4"
+          TAG="v1.0.5"
           echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
           cp app/build/outputs/apk/release/app-release.apk "BIOMERIA-Launcher-${TAG}.apk"
 
