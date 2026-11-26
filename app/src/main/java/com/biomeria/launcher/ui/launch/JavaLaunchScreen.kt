@@ -384,7 +384,7 @@ fun JavaLaunchScreen(
                         Text("Preparando tu mundo", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
                         StepRow("Java para Android", runtimeStep) { downloads.runtime() }
                         StepRow("Archivos de Minecraft " + instance.version, gameStep) { if (supported) downloads.game(instance) }
-                        if (instance.version in experimentalVersions) Text("Vanilla con Java 21 · en pruebas",
+                        if (instance.version in experimentalVersions) Text("Java 21 · versión en pruebas",
                             color = Biomeria.colors.textPrimary, style = MaterialTheme.typography.bodySmall)
                         if (instance.configuredModLoader == "neoforge") Text("NeoForge $NEOFORGE_VERSION · el primer arranque prepara el cliente.",
                             color = Biomeria.colors.textPrimary, style = MaterialTheme.typography.bodySmall)

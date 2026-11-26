@@ -21,7 +21,8 @@ class NeoForgeInstallerTest {
     fun onlyTheSupportedGameVersionCanSelectNeoForge() {
         assertEquals(listOf("Vanilla", "Fabric", "NeoForge"), javaLoaders("1.21.4"))
         assertEquals(listOf("Vanilla", "Fabric"), javaLoaders("1.21.5"))
-        assertEquals(listOf("Vanilla"), javaLoaders("1.20.1"))
+        assertEquals(listOf("Vanilla", "Fabric"), javaLoaders("1.20.1"))
+        assertEquals(listOf("Vanilla"), javaLoaders("1.16.5"))
         assertTrue(supportsJavaLoader("1.21.4", "NeoForge $NEOFORGE_VERSION"))
         assertFalse(supportsJavaLoader("1.21.4", "NeoForge 21.4.1"))
         assertFalse(supportsJavaLoader("1.21.5", "NeoForge"))
