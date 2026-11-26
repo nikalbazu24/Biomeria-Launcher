@@ -27,6 +27,11 @@ val reportToken = providers.gradleProperty("reportToken")
 val reportRepo = providers.gradleProperty("reportRepo")
     .orElse(providers.environmentVariable("GITHUB_REPOSITORY")).orElse("nikalbazu24/Biomeria-Launcher").get().trim()
 
+// CurseForge API key for modpack downloads, from the build's secrets. Without it only Modrinth packs install.
+val curseForgeApiKey = providers.gradleProperty("curseForgeApiKey")
+    .orElse(providers.environmentVariable("BIOMERIA_CURSEFORGE_API_KEY")).orElse("").get().trim()
+require(curseForgeApiKey.matches(Regex("[A-Za-z0-9$./_-]{0,128}"))) { "La llave de CurseForge tiene caracteres inválidos." }
+
 val jnaAndroidVersions = listOf("5.12.1", "5.13.0", "5.14.0", "5.15.0", "5.17.0")
 val jnaAndroid = jnaAndroidVersions.associateWith { version ->
     configurations.create("jnaAndroid" + version.replace(".", ""))
@@ -254,6 +259,7 @@ android {
         buildConfigField("String", "MICROSOFT_CLIENT_ID", "\"$microsoftApplicationId\"")
         buildConfigField("String", "REPORT_TOKEN", "\"$reportToken\"")
         buildConfigField("String", "REPORT_REPO", "\"$reportRepo\"")
+        buildConfigField("String", "CURSEFORGE_API_KEY", "\"$curseForgeApiKey\"")
         buildConfigField("boolean", "SAMPLE_BUILD", biomeriaSample.toString())
         manifestPlaceholders["appLabel"] = if (biomeriaSample) "Biomeria (muestra)" else "Biomeria"
         if (biomeriaSample) applicationIdSuffix = ".muestra"
