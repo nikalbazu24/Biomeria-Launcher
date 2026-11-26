@@ -58,7 +58,7 @@ private enum class WorkshopTab(val label: String, val detail: String, val catego
     SHADERS("Shaders", "Luz y sombras", WorkshopCategory.SHADERS),
     TEXTURES("Texturas", "Cómo se ve", WorkshopCategory.RESOURCE_PACKS),
     MODPACKS("Modpacks", "Todo en uno", null),
-    INSTALLED("Guardados", "", null)
+    INSTALLED("Mis mods", "", null)
 }
 
 @Composable
@@ -161,7 +161,7 @@ fun ContentWorkshopScreen(
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)) {
                         Column(Modifier.fillMaxWidth()) {
                             Text(item.label, fontFamily = PixelFont, fontSize = 18.sp, maxLines = 1)
-                            val detail = if (item == WorkshopTab.INSTALLED) "${installed.size} en este mundo" else item.detail
+                            val detail = if (item == WorkshopTab.INSTALLED) "Activar, actualizar e importar" else item.detail
                             Text(detail, style = MaterialTheme.typography.labelSmall, maxLines = 1,
                                 color = LocalContentColor.current.copy(alpha = .75f))
                         }
@@ -209,25 +209,15 @@ fun ContentWorkshopScreen(
                     loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(Modifier.size(28.dp))
                     }
-                    tab == WorkshopTab.INSTALLED && installed.isEmpty() -> {
-                        EmptyResults("Todavía no hay archivos guardados en este mundo.")
-                    }
-                    tab == WorkshopTab.INSTALLED -> LazyVerticalGrid(
-                        columns = GridCells.Adaptive(260.dp), modifier = Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.spacedBy(9.dp), verticalArrangement = Arrangement.spacedBy(9.dp)
-                    ) {
-                        items(installed, key = { it.file.absolutePath }) {
-                            Column(cardModifier(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                Text(it.fileName, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                                Text(it.categoryLabel + " · " + it.sizeKb + " KB", color = Biomeria.colors.textMuted,
-                                    style = MaterialTheme.typography.bodySmall)
-                                it.compatibility?.let { note ->
-                                    Text(note, style = MaterialTheme.typography.bodySmall, color = Biomeria.colors.textMuted)
-                                }
-                                LauncherButton("Quitar archivo", { confirmRemoval = it }, enabled = activeJobs.isEmpty())
-                            }
-                        }
-                    }
+                    tab == WorkshopTab.INSTALLED -> MyModsPanel(
+                        instance,
+                        others = installed.filter { it.file.parentFile?.name != WorkshopCategory.MODS.folderName },
+                        busy = activeJobs.isNotEmpty(),
+                        onRemoveOther = { confirmRemoval = it },
+                        onChanged = { scope.launch {
+                            installed = withContext(Dispatchers.IO) { repository.getInstalledFiles(instance.id, instance.version, loader) }
+                        } }
+                    )
                     results.isEmpty() -> EmptyResults(if (tab == WorkshopTab.MODS && includeOtherMods) "No se encontraron mods."
                         else "Sin resultados compatibles con Minecraft ${instance.version}.")
                     else -> LazyVerticalGrid(
@@ -279,7 +269,7 @@ fun ContentWorkshopScreen(
                     Text("1. Crea una instancia Java, elige la versión de Minecraft y selecciona Fabric o NeoForge.")
                     Text("2. Abre el Taller de esa instancia, entra en Mods y busca lo que quieres instalar.")
                     Text("3. Pulsa Instalar. Revisa qué versión del mod y qué dependencias se instalarán, y confirma la descarga.")
-                    Text("4. Revisa los archivos en Guardados. Cuando termine la descarga, vuelve a la instancia y pulsa Jugar.")
+                    Text("4. En Mis mods puedes apagar, actualizar o quitar cada mod. Cuando termine la descarga, vuelve a la instancia y pulsa Jugar.")
                 }
             },
             confirmButton = { LauncherButton("Entendido", { showTutorial = false }, primary = true) }

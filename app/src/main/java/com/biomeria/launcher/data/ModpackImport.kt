@@ -39,7 +39,7 @@ internal fun safeModpackPath(value: String): String {
     val parts = value.split('/')
     require(value.length in 1..512 && parts.size <= 36 && '\\' !in value &&
         parts.none { it.isEmpty() || it == "." || it == ".." || it.any { c -> c < ' ' || c in ":*?\"<>|" } } &&
-        !parts.first().startsWith(".") && parts.first() !in setOf("biomeria-map", "workshop", "biomeria_last.log")
+        !parts.first().startsWith(".") && parts.first() !in setOf("biomeria-map", "workshop", "biomeria_last.log", "biomeria-logs")
     ) { "El modpack contiene una ruta de archivo inválida." }
     return value
 }

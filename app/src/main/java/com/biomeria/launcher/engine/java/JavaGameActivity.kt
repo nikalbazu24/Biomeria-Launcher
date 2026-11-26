@@ -362,6 +362,8 @@ class JavaGameActivity : ComponentActivity() {
         }
         dualScreenBridge = panelBridge
         gameDirectory = File(gameDirPath)
+        // Keep the previous game's log in the world's history before this game overwrites it.
+        if (savedInstanceState == null) runCatching { com.biomeria.launcher.data.archiveLastLog(File(gameDirPath)) }
         // Icons for the lower screen come from the jars this game runs with; indexing is lazy.
         if (panelBridge != null) ItemIcons.install(classpath, File(gameDirPath))
         val jvmArguments = if (panelMod != null && panelBridge != null) {
