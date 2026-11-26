@@ -1,5 +1,7 @@
 #include "internal.h"
 #include "biomeria_glfw_android.h"
+#include "biomeria_renderer.h"
+#include <stdlib.h>
 
 #include <android/native_window.h>
 #include <pthread.h>
@@ -420,4 +422,11 @@ GLFWbool _glfwConnectNull(int platformID, _GLFWplatform* platform)
     platform->pollEvents = pollEvents;
     platform->setCursorMode = setCursorMode;
     return GLFW_TRUE;
+}
+
+/* Only the renderers bundled in the APK are accepted; anything else falls back to MobileGlues. */
+const char* biomeria_renderer_library(void) {
+    const char* chosen = getenv("BIOMERIA_RENDERER_LIB");
+    if (chosen && strcmp(chosen, "libltw.so") == 0) return "libltw.so";
+    return "libmobileglues.so";
 }

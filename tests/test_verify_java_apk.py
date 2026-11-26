@@ -14,6 +14,7 @@ from scripts.verify_java_apk import (
     PAIRS,
     REQUIRED_NATIVES,
     RENDERER_SYMBOLS,
+    LTW_SYMBOLS,
     check_jar_pair,
     is_arm64_shared_elf,
     validate_apk,
@@ -98,7 +99,7 @@ class VerifyJavaApkTest(unittest.TestCase):
                     apk.writestr(f"{ASSETS}/{module}-3.3.3.jar", jar(library, package, elf()))
             with patch(
                 "scripts.verify_java_apk.native_details",
-                return_value=(["libc.so", "libEGL.so"], GLFW_SYMBOLS | RENDERER_SYMBOLS),
+                return_value=(["libc.so", "libEGL.so"], GLFW_SYMBOLS | RENDERER_SYMBOLS | LTW_SYMBOLS),
             ):
                 self.assertEqual([], validate_apk(path))
 

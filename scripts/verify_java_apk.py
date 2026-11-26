@@ -21,7 +21,7 @@ PAIRS = {
 # The JVM uses the system allocator in place of jemalloc.
 REQUIRED_NATIVES = {
     "libbiomeria_jvm_bridge.so", "libjnidispatch.so", "libglfw.so",
-    "libopenal.so", "libfreetype.so", "libmobileglues.so",
+    "libopenal.so", "libfreetype.so", "libmobileglues.so", "libltw.so",
     "libjnidispatch_5_12_1.so", "libjnidispatch_5_13_0.so", "libjnidispatch_5_14_0.so", "libjnidispatch_5_17_0.so",
     *(library for library, _ in PAIRS.values()),
 }
@@ -32,6 +32,8 @@ GLFW_SYMBOLS = {
     "biomeriaGlfwHasPresentedFrame", "biomeriaGlfwCursorCaptured", "biomeriaGlfwPresentedFrames",
 }
 RENDERER_SYMBOLS = {"eglBindAPI", "eglCreateContext", "eglCreateWindowSurface", "eglSwapBuffers", "glXGetProcAddress"}
+# LTW wraps only context creation; the other EGL calls resolve through its libEGL.so dependency.
+LTW_SYMBOLS = {"eglGetProcAddress", "eglCreateContext", "eglMakeCurrent", "eglDestroyContext", "glXGetProcAddress"}
 DESKTOP_DEPENDENCY = re.compile(
     r"^(?:ld-linux[^/]*|lib(?:X11|Xrandr|Xcursor|Xi|Xinerama|wayland[^/]*|xkbcommon)"
     r"\.so.*|.+\.so\.\d+(?:\.\d+)*)$"
@@ -111,6 +113,12 @@ def validate_apk(apk_path):
                 missing = sorted(RENDERER_SYMBOLS - exports)
                 if missing:
                     problems.append(f"{name}: símbolos EGL/GL ausentes: {', '.join(missing)}.")
+            if library == "libltw.so":
+                missing = sorted(LTW_SYMBOLS - exports)
+                if missing:
+                    problems.append(f"{name}: símbolos de LTW ausentes: {', '.join(missing)}.")
+                if "libEGL.so" not in dependencies:
+                    problems.append(f"{name}: LTW debe depender de libEGL.so.")
 
         for module, (library, package) in PAIRS.items():
             name = f"{NATIVE_ROOT}/{library}"

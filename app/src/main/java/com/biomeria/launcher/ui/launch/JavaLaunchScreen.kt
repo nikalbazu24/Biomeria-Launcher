@@ -327,7 +327,16 @@ fun JavaLaunchScreen(
             instance, reading, crashLog,
             onWorkshop = { crash = null; onWorkshop() },
             onRetry = { crash = null; start() },
-            onBack = { crash = null; onBack() }
+            onBack = { crash = null; onBack() },
+            // A crash with the backup renderer offers the default one again, so a bad choice never locks a world.
+            onSafeRenderer = if (renderer == JavaRenderer.MOBILE_GLUES) null else {
+                {
+                    crash = null
+                    renderer = JavaRenderer.MOBILE_GLUES
+                    settings.edit().putString("renderer-" + instance.id, JavaRenderer.MOBILE_GLUES.name).apply()
+                    start()
+                }
+            }
         )
         return
     }
@@ -625,7 +634,8 @@ private fun CrashScreen(
     log: String,
     onWorkshop: () -> Unit,
     onRetry: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onSafeRenderer: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -656,6 +666,7 @@ private fun CrashScreen(
                     Key.ButtonB, Key.Escape -> { onBack(); true }
                     Key.ButtonX -> { onRetry(); true }
                     Key.ButtonY -> { share(); true }
+                    Key.ButtonR1 -> { onSafeRenderer?.invoke(); onSafeRenderer != null }
                     else -> false
                 }
             }
@@ -689,6 +700,11 @@ private fun CrashScreen(
                     Text("Lo que encontramos", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
                     Text(reading.cause ?: "No reconocemos este error. Abajo están las últimas líneas del registro: compártelo para pedir ayuda.",
                         style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                }
+                if (onSafeRenderer != null) {
+                    Text("Este mundo usa el renderizador LTW. Si el error empezó al cambiarlo, vuelve a MobileGlues.",
+                        color = Biomeria.colors.textMuted, style = MaterialTheme.typography.bodyMedium)
+                    CrashAction("R1", "Jugar con MobileGlues", Modifier.fillMaxWidth(), BlockButtons.gold, onClick = onSafeRenderer)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     CrashAction("A", "Ir al Taller y corregir", Modifier.weight(1f), BlockButtons.primary, onClick = onWorkshop)

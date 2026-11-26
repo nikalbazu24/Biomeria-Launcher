@@ -178,7 +178,11 @@ namespace {
         mkdir(mobileGluesDir.c_str(), 0700);
         setenv("MG_DIR_PATH", mobileGluesDir.c_str(), 1);
         glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_NULL);
-        pushLogLine("[BIOMERIA] Backend de esta sesión: GLFW Android + MobileGlues (OpenGL ES).");
+        const char* chosenRenderer = getenv("BIOMERIA_RENDERER_LIB");
+        const std::string rendererLibrary =
+            chosenRenderer && std::string(chosenRenderer) == "libltw.so" ? "libltw.so" : "libmobileglues.so";
+        pushLogLine(std::string("[BIOMERIA] Backend de esta sesión: GLFW Android + ") +
+            (rendererLibrary == "libltw.so" ? "LTW" : "MobileGlues") + " (OpenGL ES).");
 
         chdir(cfg->gameDir.c_str());
 
@@ -250,7 +254,7 @@ namespace {
         }
         optionStrings.push_back("-Dorg.lwjgl.glfw.libname=" + cfg->nativeLibraryDir + "/libglfw.so");
         optionStrings.push_back("-Dorg.lwjgl.openal.libname=" + cfg->nativeLibraryDir + "/libopenal.so");
-        optionStrings.push_back("-Dorg.lwjgl.opengl.libname=" + cfg->nativeLibraryDir + "/libmobileglues.so");
+        optionStrings.push_back("-Dorg.lwjgl.opengl.libname=" + cfg->nativeLibraryDir + "/" + rendererLibrary);
         optionStrings.push_back("-Xmx" + std::to_string(cfg->javaHeapMb) + "M");
         optionStrings.push_back("-Xms" + std::to_string(std::min(512, cfg->javaHeapMb / 3)) + "M");
         optionStrings.insert(optionStrings.end(), cfg->jvmArguments.begin(), cfg->jvmArguments.end());

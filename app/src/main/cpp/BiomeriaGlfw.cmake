@@ -18,7 +18,9 @@ set_property(SOURCE "${biomeria_glfw_SOURCE_DIR}/src/null_init.c" TARGET_DIRECTO
              APPEND PROPERTY COMPILE_DEFINITIONS _glfwConnectNull=biomeriaConnectNullBase)
 target_sources(glfw PRIVATE "${CMAKE_CURRENT_LIST_DIR}/biomeria_glfw_android.c")
 target_include_directories(glfw PRIVATE "${biomeria_glfw_SOURCE_DIR}/src")
+# The renderer library is picked per game (MobileGlues or LTW), so GLFW asks for it at run time.
 target_compile_definitions(glfw PRIVATE
-    _GLFW_EGL_LIBRARY="libmobileglues.so"
-    _GLFW_OPENGL_LIBRARY="libmobileglues.so"
+    "_GLFW_EGL_LIBRARY=biomeria_renderer_library()"
+    "_GLFW_OPENGL_LIBRARY=biomeria_renderer_library()"
 )
+target_compile_options(glfw PRIVATE "SHELL:-include ${CMAKE_CURRENT_LIST_DIR}/biomeria_renderer.h")

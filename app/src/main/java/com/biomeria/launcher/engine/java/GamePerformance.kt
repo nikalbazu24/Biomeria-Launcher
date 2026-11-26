@@ -20,8 +20,12 @@ internal enum class RenderScale(val percent: Int) {
     }
 }
 
-internal enum class JavaRenderer(val label: String) {
-    MOBILE_GLUES("MobileGlues · OpenGL ES");
+/** The OpenGL-to-OpenGL ES library a game runs with. Both ship in the APK; MobileGlues is the default. */
+internal enum class JavaRenderer(val label: String, val library: String, val detail: String) {
+    MOBILE_GLUES("MobileGlues · recomendado", "libmobileglues.so",
+        "El más rápido y estable en consolas Snapdragon. Úsalo siempre que funcione."),
+    LTW("LTW · plan B", "libltw.so",
+        "Para cuando un mod o shader falla o se ve mal con MobileGlues, como Create. Puede dar menos FPS.");
 
     companion object {
         fun fromName(name: String?) = entries.firstOrNull { it.name == name } ?: MOBILE_GLUES

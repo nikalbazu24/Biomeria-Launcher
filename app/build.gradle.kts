@@ -114,6 +114,44 @@ val unpackMobileGlues by tasks.registering(Sync::class) {
     }
     into(rendererJniLibs)
 }
+// LTW (LGPL-3.0), the backup renderer, is built from a pinned commit: the commit hash fixes its source.
+val ltwCommit = "d30fb0b08453614c2448090d0c69ca977d3feafe"
+val ltwSource = layout.buildDirectory.dir("downloads/ltw-$ltwCommit")
+val ltwObjects = layout.buildDirectory.dir("intermediates/ltw")
+val ltwJniLibs = layout.buildDirectory.dir("generated/ltw/jniLibs")
+fun runChecked(directory: File, vararg command: String): String {
+    val process = ProcessBuilder(*command).directory(directory).redirectErrorStream(true).start()
+    val output = process.inputStream.bufferedReader().readText()
+    check(process.waitFor() == 0) { "Falló ${command.first()}:\n" + output.takeLast(4000) }
+    return output
+}
+val fetchLtw by tasks.registering {
+    inputs.property("commit", ltwCommit)
+    outputs.dir(ltwSource)
+    doLast {
+        val directory = ltwSource.get().asFile.apply { deleteRecursively(); mkdirs() }
+        runChecked(directory, "git", "init", "-q")
+        runChecked(directory, "git", "fetch", "-q", "--depth", "1", "https://github.com/alexytomi/LTW", ltwCommit)
+        runChecked(directory, "git", "checkout", "-q", "FETCH_HEAD")
+        check(runChecked(directory, "git", "rev-parse", "HEAD").trim() == ltwCommit) { "LTW no coincide con el commit fijado." }
+    }
+}
+val buildLtw by tasks.registering {
+    dependsOn(fetchLtw)
+    val ndkDirectory = androidComponents.sdkComponents.ndkDirectory
+    inputs.property("commit", ltwCommit)
+    outputs.dir(ltwJniLibs)
+    doLast {
+        val sources = ltwSource.get().asFile.resolve("ltw/src/main/tinywrapper")
+        val output = ltwJniLibs.get().asFile.apply { deleteRecursively(); mkdirs() }
+        runChecked(sources, ndkDirectory.get().asFile.resolve("ndk-build").absolutePath,
+            "NDK_PROJECT_PATH=null", "APP_BUILD_SCRIPT=" + sources.resolve("Android.mk"),
+            "NDK_APPLICATION_MK=" + sources.resolve("Application.mk"), "APP_ABI=arm64-v8a", "APP_PLATFORM=android-26",
+            "NDK_OUT=" + ltwObjects.get().asFile, "NDK_LIBS_OUT=" + output, "-j" + Runtime.getRuntime().availableProcessors())
+        check(output.resolve("arm64-v8a/libltw.so").isFile) { "ndk-build no generó libltw.so." }
+        output.walkTopDown().filter { it.isFile && it.name != "libltw.so" }.forEach { it.delete() }
+    }
+}
 val starlingArchive = layout.buildDirectory.file("downloads/starling-0.9.0-arm64.apk")
 val starlingRuntime = layout.buildDirectory.dir("generated/starling")
 val downloadStarlingArm64 by tasks.registering {
@@ -242,7 +280,7 @@ val dualScreenMod = tasks.register<Jar>("dualScreenMod") {
     destinationDirectory.set(dualScreenAssets.map { it.dir("dualscreen") })
 }
 tasks.named("preBuild") {
-    dependsOn(unpackJnaAndroid, unpackLwjglAndroid, unpackMobileGlues, unpackStarlingArm64, prepareLwjglJars,
+    dependsOn(unpackJnaAndroid, unpackLwjglAndroid, unpackMobileGlues, buildLtw, unpackStarlingArm64, prepareLwjglJars,
         neoForgeBootstrapJar, prepareElyAgent, dualScreenMod)
 }
 
@@ -302,6 +340,7 @@ android {
     sourceSets.getByName("main").jniLibs.srcDir(jnaJniLibs)
     sourceSets.getByName("main").jniLibs.srcDir(lwjglJniLibs)
     sourceSets.getByName("main").jniLibs.srcDir(rendererJniLibs)
+    sourceSets.getByName("main").jniLibs.srcDir(ltwJniLibs)
     sourceSets.getByName("main").assets.srcDir(lwjglAssets)
     sourceSets.getByName("main").assets.srcDir(neoForgeAssets)
     sourceSets.getByName("main").assets.srcDir(elyAgentAssets)

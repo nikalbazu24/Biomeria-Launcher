@@ -66,12 +66,13 @@ internal fun GamePerformanceDialog(
                     }
                 }
                 Text("Renderizador", style = MaterialTheme.typography.titleSmall)
-                JavaRenderer.entries.forEach { option ->
-                    val select = { onRenderer(option) }
-                    FilterChip(renderer == option, select, { Text(option.label) }, modifier = Modifier.gamepadClick(onClick = select))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    JavaRenderer.entries.forEach { option ->
+                        val select = { onRenderer(option) }
+                        FilterChip(renderer == option, select, { Text(option.label) }, modifier = Modifier.gamepadClick(onClick = select))
+                    }
                 }
-                Text("Vulkan/Zink requiere integrar el controlador Mesa para Android.", color = Biomeria.colors.textMuted,
-                    style = MaterialTheme.typography.bodySmall)
+                Text(renderer.detail, color = Biomeria.colors.textMuted, style = MaterialTheme.typography.bodySmall)
                 HorizontalDivider()
                 LauncherButton(if (testingAudio) "Reproduciendo…" else "Probar audio", {
                     testingAudio = true

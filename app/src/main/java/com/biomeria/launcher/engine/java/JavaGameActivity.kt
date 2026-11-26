@@ -775,6 +775,8 @@ private fun JavaNativeViewportScreen(
                                 width <= 0 || height <= 0 || waitingForScaledBuffer
                             ) return
 
+                            // GLFW and LWJGL read the chosen renderer library from the environment.
+                            android.system.Os.setenv("BIOMERIA_RENDERER_LIB", renderer.library, true)
                             val status = NativeJavaBridge.nativeLaunchJvm(
                                 libJvmPath = libJvmPath,
                                 javaHomePath = javaHomePath,
