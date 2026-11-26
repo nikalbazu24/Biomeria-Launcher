@@ -286,6 +286,8 @@ tasks.named("preBuild") {
 
 android {
     namespace = "com.biomeria.launcher"
+    // Pinned so the LTW build can find ndk-build; it is the default NDK of AGP 8.7.
+    ndkVersion = "27.0.12077973"
     compileSdk = 35
 
     defaultConfig {
