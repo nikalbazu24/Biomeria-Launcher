@@ -201,7 +201,7 @@ fun ContentWorkshopScreen(
                         Text("Un modpack trae mods, ajustes y la versión lista. Importa uno desde tu consola.",
                             color = Biomeria.colors.textMuted)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            LauncherButton(if (importingPack) "Leyendo modpack…" else "Importar .mrpack", onImportPack,
+                            LauncherButton(if (importingPack) "Leyendo modpack…" else "Importar modpack", onImportPack,
                                 primary = true, enabled = !importingPack)
                             LauncherButton("Descargas de modpacks", onPackDownloads)
                         }

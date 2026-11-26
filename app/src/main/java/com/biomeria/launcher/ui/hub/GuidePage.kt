@@ -48,7 +48,7 @@ private val guideCards = listOf(
     GuideCard("Mis mundos", Color(0xFF7BC74D), "Cada mundo es una instancia con su versión y su motor.",
         "Elige uno y toca Jugar. Con la estrella lo marcas favorito y con el filtro ves solo Java, Bedrock o Starling."),
     GuideCard("Taller", Color(0xFF4FB3D9), "Instala mods, shaders y paquetes de recursos.",
-        "Busca en Modrinth y te muestra qué versión y qué dependencias se instalarán antes de descargar. También importa modpacks .mrpack."),
+        "Busca en Modrinth y te muestra qué versión y qué dependencias se instalarán antes de descargar. También importa modpacks .mrpack de Modrinth y .zip de CurseForge."),
     GuideCard("Jugar juntos", Color(0xFFF5E663), "Abre tu mundo a tus amigos.",
         "En tu misma red aparece en Multijugador. Por internet creas una sala temporal y compartes su dirección."),
     GuideCard("Dos pantallas", Color(0xFFF07D4A), "En la AYN Thor, la de abajo muestra inventario, crafteo y mapa.",

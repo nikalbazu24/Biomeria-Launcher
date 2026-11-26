@@ -27,9 +27,12 @@ private const val MAX_CONTENT = 2L * 1024 * 1024 * 1024
 private const val MAX_INDEX = 4L * 1024 * 1024
 private val modpackId = Regex("[a-f0-9-]{36}")
 private val packHash = Regex("[0-9a-f]{128}")
-private val downloadHosts = setOf("cdn.modrinth.com", "github.com", "raw.githubusercontent.com", "release-assets.githubusercontent.com", "gitlab.com")
+private val downloadHosts = setOf("cdn.modrinth.com", "github.com", "raw.githubusercontent.com", "release-assets.githubusercontent.com", "gitlab.com",
+    "edge.forgecdn.net", "mediafilez.forgecdn.net")
 
-internal data class ModpackFile(val path: String, val size: Long, val sha512: String, val urls: List<URI>)
+/** algorithm is a Java MessageDigest name: SHA-512 for Modrinth, SHA-1 for CurseForge. */
+internal data class ModpackFile(val path: String, val size: Long, val hash: String, val urls: List<URI>, val algorithm: String = "SHA-512")
+internal enum class ModpackFormat { MODRINTH, CURSEFORGE }
 internal data class ModpackMetadata(val name: String, val version: String, val loader: String, val files: List<ModpackFile>)
 
 internal fun safeModpackPath(value: String): String {
@@ -41,7 +44,7 @@ internal fun safeModpackPath(value: String): String {
     return value
 }
 
-private fun modpackDownloadUri(raw: String): URI {
+internal fun modpackDownloadUri(raw: String): URI {
     val uri = URI(raw).normalize()
     require(uri.scheme == "https" && uri.host?.lowercase(Locale.ROOT) in downloadHosts && uri.userInfo == null &&
         uri.port in setOf(-1, 443) && uri.fragment == null && uri.path.isNotBlank()
@@ -97,7 +100,7 @@ internal class ModpackImports(private val context: Context) {
         try {
             val source = context.contentResolver.openInputStream(uri) ?: error("No se pudo abrir el archivo.")
             source.use { copyBounded(it, target, MAX_ARCHIVE) }
-            val pack = ZipFile(target).use { readMetadata(it) }
+            val pack = ZipFile(target).use { readMetadata(it).first }
             GameInstance(id, pack.name, EngineType.JAVA, pack.version, pack.loader)
         } catch (error: Exception) {
             target.delete()
@@ -116,15 +119,19 @@ internal class ModpackImports(private val context: Context) {
         val staging = Files.createTempDirectory(instances.toPath(), ".modpack-").toFile()
         try {
             ZipFile(source).use { zip ->
-                val pack = readMetadata(zip)
-                check(pack.name == instance.title && pack.version == instance.version && pack.loader == instance.loader)
+                val (header, format, overrides) = readMetadata(zip)
+                check(header.name == instance.title && header.version == instance.version && header.loader == instance.loader)
+                val pack = if (format == ModpackFormat.CURSEFORGE) {
+                    progress(0f, "Consultando los archivos en CurseForge")
+                    header.copy(files = resolveCurseForgeFiles(zip))
+                } else header
                 pack.files.forEachIndexed { index, file ->
                     progress(.9f * index / pack.files.size, "Descargando ${index + 1} de ${pack.files.size} · ${File(file.path).name}")
                     downloadModpackFile(file, File(staging, file.path))
                 }
                 progress(.92f, "Aplicando la configuración del modpack")
                 var budget = MAX_CONTENT - pack.files.sumOf(ModpackFile::size)
-                for (prefix in listOf("overrides/", "client-overrides/")) {
+                for (prefix in overrides) {
                     val entries = zip.entries()
                     var count = 0
                     val installedPaths = hashSetOf<String>()
@@ -149,15 +156,35 @@ internal class ModpackImports(private val context: Context) {
         }
     }
 
-    private fun readMetadata(zip: ZipFile): ModpackMetadata {
-        val entry = zip.getEntry("modrinth.index.json") ?: error("Selecciona un modpack .mrpack de Modrinth.")
+    /** The pack's name, version and loader (CurseForge files are resolved later, online), its format and override folders. */
+    private fun readMetadata(zip: ZipFile): Triple<ModpackMetadata, ModpackFormat, List<String>> {
+        zip.getEntry("modrinth.index.json")?.let { entry ->
+            return Triple(decodeModpack(readIndex(zip, entry)), ModpackFormat.MODRINTH, listOf("overrides/", "client-overrides/"))
+        }
+        val entry = zip.getEntry("manifest.json")
+            ?: error("Selecciona un modpack .mrpack de Modrinth o un .zip de CurseForge.")
+        val manifest = decodeCurseForgeManifest(readIndex(zip, entry))
+        return Triple(ModpackMetadata(manifest.name, manifest.version, manifest.loader, emptyList()),
+            ModpackFormat.CURSEFORGE, listOf(manifest.overrides + "/"))
+    }
+
+    private fun readIndex(zip: ZipFile, entry: java.util.zip.ZipEntry): JSONObject {
         require(entry.size in 1..MAX_INDEX) { "Índice de modpack inválido." }
         val bytes = ByteArray(entry.size.toInt())
         DataInputStream(zip.getInputStream(entry)).use {
             it.readFully(bytes)
             require(it.read() == -1)
         }
-        return decodeModpack(JSONObject(bytes.toString(Charsets.UTF_8)))
+        return JSONObject(bytes.toString(Charsets.UTF_8))
+    }
+
+    private suspend fun resolveCurseForgeFiles(zip: ZipFile): List<ModpackFile> {
+        val entry = checkNotNull(zip.getEntry("manifest.json"))
+        val files = CurseForgeApi().resolve(decodeCurseForgeManifest(readIndex(zip, entry)).files)
+        require(files.sumOf(ModpackFile::size) <= MAX_CONTENT &&
+            files.map { it.path.lowercase(Locale.ROOT) }.distinct().size == files.size
+        ) { "El modpack contiene archivos duplicados o supera el tamaño admitido." }
+        return files
     }
 }
 
@@ -175,10 +202,10 @@ private suspend fun downloadModpackFile(file: ModpackFile, destination: File) {
                     connection.setRequestProperty("User-Agent", "BIOMERIA Launcher (github.com/nikalbazu24/Biomeria-Launcher)")
                     when (connection.responseCode) {
                         200 -> {
-                            val sha = MessageDigest.getInstance("SHA-512")
+                            val sha = MessageDigest.getInstance(file.algorithm)
                             val actualSize = DigestInputStream(connection.inputStream, sha).use { copyBounded(it, destination, file.size) }
                             val actualHash = sha.digest().joinToString("") { "%02x".format(it) }
-                            if (actualSize != file.size || actualHash != file.sha512) throw IOException("El archivo no coincide con el índice.")
+                            if (actualSize != file.size || actualHash != file.hash) throw IOException("El archivo no coincide con el índice.")
                             return
                         }
                         301, 302, 303, 307, 308 -> {

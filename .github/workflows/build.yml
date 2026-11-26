@@ -59,7 +59,7 @@ jobs:
       - name: Preparar novedades de la versión
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_VERSION: 1.0.8
+          RELEASE_VERSION: 1.0.9
         run: |
           notes="app/src/main/assets/release-notes/$RELEASE_VERSION.md"
           if [ ! -s "$notes" ]; then
@@ -78,17 +78,18 @@ jobs:
         env:
           BIOMERIA_MICROSOFT_CLIENT_ID: ${{ vars.BIOMERIA_MICROSOFT_CLIENT_ID }}
           BIOMERIA_REPORT_TOKEN: ${{ secrets.BIOMERIA_REPORT_TOKEN }}
+          BIOMERIA_CURSEFORGE_API_KEY: ${{ secrets.BIOMERIA_CURSEFORGE_API_KEY }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           chmod +x ./gradlew || true
-          VER="1.0.8"
+          VER="1.0.9"
           ./gradlew testDebugUnitTest assembleRelease -PversionCode=${{ github.run_number }} -PversionName=$VER || gradle testDebugUnitTest assembleRelease -PversionCode=${{ github.run_number }} -PversionName=$VER
 
       - name: Renombrar APK con número de build
         run: |
-          TAG="v1.0.8"
+          TAG="v1.0.9"
           echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
           cp app/build/outputs/apk/release/app-release.apk "BIOMERIA-Launcher-${TAG}.apk"
 
