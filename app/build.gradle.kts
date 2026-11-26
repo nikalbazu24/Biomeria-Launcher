@@ -138,13 +138,21 @@ val fetchLtw by tasks.registering {
 }
 val buildLtw by tasks.registering {
     dependsOn(fetchLtw)
-    val ndkDirectory = androidComponents.sdkComponents.ndkDirectory
+    val sdkDirectory = androidComponents.sdkComponents.sdkDirectory
     inputs.property("commit", ltwCommit)
     outputs.dir(ltwJniLibs)
     doLast {
         val sources = ltwSource.get().asFile.resolve("ltw/src/main/tinywrapper")
         val output = ltwJniLibs.get().asFile.apply { deleteRecursively(); mkdirs() }
-        runChecked(sources, ndkDirectory.get().asFile.resolve("ndk-build").absolutePath,
+        // The NDK pinned below if installed; otherwise the one the CI image provides, or the newest in the SDK.
+        val installed = sdkDirectory.get().asFile.resolve("ndk")
+        val ndk = listOfNotNull(
+            installed.resolve("27.0.12077973"),
+            System.getenv("ANDROID_NDK_LATEST_HOME")?.let(::File),
+            System.getenv("ANDROID_NDK_HOME")?.let(::File)
+        ).plus(installed.listFiles().orEmpty().sortedByDescending { it.name })
+            .firstOrNull { it.resolve("ndk-build").isFile } ?: error("No se encontró el NDK de Android para compilar LTW.")
+        runChecked(sources, ndk.resolve("ndk-build").absolutePath,
             "NDK_PROJECT_PATH=null", "APP_BUILD_SCRIPT=" + sources.resolve("Android.mk"),
             "NDK_APPLICATION_MK=" + sources.resolve("Application.mk"), "APP_ABI=arm64-v8a", "APP_PLATFORM=android-26",
             "NDK_OUT=" + ltwObjects.get().asFile, "NDK_LIBS_OUT=" + output, "-j" + Runtime.getRuntime().availableProcessors())
