@@ -233,7 +233,7 @@ private fun ModsTab(
     onCheck: () -> Unit, onUpdateAll: () -> Unit, onUpdate: (ManagedMod, ModUpdate) -> Unit,
     onToggle: (ManagedMod) -> Unit, onRemove: (ManagedMod) -> Unit, requiredOf: (ManagedMod) -> List<String>
 ) {
-    if (!supportsMods) return Hint("Este mundo no usa Fabric ni NeoForge, así que no tiene mods. Puedes elegir uno al editar el mundo.")
+    if (!supportsMods) return Hint("Este mundo no usa Fabric, Quilt ni NeoForge, así que no tiene mods. Puedes elegir uno al editar el mundo.")
     if (mods == null) return Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
         CircularProgressIndicator(Modifier.size(28.dp))
     }

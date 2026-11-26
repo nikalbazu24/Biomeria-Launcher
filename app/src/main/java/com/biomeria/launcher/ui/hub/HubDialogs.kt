@@ -93,7 +93,8 @@ internal fun InstanceEditor(
                                 modifier = Modifier.gamepadClick(onClick = select))
                         }
                     }
-                    if (loader != "Vanilla") Text("Descarga mods compatibles desde el Taller.",
+                    if (loader != "Vanilla") Text(if (loader.startsWith("Quilt")) "Quilt también usa los mods de Fabric. Descárgalos desde el Taller."
+                        else "Descarga mods compatibles desde el Taller.",
                         color = Biomeria.colors.textMuted, style = MaterialTheme.typography.bodySmall)
                 }
             }

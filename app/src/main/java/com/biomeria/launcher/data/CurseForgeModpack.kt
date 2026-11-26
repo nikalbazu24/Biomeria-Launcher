@@ -40,8 +40,8 @@ internal fun decodeCurseForgeManifest(manifest: JSONObject): CurseForgeManifest 
         when (match.groupValues[1]) {
             "fabric" -> "Fabric " + match.groupValues[2]
             "neoforge" -> "NeoForge " + match.groupValues[2]
-            "forge" -> error("Este modpack usa Forge, que Biomeria aún no soporta. Busca una versión para Fabric o NeoForge.")
-            else -> error("Este modpack usa Quilt, que Biomeria aún no soporta.")
+            "quilt" -> "Quilt " + match.groupValues[2]
+            else -> error("Este modpack usa Forge, que Biomeria aún no soporta. Busca una versión para Fabric, Quilt o NeoForge.")
         }
     }
     require(supportsJavaLoader(version, loader)) { "Minecraft $version con $loader aún no está disponible en Biomeria." }

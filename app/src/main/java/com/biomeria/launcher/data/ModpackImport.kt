@@ -60,6 +60,7 @@ internal fun decodeModpack(index: JSONObject): ModpackMetadata {
     val version = dependencies.getString("minecraft")
     val loader = when {
         dependencies.has("fabric-loader") && dependencies.length() == 2 -> "Fabric " + dependencies.getString("fabric-loader")
+        dependencies.has("quilt-loader") && dependencies.length() == 2 -> "Quilt " + dependencies.getString("quilt-loader")
         dependencies.has("neoforge") && dependencies.length() == 2 -> "NeoForge " + dependencies.getString("neoforge")
         dependencies.length() == 1 -> "Vanilla"
         else -> error("El modpack requiere un cargador incompatible con esta versión de Biomeria.")

@@ -81,7 +81,7 @@ private val Gold = Color(0xFFF5E663)
 private data class Biome(val name: String, val engine: String, val color: Color, val text: String, val image: Int)
 
 private val biomes = listOf(
-    Biome("Bosque", "Java", Green, "Minecraft Java con mods de Fabric o NeoForge, mapa con marcas y pantalla dual.", R.drawable.biomeria_valley),
+    Biome("Bosque", "Java", Green, "Minecraft Java con mods de Fabric, Quilt o NeoForge, mapa con marcas y pantalla dual.", R.drawable.biomeria_valley),
     Biome("Océano", "Bedrock", Color(0xFF4FB3D9),
         "Abre la app oficial de Minecraft Bedrock que ya tienes instalada.", R.drawable.biome_ocean),
     Biome("Nether", "Starling", Color(0xFFF07D4A), "Un motor nativo hecho para consolas Android, liviano y pensado para correr fluido.",

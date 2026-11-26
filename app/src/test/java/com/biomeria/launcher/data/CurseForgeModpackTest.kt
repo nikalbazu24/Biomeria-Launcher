@@ -21,7 +21,7 @@ class CurseForgeModpackTest {
     fun explainsUnsupportedLoaders() {
         val forge = assertThrows(IllegalStateException::class.java) { decodeCurseForgeManifest(manifest("forge-52.0.1")) }
         assertTrue(forge.message!!.contains("Forge"))
-        assertThrows(IllegalStateException::class.java) { decodeCurseForgeManifest(manifest("quilt-0.26.0")) }
+        assertEquals("Quilt 0.26.0", decodeCurseForgeManifest(manifest("quilt-0.26.0")).loader)
     }
 
     @Test
