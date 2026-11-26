@@ -19,13 +19,17 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 
-internal val experimentalVersions = setOf("1.20.4", "1.20.1")
+/**
+ * Older versions run with the LWJGL of 1.21.4 on Java 21. They are the most played modding versions,
+ * so they get Fabric too, but stay marked as being tested until they are confirmed on the consoles.
+ */
+internal val experimentalVersions = linkedSetOf("1.20.4", "1.20.3", "1.20.2", "1.20.1", "1.20", "1.19.4", "1.19.2", "1.18.2")
 internal val supportedVersions =
     (11 downTo 1).map { "1.21.$it" } + listOf("1.21", "1.20.6", "1.20.5") + experimentalVersions
 
 internal fun validCatalogVersion(version: String) = version.trim().matches(Regex("[A-Za-z0-9._+ -]{1,64}"))
 
-internal fun supportsFabric(version: String) = version in supportedVersions && version !in experimentalVersions
+internal fun supportsFabric(version: String) = version in supportedVersions
 
 internal fun javaLoaders(version: String): List<String> = buildList {
     add("Vanilla")

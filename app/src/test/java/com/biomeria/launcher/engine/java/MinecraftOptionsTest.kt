@@ -45,7 +45,9 @@ class MinecraftOptionsTest {
         assertEquals(listOf("26.3", "26.4-snapshot-10", "1.20.1", "1.20.6", "b1.7.3", "a1.2.6"),
             entries.map { it.version })
         assertEquals(listOf(false, false, true, true, false, false), entries.map { it.playable })
-        assertFalse(supportsFabric("1.20.1"))
+        assertTrue(supportsFabric("1.20.1"))
+        assertTrue(supportsFabric("1.18.2"))
+        assertFalse(supportsFabric("1.16.5"))
         assertTrue(supportsFabric("1.20.6"))
     }
 

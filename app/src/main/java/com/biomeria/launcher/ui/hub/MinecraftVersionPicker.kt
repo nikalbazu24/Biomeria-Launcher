@@ -58,7 +58,7 @@ internal fun MinecraftVersionPicker(onDismiss: () -> Unit, onSelect: (MinecraftC
                         val select = { onSelect(item) }
                         val status = when {
                             !item.playable -> "Solo catálogo"
-                            item.version in experimentalVersions -> "Vanilla en pruebas"
+                            item.version in experimentalVersions -> "Java 21 · en pruebas"
                             else -> "Java 21"
                         }
                         LauncherButton(item.version + " · " + status, select, Modifier.fillMaxWidth())
