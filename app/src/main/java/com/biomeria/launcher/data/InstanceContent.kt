@@ -154,7 +154,7 @@ internal class InstanceContent(private val context: Context, instanceId: String)
             if (list.isEmpty()) return@withContext emptyMap()
             val hashes = list.associateBy { sha512(it.file) }
             val body = JSONObject().put("hashes", JSONArray(hashes.keys.toList())).put("algorithm", "sha512")
-                .put("loaders", JSONArray().put(loader)).put("game_versions", JSONArray().put(gameVersion))
+                .put("loaders", JSONArray(modrinthLoaders(loader))).put("game_versions", JSONArray().put(gameVersion))
             val reply = JSONObject(post("https://api.modrinth.com/v2/version_files/update", body))
             buildMap {
                 for ((hash, mod) in hashes) {

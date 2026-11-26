@@ -27,8 +27,16 @@ internal val modrinthId = Regex("[A-Za-z0-9]{1,64}")
 
 internal fun workshopModLoaderName(loader: String?): String? = when (loader) {
     "fabric" -> "Fabric"
+    "quilt" -> "Quilt"
     "neoforge" -> "NeoForge"
     else -> null
+}
+
+/** Modrinth loaders whose mods run on [loader]: Quilt also loads Fabric mods. */
+internal fun modrinthLoaders(loader: String?): List<String> = when (loader) {
+    null -> emptyList()
+    "quilt" -> listOf("quilt", "fabric")
+    else -> listOf(loader)
 }
 
 internal class ModrinthInstallPlanner(
@@ -50,7 +58,7 @@ internal class ModrinthInstallPlanner(
 
     fun plan(projectId: String): WorkshopInstallPlan {
         if (category == WorkshopCategory.MODS && loaderLabel == null) {
-            throw WorkshopIncompatibility("Selecciona Fabric o NeoForge en la instancia para instalar mods de este Taller.")
+            throw WorkshopIncompatibility("Selecciona Fabric, Quilt o NeoForge en la instancia para instalar mods de este Taller.")
         }
         val selected = resolve(listOf(RequiredMod(projectId, pins[projectId])), emptyMap())
         if (pins.isNotEmpty() && selected.mapValues { it.value.versionId } != pins) {
@@ -120,7 +128,9 @@ internal class ModrinthInstallPlanner(
                 JSONArray(get("/project/$project/version")).objects()
             }
         }
+        // Files made for the loader itself come before ones it only borrows (Fabric mods on Quilt).
         val matching = published.filter { it.matchesGame(gameVersion, category, loader) }
+            .sortedBy { if (it.optJSONArray("loaders").containsValue(loader)) 0 else 1 }
         if (matching.isNotEmpty()) return matching
 
         val forGame = published.any { it.optJSONArray("game_versions").containsValue(gameVersion) }
@@ -171,7 +181,7 @@ private fun JSONArray?.objects(): List<JSONObject> = if (this == null) emptyList
 
 internal fun JSONObject.matchesGame(version: String, category: WorkshopCategory, loader: String?): Boolean =
     optJSONArray("game_versions").containsValue(version) &&
-        (category != WorkshopCategory.MODS || optJSONArray("loaders").containsValue(loader))
+        (category != WorkshopCategory.MODS || modrinthLoaders(loader).any { optJSONArray("loaders").containsValue(it) })
 
 private fun JSONArray?.containsValue(value: String?): Boolean =
     this != null && value != null && (0 until length()).any { optString(it) == value }

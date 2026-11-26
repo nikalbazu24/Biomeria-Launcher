@@ -71,7 +71,7 @@ class ModrinthRepository internal constructor(
             val facets = JSONArray().put(JSONArray().put("project_type:${category.modrinthType}"))
             if (onlyCompatible || category != WorkshopCategory.MODS) facets.put(JSONArray().put("versions:$gameVersion"))
             if (category == WorkshopCategory.MODS) {
-                if (onlyCompatible && loader != null) facets.put(JSONArray().put("categories:$loader"))
+                if (onlyCompatible && loader != null) facets.put(JSONArray(modrinthLoaders(loader).map { "categories:$it" }))
                 facets.put(JSONArray().put("client_side:required").put("client_side:optional"))
             }
             val encodedFacets = URLEncoder.encode(facets.toString(), "UTF-8")
@@ -225,7 +225,7 @@ class ModrinthRepository internal constructor(
                         sizeKb = (file.length() / 1024L).coerceAtLeast(1L),
                         file = file,
                         compatibility = when {
-                            cat == WorkshopCategory.MODS && loaderLabel == null -> "Requiere Fabric o NeoForge"
+                            cat == WorkshopCategory.MODS && loaderLabel == null -> "Requiere Fabric, Quilt o NeoForge"
                             cat != WorkshopCategory.MODS -> null
                             metadata[file.name] == null -> "Compatibilidad sin verificar"
                             metadata.getValue(file.name).matchesGame(gameVersion, cat, loader) -> "Compatible con $gameVersion · $loaderLabel"

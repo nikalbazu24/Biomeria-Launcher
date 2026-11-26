@@ -188,7 +188,7 @@ fun ContentWorkshopScreen(
                         }
                     }
                     if (tab == WorkshopTab.MODS && !supportsMods) {
-                        Text("Selecciona Fabric o NeoForge en la instancia para instalar mods.",
+                        Text("Selecciona Fabric, Quilt o NeoForge en la instancia para instalar mods.",
                             style = MaterialTheme.typography.bodySmall, color = Biomeria.colors.textMuted)
                     }
                 }
@@ -266,7 +266,7 @@ fun ContentWorkshopScreen(
             title = { Text("Agregar mods") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("1. Crea una instancia Java, elige la versión de Minecraft y selecciona Fabric o NeoForge.")
+                    Text("1. Crea una instancia Java, elige la versión de Minecraft y selecciona Fabric, Quilt o NeoForge.")
                     Text("2. Abre el Taller de esa instancia, entra en Mods y busca lo que quieres instalar.")
                     Text("3. Pulsa Instalar. Revisa qué versión del mod y qué dependencias se instalarán, y confirma la descarga.")
                     Text("4. En Mis mods puedes apagar, actualizar o quitar cada mod. Cuando termine la descarga, vuelve a la instancia y pulsa Jugar.")

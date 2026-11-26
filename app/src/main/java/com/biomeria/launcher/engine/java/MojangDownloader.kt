@@ -34,13 +34,14 @@ internal fun supportsFabric(version: String) = version in supportedVersions
 internal fun javaLoaders(version: String): List<String> = buildList {
     add("Vanilla")
     if (supportsFabric(version)) add("Fabric")
+    if (supportsFabric(version)) add("Quilt")
     if (version == NEOFORGE_GAME_VERSION) add("NeoForge")
 }
 
 internal fun supportsJavaLoader(version: String, loader: String): Boolean = version in supportedVersions && when {
     loader == "Vanilla" -> true
     loader == "NeoForge" || loader == "NeoForge $NEOFORGE_VERSION" -> version == NEOFORGE_GAME_VERSION
-    loader.matches(Regex("Fabric(?: [0-9][A-Za-z0-9._+-]{0,49})?")) -> supportsFabric(version)
+    loader.matches(Regex("(?:Fabric|Quilt)(?: [0-9][A-Za-z0-9._+-]{0,49})?")) -> supportsFabric(version)
     else -> false
 }
 
@@ -75,6 +76,7 @@ internal class MojangDownloader(context: Context) {
     private val cachedManifest = File(shared, "version-manifest.json")
     private val mojangManifest = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
     private val fabricMeta = "https://meta.fabricmc.net/v2/versions/loader"
+    private val quiltMeta = "https://meta.quiltmc.org/v3/versions/loader"
 
     suspend fun catalog(refresh: Boolean = false): List<MinecraftCatalogEntry> = withContext(Dispatchers.IO) {
         val manifest = runCatching { versionManifest(refresh) }.getOrElse { failure ->
@@ -166,27 +168,35 @@ internal class MojangDownloader(context: Context) {
             artifacts.removeAll { mavenModule(it.coordinate) in replaced }
             artifacts.addAll(0, neoForge.launchLibraries)
             NEOFORGE_MAIN_CLASS
-        } else if (loader.startsWith("Fabric")) {
+        } else if (loader.startsWith("Fabric") || loader.startsWith("Quilt")) {
+            // Quilt works like Fabric: a profile on top of the game, with its own launcher class.
+            val quilt = loader.startsWith("Quilt")
+            val meta = if (quilt) quiltMeta else fabricMeta
             val pinned = loader.substringAfter(' ', "").takeIf { it.isNotBlank() }
-            val fabricVersion = pinned ?: JSONArray(httpText("$fabricMeta/$version")).objects()
-                .map { it.getJSONObject("loader") }.first { it.optBoolean("stable") }.getString("version")
+            val loaders = if (pinned != null) emptyList() else JSONArray(httpText("$meta/$version")).objects().map { it.getJSONObject("loader") }
+            val fabricVersion = pinned ?: if (quilt) {
+                loaders.map { it.getString("version") }.first { "beta" !in it && "pre" !in it }
+            } else loaders.first { it.optBoolean("stable") }.getString("version")
             require(safeCoordinate.matches(fabricVersion) && !fabricVersion.startsWith('.'))
-            val profile = JSONObject(httpText("$fabricMeta/$version/$fabricVersion/profile/json"))
+            val profile = JSONObject(httpText("$meta/$version/$fabricVersion/profile/json"))
             check(profile.getString("inheritsFrom") == version)
+            val repositories = setOf("https://maven.fabricmc.net/", "https://libraries.minecraft.net/",
+                "https://maven.quiltmc.org/repository/release/")
             val fabricLibraries = profile.getJSONArray("libraries").objects().map { library ->
                 val coordinate = library.getString("name")
                 val path = mavenPath(coordinate)
-                val repository = library.getString("url")
-                require(repository in setOf("https://maven.fabricmc.net/", "https://libraries.minecraft.net/"))
+                val repository = library.getString("url").let { if (it.endsWith("/")) it else "$it/" }
+                require(repository in repositories)
                 val url = repository + path
                 val sha1 = library.optString("sha1").ifEmpty { httpText("$url.sha1").trim().substringBefore(' ') }
-                Artifact(url, File(shared, "fabric/$path"), sha1, coordinate = coordinate)
+                Artifact(url, File(shared, (if (quilt) "quilt/" else "fabric/") + path), sha1, coordinate = coordinate)
             }
             // Fabric rejects duplicate class definitions, even if its newer ASM JAR comes first.
             val fabricModules = fabricLibraries.map { mavenModule(it.coordinate) }.toSet()
             artifacts.removeAll { mavenModule(it.coordinate) in fabricModules }
             artifacts.addAll(0, fabricLibraries)
-            check(profile.getString("mainClass") == "net.fabricmc.loader.impl.launch.knot.KnotClient")
+            check(profile.getString("mainClass") == if (quilt) "org.quiltmc.loader.impl.launch.knot.KnotClient"
+                else "net.fabricmc.loader.impl.launch.knot.KnotClient")
             profile.getString("mainClass")
         } else versionMeta.getString("mainClass")
 
